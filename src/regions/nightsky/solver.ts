@@ -1,4 +1,4 @@
-import { type SkyLevel, type Stroke, edgeBetween, isComplete, newStroke, oddStars, traverse, undo } from './model';
+import { type SkyLevel, type Stroke, beginStroke, edgeBetween, isComplete, newStroke, oddStars, orderAllows, traverse, undo } from './model';
 
 export interface SkySolveResult {
   path: number[] | null; // star sequence continuing from the stroke's current star
@@ -19,7 +19,7 @@ function neighbours(level: SkyLevel, from: number, remaining: number[]): number[
 // one-way and double edges are handled). Tries edges that leave the most options last.
 export function solveFrom(level: SkyLevel, stroke: Stroke, maxNodes = 150_000): SkySolveResult {
   let nodes = 0;
-  const work: Stroke = { remaining: stroke.remaining.slice(), path: stroke.path.slice(), current: stroke.current };
+  const work: Stroke = { remaining: stroke.remaining.slice(), path: stroke.path.slice(), current: stroke.current, reached: stroke.reached };
   const out: number[] = [];
 
   const dfs = (): boolean => {
@@ -27,7 +27,7 @@ export function solveFrom(level: SkyLevel, stroke: Stroke, maxNodes = 150_000): 
     if (nodes > maxNodes) return false;
     if (isComplete(work)) return true;
     const from = work.current!;
-    const options = neighbours(level, from, work.remaining);
+    const options = neighbours(level, from, work.remaining).filter((to) => orderAllows(level, work, to));
     // Prefer continuing to stars with fewer remaining exits (Warnsdorff-style ordering).
     options.sort((a, b) => neighbours(level, a, work.remaining).length - neighbours(level, b, work.remaining).length);
     const seen = new Set<number>();
@@ -52,7 +52,7 @@ export function solveFrom(level: SkyLevel, stroke: Stroke, maxNodes = 150_000): 
 
 export function solveLevel(level: SkyLevel, start: number, maxNodes?: number): SkySolveResult {
   const stroke = newStroke(level);
-  stroke.current = start;
+  if (!beginStroke(level, stroke, start)) return { path: null, nodes: 0 };
   const result = solveFrom(level, stroke, maxNodes);
   return { path: result.path ? [start, ...result.path] : null, nodes: result.nodes };
 }

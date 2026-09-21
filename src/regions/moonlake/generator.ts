@@ -9,6 +9,7 @@ export interface RippleParams {
   size: [number, number]; // grid side, ring count, or cluster node count
   states: 2 | 3;
   wideNodes: [number, number];
+  frozenNodes?: [number, number]; // stone pads that cannot be pressed
   presses: [number, number]; // presses applied from the solved board
   minSolution: number; // reject boards solvable in fewer presses
 }
@@ -84,7 +85,10 @@ function build(rng: Rng, params: RippleParams): RippleLevel | null {
   const pond = params.shape === 'grid' ? grid(size) : params.shape === 'ring' ? ring(rng, size) : cluster(rng, size);
   if (pond.nodes.length < 3 || !isConnected(pond)) return null;
   const wideCount = rng.int(params.wideNodes[0], params.wideNodes[1]);
-  for (const i of rng.shuffle(pond.nodes.map((_, i) => i)).slice(0, wideCount)) pond.nodes[i]!.wide = true;
+  const order = rng.shuffle(pond.nodes.map((_, i) => i));
+  for (const i of order.slice(0, wideCount)) pond.nodes[i]!.wide = true;
+  const frozenCount = params.frozenNodes ? rng.int(params.frozenNodes[0], params.frozenNodes[1]) : 0;
+  for (const i of order.slice(wideCount, wideCount + frozenCount)) pond.nodes[i]!.frozen = true;
 
   const level: RippleLevel = {
     seed: '',
@@ -99,14 +103,15 @@ function build(rng: Rng, params: RippleParams): RippleLevel | null {
   // Scramble by pressing from the solved board; the reverse presses are one solution.
   const count = Math.min(pond.nodes.length, rng.int(params.presses[0], params.presses[1]));
   const presses = pond.nodes.map(() => 0);
-  for (const i of rng.shuffle(pond.nodes.map((_, i) => i)).slice(0, count)) presses[i] = rng.int(1, params.states - 1);
+  const pressable = rng.shuffle(pond.nodes.map((_, i) => i).filter((i) => !pond.nodes[i]!.frozen));
+  for (const i of pressable.slice(0, count)) presses[i] = rng.int(1, params.states - 1);
   level.start = applyPresses(level, level.start, presses);
   if (isLit(level, level.start)) return null;
   const solved = solveRipple(level, level.start);
   if (!solved.presses) return null;
   if (pressCount(solved.presses) < params.minSolution) return null;
   level.solution = solved.presses;
-  level.difficulty = pressCount(solved.presses) * 12 + pond.nodes.length * 2 + (params.states === 3 ? 20 : 0) + wideCount * 8;
+  level.difficulty = pressCount(solved.presses) * 12 + pond.nodes.length * 2 + (params.states === 3 ? 20 : 0) + wideCount * 8 + frozenCount * 10;
   return level;
 }
 

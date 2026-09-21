@@ -152,8 +152,15 @@ export class RippleLevelScene implements LevelScene {
     v.disc.clear();
     v.disc.circle(0, 0, Math.max(layout.minHitSize / 2, r)).fill({ color: palette.pearl, alpha: 0.001 });
     // A lily pad: a disc with a small notch.
-    v.disc.moveTo(0, 0).arc(0, 0, r, -Math.PI * 0.12, Math.PI * 1.88).closePath().fill({ color: this.accent, alpha });
-    v.disc.circle(0, 0, r).stroke({ color: lit ? this.accent : palette.dim, width: 1.2, alpha: lit ? 0.9 : 0.7 });
+    if (node.frozen) {
+      // Stone pads: a grey disc with a cracked line; they still light up when lit.
+      v.disc.circle(0, 0, r).fill({ color: lit ? this.accent : palette.dim, alpha: lit ? lakeStyle.litAlpha * 0.8 : 0.5 }).stroke({ color: palette.dim, width: 1.5, alpha: 0.9 });
+      v.disc.moveTo(-r * 0.5, -r * 0.2).lineTo(-r * 0.1, r * 0.1).lineTo(r * 0.2, -r * 0.15).lineTo(r * 0.5, r * 0.3).stroke({ color: palette.void, width: 1.2, alpha: 0.7 });
+      v.root.cursor = 'default';
+    } else {
+      v.disc.moveTo(0, 0).arc(0, 0, r, -Math.PI * 0.12, Math.PI * 1.88).closePath().fill({ color: this.accent, alpha });
+      v.disc.circle(0, 0, r).stroke({ color: lit ? this.accent : palette.dim, width: 1.2, alpha: lit ? 0.9 : 0.7 });
+    }
     v.ring.clear();
     if (node.wide) v.ring.circle(0, 0, r * 1.35).stroke({ color: this.accent, width: 1, alpha: 0.35 });
     v.hint.clear();
@@ -176,6 +183,11 @@ export class RippleLevelScene implements LevelScene {
 
   private pressPad(i: number): void {
     if (this.solved) return;
+    if (this.level.nodes[i]!.frozen) {
+      // A stone pad does not answer to touch: a small dull nudge instead.
+      gsap.fromTo(this.views[i]!.root.scale, { x: 0.96, y: 0.96 }, { x: 1, y: 1, duration: durations.microFeedback * 2, ease: easings.response });
+      return;
+    }
     this.stopTutorial();
     this.state = press(this.level, this.state, i, this.affects);
     this.hinted.delete(i);
@@ -332,6 +344,7 @@ export class RippleLevelScene implements LevelScene {
     ];
     if (this.level.states === 3) lines.push('Here pads have three states: dark, half-lit, then lit. A press moves each one a step.');
     if (this.level.nodes.some((n) => n.wide)) lines.push('A pad with an outer ring sends its ripple two pads away.');
+    if (this.level.nodes.some((n) => n.frozen)) lines.push('A grey stone pad cannot be pressed. Only its neighbours can change it.');
     return lines;
   }
 
@@ -353,9 +366,21 @@ export class RippleLevelScene implements LevelScene {
     const tap = new Graphics().circle(0, 0, 8).fill({ color: palette.pearl, alpha: 0.6 });
     tap.alpha = 0;
     root.addChild(lines, ripple, ...pads, tap);
+    const frozen = this.level.nodes.some((n) => n.frozen) ? 2 : -1;
+    const wide = this.level.nodes.some((n) => n.wide);
+    const three = this.level.states === 3;
     const draw = (lit: boolean[]) => {
       pads.forEach((g, i) => {
-        g.clear().circle(0, 0, r).fill({ color: this.accent, alpha: lit[i] ? lakeStyle.litAlpha : lakeStyle.darkAlpha }).stroke({ color: lit[i] ? this.accent : palette.dim, width: 1.2 });
+        g.clear();
+        if (i === frozen) {
+          g.circle(0, 0, r).fill({ color: lit[i] ? this.accent : palette.dim, alpha: lit[i] ? 0.7 : 0.5 }).stroke({ color: palette.dim, width: 1.5 });
+          g.moveTo(-r * 0.5, -r * 0.2).lineTo(-r * 0.1, r * 0.1).lineTo(r * 0.2, -r * 0.15).lineTo(r * 0.5, r * 0.3).stroke({ color: palette.void, width: 1.2, alpha: 0.7 });
+          return;
+        }
+        // With three states the demo shows the middle, half-lit step.
+        const alpha = lit[i] ? lakeStyle.litAlpha : three && i === 1 ? lakeStyle.halfAlpha : lakeStyle.darkAlpha;
+        g.circle(0, 0, r).fill({ color: this.accent, alpha }).stroke({ color: lit[i] ? this.accent : palette.dim, width: 1.2 });
+        if (wide && i === 1) g.circle(0, 0, r * 1.35).stroke({ color: this.accent, width: 1, alpha: 0.35 });
       });
     };
     draw([false, false, false]);

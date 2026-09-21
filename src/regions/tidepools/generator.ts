@@ -9,6 +9,8 @@ export interface LoopParams {
   loopiness: number;
   components: number;
   lockedFraction: number;
+  // Pairs of tiles that turn together.
+  links?: number;
   // A handcrafted silhouette of present cells (row-major), overriding `irregular`.
   present?: boolean[];
 }
@@ -61,6 +63,7 @@ function isConnected(present: boolean[], width: number, height: number): boolean
 interface Attempt {
   cells: (Tile | null)[];
   solvedMasks: number[];
+  links: Array<[number, number]>;
 }
 
 function buildAttempt(rng: Rng, params: LoopParams): Attempt | null {
@@ -160,7 +163,17 @@ function buildAttempt(rng: Rng, params: LoopParams): Attempt | null {
     cells[i]!.locked = true;
   }
 
-  return { cells, solvedMasks };
+  // Linked pairs: two unlocked, asymmetric tiles that start at the same rotation and turn together.
+  const links: Array<[number, number]> = [];
+  const linkable = rng.shuffle(cellIndices.filter((i) => !cells[i]!.locked && distinctRotations(cells[i]!.mask) === 4));
+  for (let k = 0; k < (params.links ?? 0) && linkable.length >= 2; k++) {
+    const a = linkable.pop()!;
+    const b = linkable.pop()!;
+    cells[b]!.rotation = cells[a]!.rotation;
+    links.push([a, b]);
+  }
+
+  return { cells, solvedMasks, links };
 }
 
 export function generateLoopLevel(seed: string, chapter: number, params: LoopParams): LoopLevel | null {
@@ -168,7 +181,7 @@ export function generateLoopLevel(seed: string, chapter: number, params: LoopPar
   for (let attempt = 0; attempt < 60; attempt++) {
     const built = buildAttempt(rng, params);
     if (!built) continue;
-    const board: Board = { width: params.width, height: params.height, cells: built.cells };
+    const board: Board = { width: params.width, height: params.height, cells: built.cells, links: built.links };
     if (isSolved(board)) continue;
     const result = solve(board);
     if (!result.solution) continue;
@@ -180,8 +193,9 @@ export function generateLoopLevel(seed: string, chapter: number, params: LoopPar
       width: params.width,
       height: params.height,
       cells: built.cells,
+      links: built.links,
       solution: built.cells.map(() => 0),
-      difficulty: result.nodes * 10 + tiles + undetermined * 3,
+      difficulty: result.nodes * 10 + tiles + undetermined * 3 + built.links.length * 12,
     };
   }
   return null;

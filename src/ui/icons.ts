@@ -1,7 +1,7 @@
 import { Graphics } from 'pixi.js';
 
 // All icons are drawn centred on (0,0) inside a box of `size` px, stroked in `color`.
-export type IconName = 'settings' | 'back' | 'speaker' | 'speakerOff' | 'note' | 'sparkle' | 'leaf' | 'restart' | 'play' | 'help' | 'hint' | 'yes' | 'no' | 'account';
+export type IconName = 'settings' | 'back' | 'speaker' | 'speakerOff' | 'note' | 'sparkle' | 'leaf' | 'restart' | 'play' | 'help' | 'hint' | 'yes' | 'no' | 'account' | 'turn' | 'flip';
 
 export function drawIcon(g: Graphics, name: IconName, size: number, color: number): Graphics {
   const s = size / 2;
@@ -56,6 +56,18 @@ export function drawIcon(g: Graphics, name: IconName, size: number, color: numbe
         .quadraticCurveTo(s * 0.7, s * 0.7, -s * 0.7, s * 0.7)
         .stroke(stroke);
       g.moveTo(-s * 0.7, s * 0.7).lineTo(s * 0.35, -s * 0.35).stroke(stroke);
+      break;
+    case 'turn':
+      g.arc(0, 0, s * 0.55, -Math.PI * 0.2, Math.PI * 1.2).stroke(stroke);
+      g.moveTo(s * 0.55 * Math.cos(-Math.PI * 0.2) - s * 0.3, s * 0.55 * Math.sin(-Math.PI * 0.2) - s * 0.08)
+        .lineTo(s * 0.55 * Math.cos(-Math.PI * 0.2), s * 0.55 * Math.sin(-Math.PI * 0.2))
+        .lineTo(s * 0.55 * Math.cos(-Math.PI * 0.2) - s * 0.02, s * 0.55 * Math.sin(-Math.PI * 0.2) + s * 0.32)
+        .stroke(stroke);
+      break;
+    case 'flip':
+      g.moveTo(0, -s * 0.7).lineTo(0, s * 0.7).stroke({ ...stroke, alpha: 0.5 });
+      g.moveTo(-s * 0.15, -s * 0.5).lineTo(-s * 0.7, 0).lineTo(-s * 0.15, s * 0.5).closePath().stroke(stroke);
+      g.moveTo(s * 0.15, -s * 0.5).lineTo(s * 0.7, 0).lineTo(s * 0.15, s * 0.5).closePath().fill({ color, alpha: 0.5 });
       break;
     case 'account':
       g.circle(0, -s * 0.28, s * 0.28).stroke(stroke);

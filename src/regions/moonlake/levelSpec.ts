@@ -5,7 +5,7 @@ import { solveRipple } from './solver';
 
 export function paramsForChapter(chapter: number, seed: string, levelInChapter: number, ultra = false): RippleParams {
   const rng = createRng(seed);
-  if (ultra) return { shape: 'grid', size: [5, 5], states: 3, wideNodes: [2, 3], presses: [8, 12], minSolution: 8 };
+  if (ultra) return { shape: 'grid', size: [5, 5], states: 3, wideNodes: [2, 3], frozenNodes: [2, 4], presses: [8, 12], minSolution: 8 };
   const late = levelInChapter >= 1;
   switch (chapter) {
     case 0:
@@ -14,11 +14,11 @@ export function paramsForChapter(chapter: number, seed: string, levelInChapter: 
       return { shape: rng.chance(0.5) ? 'ring' : 'cluster', size: [7, 10], states: 2, wideNodes: [0, 0], presses: [3, 6], minSolution: 3 };
     case 2: {
       const shape: PondShape = rng.chance(0.4) ? 'grid' : 'cluster';
-      return { shape, size: shape === 'grid' ? [3, 4] : [8, 11], states: 3, wideNodes: [0, 0], presses: [3, 7], minSolution: 4 };
+      return { shape, size: shape === 'grid' ? [3, 4] : [8, 11], states: 3, wideNodes: [0, 0], frozenNodes: [1, 2], presses: [3, 7], minSolution: 4 };
     }
     default: {
       const shape: PondShape = rng.chance(0.5) ? 'grid' : 'cluster';
-      return { shape, size: shape === 'grid' ? [4, 5] : [11, 14], states: rng.chance(0.4) ? 3 : 2, wideNodes: [1, 3], presses: [5, 9], minSolution: 5 };
+      return { shape, size: shape === 'grid' ? [4, 5] : [11, 14], states: rng.chance(0.4) ? 3 : 2, wideNodes: [1, 3], frozenNodes: [1, 3], presses: [5, 9], minSolution: 5 };
     }
   }
 }

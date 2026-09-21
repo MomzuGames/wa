@@ -17,6 +17,8 @@ import {
   currentMask,
   index,
   isSolved,
+  linkGroup,
+  linkPartner,
   rotateMask,
   tileKind,
 } from './model';
@@ -205,6 +207,13 @@ export class LoopLevelScene implements LevelScene {
     if (tile.locked) {
       v.lockDot.circle(half - gap * 2.2, -half + gap * 2.2, this.cell * 0.035).fill({ color: this.accent, alpha: 0.6 });
     }
+    // Linked tiles carry the same number of small dots along their top edge.
+    const group = linkGroup(this.board, i);
+    if (group >= 0) {
+      for (let k = 0; k <= group; k++) {
+        v.lockDot.circle(-half + gap * 2.4 + k * this.cell * 0.09, -half + gap * 2.2, this.cell * 0.03).fill({ color: palette.pearl, alpha: 0.7 });
+      }
+    }
     v.mark.clear().roundRect(-half + gap * 1.6, -half + gap * 1.6, size - gap * 1.2, size - gap * 1.2, this.cell * loopStyle.cornerFraction * 0.8);
     v.mark.stroke({ color: this.accent, width: 1, alpha: 0.35 });
   }
@@ -242,12 +251,19 @@ export class LoopLevelScene implements LevelScene {
   }
 
   private rotate(i: number, direction: 1 | -1): void {
-    const tile = this.board.cells[i]!;
-    const v = this.views[i]!;
     this.stopTutorial();
-    tile.rotation = (tile.rotation + direction + 4) % 4;
     this.emit('move');
     this.voice.rotate(i % this.board.width);
+    this.spin(i, direction);
+    const partner = linkPartner(this.board, i);
+    if (partner !== null && !this.board.cells[partner]!.locked) this.spin(partner, direction);
+  }
+
+  // Turns one tile's model and animates it; linked partners are spun by the caller.
+  private spin(i: number, direction: 1 | -1): void {
+    const tile = this.board.cells[i]!;
+    const v = this.views[i]!;
+    tile.rotation = (tile.rotation + direction + 4) % 4;
 
     v.animating = true;
     v.lit.visible = false;
@@ -405,6 +421,12 @@ export class LoopLevelScene implements LevelScene {
   }
 
   private lockTile(i: number, rotation: number): void {
+    const partner = linkPartner(this.board, i);
+    if (partner !== null && !this.board.cells[partner]!.locked) this.lockOne(partner, rotation);
+    this.lockOne(i, rotation);
+  }
+
+  private lockOne(i: number, rotation: number): void {
     const tile = this.board.cells[i]!;
     const v = this.views[i]!;
     const turns = (rotation - tile.rotation + 4) % 4;
@@ -529,16 +551,25 @@ export class LoopLevelScene implements LevelScene {
       isTouch() ? 'Tap a tile to turn it. Hold a tile to turn it the other way.' : 'Click a tile to turn it. Right-click to turn it the other way.',
     ];
     if (this.level.chapter >= 2) lines.push('Tiles with a small dot are already correct and cannot turn.');
+    if (this.level.links?.length) lines.push('Two tiles marked with the same dots are linked: turning one turns the other.');
     if (this.level.chapter >= 3) lines.push('Larger boards may hold more than one separate loop.');
     return lines;
   }
 
-  // Intro card: a tile that keeps being tapped and turned; locked tiles appear from chapter 3.
+  // Intro card: shows exactly the ideas this level uses. A tile is tapped and turned;
+  // a linked pair turns together; a locked tile with a dot stays put.
   introGlyph(): Container {
     const root = new Container();
     const cell = 56;
-    const showLock = this.level.chapter >= 2;
-    const makeTile = (mask: number, x: number, locked: boolean) => {
+    const hasLinks = (this.level.links?.length ?? 0) > 0;
+    const hasLocked = this.level.chapter >= 2 && this.level.cells.some((c) => c?.locked);
+    const kinds: Array<{ mask: number; locked: boolean; linked: boolean }> = [{ mask: 3, locked: false, linked: hasLinks }];
+    if (hasLinks) kinds.push({ mask: 6, locked: false, linked: true });
+    if (hasLocked) kinds.push({ mask: 12, locked: true, linked: false });
+    const spacing = cell * 1.2;
+    const startX = (-(kinds.length - 1) * spacing) / 2;
+    const spinners: Graphics[] = [];
+    kinds.forEach((k, n) => {
       const tile = new Container();
       const base = new Graphics()
         .roundRect(-cell / 2 + 4, -cell / 2 + 4, cell - 8, cell - 8, cell * loopStyle.cornerFraction)
@@ -547,25 +578,24 @@ export class LoopLevelScene implements LevelScene {
       const pipes = new Graphics();
       const savedCell = this.cell;
       this.cell = cell;
-      this.drawPipes(pipes, mask, locked ? this.accent : palette.dim, locked ? 0.8 : 1);
+      this.drawPipes(pipes, k.mask, k.locked ? this.accent : palette.dim, k.locked ? 0.8 : 1);
       this.cell = savedCell;
       tile.addChild(base, pipes);
-      if (locked) tile.addChild(new Graphics().circle(cell / 2 - 9, -cell / 2 + 9, 2).fill({ color: this.accent, alpha: 0.6 }));
-      tile.x = x;
+      if (k.locked) tile.addChild(new Graphics().circle(cell / 2 - 9, -cell / 2 + 9, 2).fill({ color: this.accent, alpha: 0.6 }));
+      if (k.linked) tile.addChild(new Graphics().circle(-cell / 2 + 10, -cell / 2 + 9, 1.8).fill({ color: palette.pearl, alpha: 0.7 }));
+      tile.x = startX + n * spacing;
       root.addChild(tile);
-      return pipes;
-    };
-    const pipes = makeTile(3, showLock ? -cell * 0.6 : 0, false);
-    if (showLock) makeTile(6, cell * 0.6, true);
+      if (!k.locked) spinners.push(pipes);
+    });
     const tap = new Graphics().circle(0, 0, 9).fill({ color: palette.pearl, alpha: 0.6 });
-    tap.x = showLock ? -cell * 0.6 : 0;
+    tap.x = startX;
     tap.alpha = 0;
     root.addChild(tap);
     const tl = gsap
       .timeline({ repeat: -1, repeatDelay: 0.6 })
       .to(tap, { alpha: 1, duration: 0.2 })
       .to(tap.scale, { x: 0.7, y: 0.7, duration: 0.15, yoyo: true, repeat: 1 })
-      .to(pipes, { rotation: `+=${Math.PI / 2}`, duration: loopStyle.rotateSeconds, ease: easings.tileSnap }, '<')
+      .to(spinners, { rotation: `+=${Math.PI / 2}`, duration: loopStyle.rotateSeconds, ease: easings.tileSnap }, '<')
       .to(tap, { alpha: 0, duration: 0.3 });
     root.on('destroyed', () => tl.kill());
     return root;

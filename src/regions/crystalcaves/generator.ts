@@ -12,6 +12,7 @@ export interface PrismParams {
   targets: [number, number];
   colors: number[]; // emitter colours to draw from
   requireMix: boolean;
+  dichroics?: [number, number];
 }
 
 function popcount(n: number): number {
@@ -80,6 +81,7 @@ function build(rng: Rng, params: PrismParams): PrismLevel | null {
   };
   if (!add('mirror', rng.int(params.mirrors[0], params.mirrors[1]), true)) return null;
   if (!add('splitter', rng.int(params.splitters[0], params.splitters[1]), true)) return null;
+  if (params.dichroics && !add('dichroic', rng.int(params.dichroics[0], params.dichroics[1]), true)) return null;
   if (!add('filter', rng.int(params.filters[0], params.filters[1]), false)) return null;
   if (!add('blocker', rng.int(params.blockers[0], params.blockers[1]), false)) return null;
 

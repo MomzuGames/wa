@@ -5,6 +5,7 @@ export interface PadNode {
   x: number; // 0..1
   y: number;
   wide: boolean; // ripples reach two steps away
+  frozen?: boolean; // a stone pad: cannot be pressed, only changed by neighbours
 }
 
 export interface RippleLevel {
@@ -39,6 +40,7 @@ export function affectLists(level: Pick<RippleLevel, 'nodes' | 'edges'>): number
 }
 
 export function press(level: RippleLevel, state: number[], node: number, affects = affectLists(level)): number[] {
+  if (level.nodes[node]!.frozen) return state.slice();
   const next = state.slice();
   for (const j of affects[node]!) next[j] = (next[j]! + 1) % level.states;
   return next;

@@ -5,7 +5,7 @@ import { solvePrism } from './solver';
 
 export function paramsForChapter(chapter: number, seed: string, levelInChapter: number, ultra = false): PrismParams {
   const rng = createRng(seed);
-  if (ultra) return { size: [8, 8], emitters: [3, 3], mirrors: [7, 9], splitters: [2, 3], filters: [2, 3], blockers: [2, 4], targets: [4, 5], colors: rng.shuffle([ROSE, SKY, LEMON]), requireMix: true };
+  if (ultra) return { size: [8, 8], emitters: [3, 3], mirrors: [6, 8], splitters: [2, 3], filters: [2, 3], blockers: [2, 4], targets: [4, 5], colors: rng.shuffle([ROSE, SKY, LEMON]), requireMix: true, dichroics: [2, 3] };
   const late = levelInChapter >= 1;
   switch (chapter) {
     case 0:
@@ -15,7 +15,7 @@ export function paramsForChapter(chapter: number, seed: string, levelInChapter: 
     case 2:
       return { size: [6, 6], emitters: [2, 3], mirrors: [3, 5], splitters: [1, 2], filters: [0, 0], blockers: [0, 1], targets: [2, 3], colors: rng.shuffle([ROSE, SKY, LEMON]), requireMix: true };
     default:
-      return { size: [7, 7], emitters: [3, 3], mirrors: [5, 7], splitters: [1, 3], filters: [1, 2], blockers: [1, 3], targets: [3, 4], colors: rng.shuffle([ROSE, SKY, LEMON]), requireMix: true };
+      return { size: [7, 7], emitters: [3, 3], mirrors: [4, 6], splitters: [1, 2], filters: [1, 2], blockers: [1, 3], targets: [3, 4], colors: rng.shuffle([ROSE, SKY, LEMON]), requireMix: true, dichroics: [1, 2] };
   }
 }
 

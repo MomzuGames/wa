@@ -5,16 +5,16 @@ import { solveStone } from './solver';
 
 export function paramsForChapter(chapter: number, seed: string, ultra = false): StoneParams {
   const rng = createRng(seed);
-  if (ultra) return { cells: [22, 28], pieces: [10, 11], diagonalCuts: [3, 5], diagonalSplits: [3, 4], allowFlip: true, requireFlip: true };
+  if (ultra) return { cells: [24, 30], pieces: [10, 11], diagonalCuts: [3, 5], diagonalSplits: [3, 4], allowFlip: true, requireFlip: true, holes: [2, 3], fixedPieces: 1 };
   switch (chapter) {
     case 0:
       return { cells: [6, 9], pieces: [3, 4], diagonalCuts: [0, 2], diagonalSplits: [0, 0], allowFlip: false, requireFlip: false };
     case 1:
       return { cells: [9, 14], pieces: [5, 6], diagonalCuts: [1, 3], diagonalSplits: [0, 1], allowFlip: false, requireFlip: false };
     case 2:
-      return { cells: [10, 15], pieces: [5, 7], diagonalCuts: [1, 3], diagonalSplits: [1, 2], allowFlip: true, requireFlip: true };
+      return { cells: [12, 16], pieces: [5, 7], diagonalCuts: [1, 3], diagonalSplits: [1, 2], allowFlip: true, requireFlip: true, holes: [1, 1] };
     default:
-      return { cells: [14, 22], pieces: [7, rng.chance(0.5) ? 8 : 9], diagonalCuts: [2, 4], diagonalSplits: [1, 3], allowFlip: true, requireFlip: false };
+      return { cells: [16, 22], pieces: [7, rng.chance(0.5) ? 8 : 9], diagonalCuts: [2, 4], diagonalSplits: [1, 3], allowFlip: true, requireFlip: false, holes: [1, 2], fixedPieces: 1 };
   }
 }
 

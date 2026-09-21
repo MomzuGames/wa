@@ -15,16 +15,16 @@ const chapterParams: Array<(rng: { int(a: number, b: number): number }) => LoopP
   },
   (rng) => {
     const size = rng.int(5, 6);
-    return { width: size, height: size, irregular: true, loopiness: 0.2, components: 1, lockedFraction: 0.12 };
+    return { width: size, height: size, irregular: true, loopiness: 0.2, components: 1, lockedFraction: 0.12, links: 1 };
   },
   (rng) => {
     const size = rng.int(7, 9);
-    return { width: size, height: size, irregular: false, loopiness: 0.28, components: rng.int(2, 3), lockedFraction: 0.05 };
+    return { width: size, height: size, irregular: false, loopiness: 0.28, components: rng.int(2, 3), lockedFraction: 0.05, links: 2 };
   },
 ];
 
 export function paramsForChapter(chapter: number, seed: string, ultra = false): LoopParams {
-  if (ultra) return { width: 10, height: 10, irregular: false, loopiness: 0.34, components: 3, lockedFraction: 0.03 };
+  if (ultra) return { width: 10, height: 10, irregular: false, loopiness: 0.34, components: 3, lockedFraction: 0.03, links: 3 };
   return chapterParams[chapter]!(createRng(seed));
 }
 

@@ -19,6 +19,7 @@ export interface SkyParams {
   oneWayFraction: number;
   doubleEdges: number;
   drift: boolean;
+  orderedStars?: number; // stars that must be reached in a given order
 }
 
 const NEIGHBOUR_RADIUS = 0.42;
@@ -214,6 +215,16 @@ export function generateSkyLevel(seed: string, chapter: number, params: SkyParam
       drift: params.drift,
       difficulty: 0,
     };
+    // Ordered stars are taken from the walk's first visits, so the walk still works.
+    if (params.orderedStars) {
+      const firstVisits: number[] = [];
+      for (const s of walk.sequence) if (!firstVisits.includes(s)) firstVisits.push(s);
+      const step = Math.max(1, Math.floor(firstVisits.length / (params.orderedStars + 1)));
+      const picks: number[] = [];
+      for (let k = 1; k <= params.orderedStars && k * step < firstVisits.length; k++) picks.push(firstVisits[k * step]!);
+      if (picks.length < 2) continue;
+      level.order = picks;
+    }
     if (minStarLineClearance(level) < MIN_STAR_LINE_CLEARANCE) continue;
     const crossings = crossingCount(level);
     if (crossings < params.crossings[0] || crossings > params.crossings[1]) continue;
@@ -221,7 +232,7 @@ export function generateSkyLevel(seed: string, chapter: number, params: SkyParam
     if (starts.length === 0) continue;
     const solved = solveLevel(level, level.solution[0]!);
     if (!solved.path) continue;
-    level.difficulty = solved.nodes + level.edges.length * 4 + crossings * 6 + (starts.length === level.stars.length ? 0 : 10);
+    level.difficulty = solved.nodes + level.edges.length * 4 + crossings * 6 + (starts.length === level.stars.length ? 0 : 10) + (level.order?.length ?? 0) * 10;
     return level;
   }
   return null;

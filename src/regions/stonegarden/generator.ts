@@ -19,6 +19,8 @@ export interface StoneParams {
   diagonalSplits: [number, number]; // full cells split between two pieces
   allowFlip: boolean;
   requireFlip: boolean;
+  holes?: [number, number]; // interior cells carved out of the silhouette
+  fixedPieces?: number; // stones already set in place
   // A handcrafted silhouette (tri keys on a width x height board) overriding growth.
   silhouette?: { width: number; height: number; keys: number[] };
 }
@@ -218,8 +220,22 @@ export function generateStoneLevel(seed: string, chapter: number, params: StoneP
       tris = new Set();
       for (const c of cells) for (let t = 0; t < 4; t++) tris.add(c * 4 + t);
       cutCorners(rng, tris, width, height, rng.int(params.diagonalCuts[0], params.diagonalCuts[1]));
+      // Holes: interior cells with all four neighbours present become gaps that must stay empty.
+      const holeCount = params.holes ? rng.int(params.holes[0], params.holes[1]) : 0;
+      if (holeCount > 0) {
+        const interior = [...cells].filter((c) => {
+          const x = c % width;
+          const y = Math.floor(c / width);
+          return [c - 1, c + 1, c - width, c + width].every((n) => cells.has(n)) && x > 0 && y > 0 && x < width - 1 && y < height - 1;
+        });
+        for (const c of rng.shuffle(interior).slice(0, holeCount)) for (let t = 0; t < 4; t++) tris.delete(c * 4 + t);
+      }
     }
     const keys = [...tris].sort((a, b) => a - b);
+    if (keys.length === 0 || !isConnected(keys.map((k) => fromKey(width, k)))) {
+      reject('silhouette split');
+      continue;
+    }
     const pieceCount = rng.int(params.pieces[0], params.pieces[1]);
     const owner = partition(rng, width, keys, pieceCount);
     if (!owner) {
@@ -269,8 +285,14 @@ export function generateStoneLevel(seed: string, chapter: number, params: StoneP
       if (!chiral.some((p) => p.tray.flip === 1)) chiral[rng.int(0, chiral.length - 1)]!.tray.flip = 1;
     }
 
-    // Every piece should start visibly out of place.
-    if (pieces.every((p) => p.tray.rot === 0 && p.tray.flip === 0)) {
+    // Fixed stones: a few pieces already set in place, drawn darker and immovable.
+    for (const p of rng.shuffle(pieces.slice()).slice(0, params.fixedPieces ?? 0)) {
+      p.fixed = true;
+      p.tray = { rot: 0, flip: 0 };
+    }
+
+    // Every movable piece should start visibly out of place.
+    if (pieces.filter((p) => !p.fixed).every((p) => p.tray.rot === 0 && p.tray.flip === 0)) {
       reject('unscrambled');
       continue;
     }
@@ -281,7 +303,7 @@ export function generateStoneLevel(seed: string, chapter: number, params: StoneP
       reject('unsolvable');
       continue;
     }
-    level.difficulty = solved.nodes + pieces.length * 20 + keys.length;
+    level.difficulty = solved.nodes + pieces.filter((p) => !p.fixed).length * 20 + keys.length;
     return level;
   }
   return null;

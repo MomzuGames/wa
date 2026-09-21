@@ -20,6 +20,8 @@ export interface SkyLevel {
   edges: Edge[];
   solution: number[]; // star indices in stroke order
   drift: boolean;
+  // Stars that must be reached for the first time in this order (marked with 1, 2, 3 dots).
+  order?: number[];
   difficulty: number;
 }
 
@@ -27,16 +29,34 @@ export interface Step {
   edge: number;
   from: number;
   to: number;
+  reachedBefore?: number;
 }
 
 export interface Stroke {
   remaining: number[];
   path: Step[];
   current: number | null;
+  reached: number; // how many ordered stars have been reached so far
 }
 
 export function newStroke(level: SkyLevel): Stroke {
-  return { remaining: level.edges.map((e) => e.required), path: [], current: null };
+  return { remaining: level.edges.map((e) => e.required), path: [], current: null, reached: 0 };
+}
+
+// Ordered stars may only be entered in sequence; other stars are free.
+export function orderAllows(level: SkyLevel, stroke: Stroke, star: number): boolean {
+  const order = level.order ?? [];
+  const position = order.indexOf(star);
+  if (position < 0) return true;
+  if (position < stroke.reached) return true; // already reached earlier; revisiting is fine
+  return position === stroke.reached;
+}
+
+export function beginStroke(level: SkyLevel, stroke: Stroke, star: number): boolean {
+  if (!orderAllows(level, stroke, star)) return false;
+  stroke.current = star;
+  if ((level.order ?? [])[stroke.reached] === star) stroke.reached++;
+  return true;
 }
 
 export function edgeBetween(level: SkyLevel, from: number, to: number, remaining: number[]): number {
@@ -51,10 +71,13 @@ export function edgeBetween(level: SkyLevel, from: number, to: number, remaining
 
 export function traverse(level: SkyLevel, stroke: Stroke, to: number): boolean {
   if (stroke.current === null) return false;
+  if (!orderAllows(level, stroke, to)) return false;
   const edge = edgeBetween(level, stroke.current, to, stroke.remaining);
   if (edge < 0) return false;
   stroke.remaining[edge]!--;
-  stroke.path.push({ edge, from: stroke.current, to });
+  const reachedBefore = stroke.reached;
+  if ((level.order ?? [])[stroke.reached] === to) stroke.reached++;
+  stroke.path.push({ edge, from: stroke.current, to, reachedBefore });
   stroke.current = to;
   return true;
 }
@@ -64,6 +87,7 @@ export function undo(stroke: Stroke): Step | null {
   if (!step) return null;
   stroke.remaining[step.edge]!++;
   stroke.current = step.from;
+  stroke.reached = step.reachedBefore ?? stroke.reached;
   return step;
 }
 
@@ -91,7 +115,7 @@ export function isSolutionValid(level: SkyLevel): boolean {
   const stroke = newStroke(level);
   const [first, ...rest] = level.solution;
   if (first === undefined) return false;
-  stroke.current = first;
+  if (!beginStroke(level, stroke, first)) return false;
   for (const next of rest) if (!traverse(level, stroke, next)) return false;
   return isComplete(stroke);
 }

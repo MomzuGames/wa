@@ -1,4 +1,4 @@
-import { DELTA, DIRS, type Board, type Dir, currentMask, index, opposite, rotateMask, tileAt } from './model';
+import { DELTA, DIRS, type Board, type Dir, currentMask, index, linkPartner, opposite, rotateMask, tileAt } from './model';
 
 interface Candidate {
   mask: number;
@@ -13,17 +13,24 @@ export interface SolveResult {
 }
 
 function initialDomains(board: Board): Domains {
-  return board.cells.map((tile) => {
+  return board.cells.map((tile, i) => {
     if (!tile) return null;
     if (tile.locked) return [{ mask: currentMask(tile), rotation: tile.rotation }];
+    const linked = linkPartner(board, i) !== null;
     const seen = new Map<number, number>();
+    const out: Candidate[] = [];
     // Start from the current rotation so solutions stay close to what the player has.
     for (let k = 0; k < 4; k++) {
       const rotation = (tile.rotation + k) % 4;
       const mask = rotateMask(tile.mask, rotation);
-      if (!seen.has(mask)) seen.set(mask, rotation);
+      // Linked tiles must keep every rotation distinct, since the partner depends on the exact turn.
+      if (linked) out.push({ mask, rotation });
+      else if (!seen.has(mask)) {
+        seen.set(mask, rotation);
+        out.push({ mask, rotation });
+      }
     }
-    return [...seen.entries()].map(([mask, rotation]) => ({ mask, rotation }));
+    return out;
   });
 }
 
@@ -56,7 +63,12 @@ function propagate(board: Board, domains: Domains): boolean {
         if (!dom) continue;
         const allowed: Record<number, { yes: boolean; no: boolean }> = {};
         for (const d of DIRS) allowed[d] = neighbourAllows(board, domains, x, y, d);
-        const next = dom.filter((c) => DIRS.every((d) => (c.mask & d ? allowed[d]!.yes : allowed[d]!.no)));
+        let next = dom.filter((c) => DIRS.every((d) => (c.mask & d ? allowed[d]!.yes : allowed[d]!.no)));
+        const partner = linkPartner(board, i);
+        if (partner !== null && domains[partner]) {
+          const theirs = new Set(domains[partner]!.map((c) => c.rotation));
+          next = next.filter((c) => theirs.has(c.rotation));
+        }
         if (next.length === 0) return false;
         if (next.length !== dom.length) {
           domains[i] = next;

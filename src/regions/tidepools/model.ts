@@ -64,6 +64,8 @@ export interface Board {
   width: number;
   height: number;
   cells: (Tile | null)[];
+  // Linked pairs always share the same rotation: turning one turns the other.
+  links?: Array<[number, number]>;
 }
 
 export interface LoopLevel {
@@ -73,6 +75,7 @@ export interface LoopLevel {
   width: number;
   height: number;
   cells: (Tile | null)[];
+  links?: Array<[number, number]>;
   solution: number[];
   difficulty: number;
 }
@@ -94,7 +97,19 @@ export function currentMask(tile: Tile): number {
 }
 
 export function cloneBoard(board: Board): Board {
-  return { width: board.width, height: board.height, cells: board.cells.map((c) => (c ? { ...c } : null)) };
+  return { width: board.width, height: board.height, cells: board.cells.map((c) => (c ? { ...c } : null)), links: board.links };
+}
+
+export function linkPartner(board: Board, index: number): number | null {
+  for (const [a, b] of board.links ?? []) {
+    if (a === index) return b;
+    if (b === index) return a;
+  }
+  return null;
+}
+
+export function linkGroup(board: Board, index: number): number {
+  return (board.links ?? []).findIndex(([a, b]) => a === index || b === index);
 }
 
 // True when every connector meets a connector on the neighbouring tile.
@@ -167,7 +182,11 @@ export function components(board: Board): Component[] {
 }
 
 export function boardFromLevel(level: LoopLevel): Board {
-  return { width: level.width, height: level.height, cells: level.cells.map((c) => (c ? { ...c } : null)) };
+  return { width: level.width, height: level.height, cells: level.cells.map((c) => (c ? { ...c } : null)), links: level.links };
+}
+
+export function linksConsistent(board: Board): boolean {
+  return (board.links ?? []).every(([a, b]) => board.cells[a]?.rotation === board.cells[b]?.rotation);
 }
 
 export function isSolutionValid(level: LoopLevel): boolean {
@@ -175,5 +194,5 @@ export function isSolutionValid(level: LoopLevel): boolean {
   board.cells.forEach((c, i) => {
     if (c) c.rotation = level.solution[i]!;
   });
-  return isSolved(board);
+  return isSolved(board) && linksConsistent(board);
 }

@@ -32,8 +32,12 @@ function buildOptions(level: StoneLevel, fixed: Map<number, Placement>): Option[
 
 // Exact cover (Algorithm X): every silhouette triangle and every piece must be used exactly once.
 // `fixed` pins pieces the player has already placed, so clues follow the current state.
-export function solveStone(level: StoneLevel, fixed: Map<number, Placement> = new Map(), maxNodes = 300_000): StoneSolveResult {
+export function solveStone(level: StoneLevel, placed: Map<number, Placement> = new Map(), maxNodes = 300_000): StoneSolveResult {
   let nodes = 0;
+  const fixed = new Map(placed);
+  level.pieces.forEach((p, i) => {
+    if (p.fixed && !fixed.has(i)) fixed.set(i, { ...p.solution, rot: 0, flip: 0 });
+  });
   const covered = new Set<number>();
   for (const [i, placement] of fixed) {
     const keys = placedKeys(level, level.pieces[i]!, placement);

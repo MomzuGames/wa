@@ -8,6 +8,7 @@ export interface Piece {
   tris: Tri[]; // normalised, in solution orientation
   solution: { x: number; y: number };
   tray: { rot: number; flip: number };
+  fixed?: boolean; // already set in place and immovable
 }
 
 export interface StoneLevel {

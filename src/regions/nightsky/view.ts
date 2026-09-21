@@ -6,7 +6,7 @@ import { durations, easings, reducedMotion, scaled } from '../../design/motion';
 import { isTouch, layout, puzzleArea } from '../../design/layout';
 import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
-import { type SkyLevel, type Star, type Stroke, edgeBetween, isComplete, newStroke, traverse, undo } from './model';
+import { type SkyLevel, type Star, type Stroke, beginStroke, edgeBetween, isComplete, newStroke, orderAllows, traverse, undo } from './model';
 import { halfPathClue, nextEdgesClue, oddStarsClue, startClue } from './clues';
 import { createNightSkyVoice, type NightSkyVoice } from './sound';
 
@@ -185,6 +185,14 @@ export class SkyLevelScene implements LevelScene {
       dot.clear();
       dot.circle(p.x, p.y, skyStyle.starHalo).fill({ color: this.accent, alpha: isCurrent ? 0.28 : 0.1 });
       dot.circle(p.x, p.y, skyStyle.starRadius).fill({ color: visited || isCurrent ? this.accent : palette.pearl, alpha: visited || isCurrent ? 1 : 0.7 });
+      // Ordered stars show their place in the sequence as dots beneath them.
+      const position = (this.level.order ?? []).indexOf(i);
+      if (position >= 0) {
+        const reached = position < this.stroke.reached;
+        for (let k = 0; k <= position; k++) {
+          dot.circle(p.x + (k - position / 2) * 7, p.y + skyStyle.starHalo + 7, 2).fill({ color: reached ? this.accent : palette.pearl, alpha: reached ? 0.9 : 0.6 });
+        }
+      }
     });
   }
 
@@ -227,7 +235,13 @@ export class SkyLevelScene implements LevelScene {
     this.pointer = local;
     this.dragging = true;
     this.stroke = newStroke(this.level);
-    this.stroke.current = star;
+    if (!beginStroke(this.level, this.stroke, star)) {
+      // An ordered star that is not next: a soft refusal instead of a stroke.
+      this.dragging = false;
+      this.voice.unravel();
+      gsap.fromTo(this.starDots[star]!, { alpha: 0.3 }, { alpha: 1, duration: durations.microFeedback * 3 });
+      return;
+    }
     this.clueEdges = [];
     this.redrawAll();
   }
@@ -249,7 +263,7 @@ export class SkyLevelScene implements LevelScene {
       this.redrawAll();
       return;
     }
-    if (star !== this.stroke.current && edgeBetween(this.level, this.stroke.current!, star, this.stroke.remaining) >= 0) {
+    if (star !== this.stroke.current && orderAllows(this.level, this.stroke, star) && edgeBetween(this.level, this.stroke.current!, star, this.stroke.remaining) >= 0) {
       traverse(this.level, this.stroke, star);
       this.undoArmed = false;
       this.emit('move');
@@ -438,6 +452,7 @@ export class SkyLevelScene implements LevelScene {
     if (this.level.chapter === 1) lines.push('When two stars have an odd number of lines, the stroke must start at one and end at the other.');
     if (this.level.edges.some((e) => e.oneWay)) lines.push('Shimmering lines can only be crossed the way the shimmer travels.');
     if (this.level.edges.some((e) => e.required === 2)) lines.push('Brighter double lines must be traced twice.');
+    if (this.level.order?.length) lines.push('Stars with dots beneath them must be reached in order: one dot first, then two, then three.');
     return lines;
   }
 
@@ -452,11 +467,16 @@ export class SkyLevelScene implements LevelScene {
     ];
     const hasOneWay = this.level.edges.some((e) => e.oneWay);
     const hasDouble = this.level.edges.some((e) => e.required === 2);
+    const hasOrder = (this.level.order?.length ?? 0) > 0;
     const lines = new Graphics();
     const lit = new Graphics();
     lit.filters = [createGlow(this.accent, { distance: 10, strength: 1.2, quality: 0.3 })];
     const stars = new Graphics();
-    pts.forEach((p) => stars.circle(p.x, p.y, 4).fill({ color: palette.pearl }));
+    pts.forEach((p, i) => {
+      stars.circle(p.x, p.y, 4).fill({ color: palette.pearl });
+      // The demo traces 0 -> 1 -> 2, so dots mark stars 1 and 2 as "first" and "second".
+      if (hasOrder && i > 0) for (let k = 0; k < i; k++) stars.circle(p.x + (k - (i - 1) / 2) * 6, p.y + 12, 1.8).fill({ color: palette.pearl, alpha: 0.7 });
+    });
     const cursor = new Graphics().circle(0, 0, 6).fill({ color: palette.pearl, alpha: 0.8 });
     root.addChild(lines, lit, stars, cursor);
     const drawLines = (shimmerT: number) => {

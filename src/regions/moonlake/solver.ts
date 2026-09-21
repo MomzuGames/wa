@@ -20,7 +20,8 @@ export function solveRipple(level: RippleLevel, state: number[], maxCombos = 20_
   const rows: number[][] = level.nodes.map((_, i) => {
     const row = new Array<number>(n + 1).fill(0);
     affects.forEach((list, j) => {
-      if (list.includes(i)) row[j] = 1;
+      // Frozen pads are never pressed, so they contribute no variable.
+      if (list.includes(i) && !level.nodes[j]!.frozen) row[j] = 1;
     });
     row[n] = (((p - 1 - state[i]!) % p) + p) % p;
     return row;

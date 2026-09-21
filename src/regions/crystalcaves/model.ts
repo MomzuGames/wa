@@ -13,7 +13,8 @@ export const DIR_DELTA: Array<[number, number]> = [
   [-1, 0],
 ];
 
-export type PieceKind = 'emitter' | 'mirror' | 'splitter' | 'filter' | 'blocker' | 'target';
+// A dichroic mirror bounces only its own colour and lets every other colour pass straight through.
+export type PieceKind = 'emitter' | 'mirror' | 'splitter' | 'filter' | 'blocker' | 'target' | 'dichroic';
 
 export interface PrismPiece {
   kind: PieceKind;
@@ -55,6 +56,7 @@ export const ORIENTATIONS: Record<PieceKind, number> = {
   filter: 1,
   blocker: 1,
   target: 1,
+  dichroic: 2,
 };
 
 // '/' (orient 0): E->N, N->E, W->S, S->W.  '\' (orient 1): E->S, S->E, W->N, N->W.
@@ -111,6 +113,10 @@ export function trace(level: PrismLevel, orients: number[]): Trace {
         break;
       case 'filter':
         advance(seg.dir, seg.color & piece.color);
+        break;
+      case 'dichroic':
+        advance(reflect(seg.dir, orients[idx]!), seg.color & piece.color);
+        advance(seg.dir, seg.color & ~piece.color);
         break;
       case 'target':
         received.set(idx, (received.get(idx) ?? 0) | seg.color);

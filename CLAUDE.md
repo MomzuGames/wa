@@ -271,6 +271,7 @@ Attempts and clues used are saved per level.
 
 For every region:
 - Levels 1–2 are handcrafted tutorials, and level 1 has the ghost-hand demo.
+- Each region introduces a new mechanic per chapter and a **signature twist** from chapter 3 (see each region below). The instruction card's glyph is rebuilt from the level, so every twist present in the level is shown visually as well as in the captions.
 - Each chapter's final level is handcrafted and forms a recognisable figure where the mechanic allows it: a whale, a bird, a lotus, a fox, a moon and so on.
 - All other levels are generated from seeds.
 
@@ -285,6 +286,7 @@ For every region:
   2. 5×5 to 6×6 grids
   3. Irregular board shapes plus locked (pre-set) tiles
   4. 7×7 to 9×9 grids, where multiple separate loops are required
+- **Signature twist — linked tiles:** from chapter 3 some tiles are tied in pairs (marked with matching dots on their top edge). Turning one turns its partner too, and locking one locks both. The solver keeps all rotations for linked cells and propagates each choice to the partner.
 - **Clues:**
   1. Lock one correctly rotated tile, shown with a mint shimmer.
   2. Lock 2 more tiles.
@@ -309,6 +311,7 @@ For every region:
   2. More crossings and some stars where the start matters (exactly 2 stars have an odd number of lines)
   3. One-way edges, shown as a slow directional shimmer
   4. Double edges (brighter until traced twice), plus slow star drift in the final levels
+- **Signature twist — ordered stars:** from chapter 3 a few stars carry small dots beneath them (one, two, three). They must be reached in that order; starting on or moving to one out of turn is refused with a flash and the unravel sound. The generator picks them from the walk's first visits so the stored walk still works, and the solver filters options by `orderAllows`.
 - **Clues:**
   1. A valid starting star pulses.
   2. The first 2 edges of a valid path shimmer.
@@ -319,10 +322,11 @@ For every region:
 ### Region 3 — Stone Garden (Silhouette) · accent `peach`
 - **Grid model:** keeps geometry exact. Each grid cell is split by its diagonals into 4 triangles (N, E, S, W). A piece is a connected set of these triangles.
 - **Input:**
-  - Drag pieces from the tray; they snap to the whole-cell grid, with smooth magnetic easing when near a snap point.
-  - Rotate 90° by clicking a stone (without dragging), with the scroll wheel, or the `R` key. Stones snap magnetically when near a spot where they fit, and a stone turned in place stays if it still fits.
-  - Flip with a double-click or the `F` key (from chapter 3 onward).
+  - Drag pieces from the tray; they snap to the whole-cell grid, with smooth magnetic easing when near a snap point. **A stone settles wherever it is dropped** as long as it does not overlap another stone; it need not be inside the silhouette. The magnet outline shows the accent colour when the spot is an exact fit and pearl otherwise.
+  - Rotate 90° by tapping a stone (without dragging), with the scroll wheel, the `R` key, or the on-screen **turn** button (bottom-left, acts on the last touched stone).
+  - Flip with a double-click, a long press, the `F` key, or the on-screen **flip** button (from chapter 3 onward).
 - **Win condition:** the placed triangles cover the silhouette exactly, with no overlap and nothing outside it. Accept any exact cover.
+- **Signature twist — fixed stones and gaps:** from chapter 3 the silhouette may contain a gap that must stay empty, and from chapter 4 one grey stone is already set in place and cannot be moved (the solver pins it).
 - **Generator:** grow a random silhouette (or use a handcrafted figure), partition it into pieces by seeded region-growing (with a range of piece sizes), then scramble rotation and flip into the tray. Reject levels where pieces are trivially identical.
 - **Solver:** exact-cover search (Algorithm X style).
 - **Chapters:**
@@ -351,6 +355,7 @@ For every region:
   - splitter (half passes through, half reflects)
   - filter (passes only one colour)
   - blocker
+  - dichroic mirror (chapter 4+): bounces only its own colour and lets every other colour pass straight through, so one beam can be split by colour
 - **Input:** click a rotatable piece to cycle its orientation.
 - **Win condition:** every target receives exactly its required colour mask.
   - Beam tracing is deterministic, with loop detection.
@@ -380,6 +385,7 @@ For every region:
   2. Rings and irregular pond shapes
   3. Three-state nodes
   4. Wide-ripple nodes (affect neighbours 2 steps away), plus larger boards
+- **Signature twist — stone pads:** from chapter 3 some pads are grey stone. They cannot be pressed, only changed by their neighbours' ripples, and they still have to end up lit. The solver drops their press variable.
 - **Clues:** computed from the current state.
   1. One node from the minimum solution glows softly.
   2. 2 more nodes glow.

@@ -5,7 +5,7 @@ import { solveLevel, validStarts } from './solver';
 
 export function paramsForChapter(chapter: number, seed: string, levelInChapter: number, ultra = false): SkyParams {
   const rng = createRng(seed);
-  if (ultra) return { stars: [12, 16], edges: [18, 24], crossings: [4, 9], closed: false, oneWayFraction: 0.25, doubleEdges: 3, drift: true };
+  if (ultra) return { stars: [12, 16], edges: [18, 24], crossings: [4, 9], closed: false, oneWayFraction: 0.25, doubleEdges: 3, drift: true, orderedStars: 3 };
   const late = levelInChapter >= 1;
   switch (chapter) {
     case 0:
@@ -13,9 +13,9 @@ export function paramsForChapter(chapter: number, seed: string, levelInChapter: 
     case 1:
       return { stars: [7, 11], edges: [8, 13], crossings: [1, late ? 5 : 3], closed: false, oneWayFraction: 0, doubleEdges: 0, drift: false };
     case 2:
-      return { stars: [8, 12], edges: [10, 15], crossings: [1, 5], closed: rng.chance(0.4), oneWayFraction: 0.35, doubleEdges: 0, drift: false };
+      return { stars: [8, 12], edges: [10, 15], crossings: [1, 5], closed: rng.chance(0.4), oneWayFraction: 0.35, doubleEdges: 0, drift: false, orderedStars: 2 };
     default:
-      return { stars: [9, 14], edges: [12, 18], crossings: [2, 7], closed: rng.chance(0.3), oneWayFraction: 0.15, doubleEdges: rng.int(1, 2), drift: late };
+      return { stars: [9, 14], edges: [12, 18], crossings: [2, 7], closed: rng.chance(0.3), oneWayFraction: 0.15, doubleEdges: rng.int(1, 2), drift: late, orderedStars: 3 };
   }
 }
 

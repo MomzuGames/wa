@@ -169,11 +169,17 @@ export class PrismLevelScene implements LevelScene {
         break;
       }
       case 'mirror':
-      case 'splitter': {
+      case 'splitter':
+      case 'dichroic': {
         const o = this.orients[i]!;
         const sign = o === 0 ? -1 : 1; // '/' rises to the right, '\' falls
         const len = half * 0.7;
-        if (p.kind === 'mirror') {
+        if (p.kind === 'dichroic') {
+          // A tinted mirror: its own colour bounces, the rest passes.
+          const color = colorOf(p.color);
+          v.body.moveTo(-len, -sign * len).lineTo(len, sign * len).stroke({ color, width: 4, cap: 'round', alpha: 0.85 });
+          v.body.moveTo(-len, -sign * len).lineTo(len, sign * len).stroke({ color: palette.pearl, width: 1, cap: 'round', alpha: 0.5 });
+        } else if (p.kind === 'mirror') {
           v.body.moveTo(-len, -sign * len).lineTo(len, sign * len).stroke({ color: palette.pearl, width: 3.5, cap: 'round', alpha: 0.9 });
         } else {
           const off = 3;
@@ -432,6 +438,7 @@ export class PrismLevelScene implements LevelScene {
     if (this.level.pieces.some((p) => p.kind === 'splitter')) lines.push('A double line lets half the beam through and bounces the other half.');
     if (this.level.chapter >= 2) lines.push('Two beams meeting at a crystal mix: pink and blue make violet, blue and yellow make green.');
     if (this.level.pieces.some((p) => p.kind === 'filter')) lines.push('A tinted square lets only its own colour pass.');
+    if (this.level.pieces.some((p) => p.kind === 'dichroic')) lines.push('A coloured mirror bounces only its own colour; every other colour passes straight through it.');
     return lines;
   }
 
@@ -447,6 +454,32 @@ export class PrismLevelScene implements LevelScene {
     const tap = new Graphics().circle(0, 0, 8).fill({ color: palette.pearl, alpha: 0.6 });
     tap.alpha = 0;
     root.addChild(beam, emitter, ring, mirror, target, tap);
+    // A small legend of the special pieces this level uses, each with its beams drawn in.
+    const specials = ['splitter', 'filter', 'dichroic'].filter((k) => this.level.pieces.some((p) => p.kind === k));
+    specials.forEach((kind, n) => {
+      const legend = new Graphics();
+      const lx = (n - (specials.length - 1) / 2) * s * 3.2;
+      const ly = s * 3.4;
+      const sample = this.level.pieces.find((p) => p.kind === kind)!;
+      const inColor = kind === 'dichroic' ? palette.pearl : palette.sky;
+      legend.moveTo(lx - s * 1.4, ly).lineTo(lx, ly).stroke({ color: inColor, width: 3, alpha: 0.8, cap: 'round' });
+      if (kind === 'splitter') {
+        legend.moveTo(lx - s * 0.45 - 2, ly + s * 0.45 + 2).lineTo(lx + s * 0.45 - 2, ly - s * 0.45 + 2).stroke({ color: palette.pearl, width: 2, alpha: 0.75 });
+        legend.moveTo(lx - s * 0.45 + 2, ly + s * 0.45 - 2).lineTo(lx + s * 0.45 + 2, ly - s * 0.45 - 2).stroke({ color: palette.pearl, width: 2, alpha: 0.75 });
+        legend.moveTo(lx, ly).lineTo(lx + s * 1.4, ly).stroke({ color: palette.sky, width: 3, alpha: 0.6, cap: 'round' });
+        legend.moveTo(lx, ly).lineTo(lx, ly - s * 1.2).stroke({ color: palette.sky, width: 3, alpha: 0.6, cap: 'round' });
+      } else if (kind === 'filter') {
+        const color = colorOf(sample.color);
+        legend.roundRect(lx - s * 0.35, ly - s * 0.35, s * 0.7, s * 0.7, 3).fill({ color, alpha: 0.2 }).stroke({ color, width: 1.5 });
+        legend.moveTo(lx, ly).lineTo(lx + s * 1.4, ly).stroke({ color, width: 3, alpha: 0.8, cap: 'round' });
+      } else {
+        const color = colorOf(sample.color);
+        legend.moveTo(lx - s * 0.5, ly + s * 0.5).lineTo(lx + s * 0.5, ly - s * 0.5).stroke({ color, width: 4, alpha: 0.85, cap: 'round' });
+        legend.moveTo(lx, ly).lineTo(lx, ly - s * 1.2).stroke({ color, width: 3, alpha: 0.8, cap: 'round' });
+        legend.moveTo(lx, ly).lineTo(lx + s * 1.4, ly).stroke({ color: colorOf(7 & ~sample.color), width: 3, alpha: 0.7, cap: 'round' });
+      }
+      root.addChild(legend);
+    });
     const state = { turned: 0 };
     const drawBeam = () => {
       beam.clear();
