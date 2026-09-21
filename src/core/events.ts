@@ -1,0 +1,33 @@
+import type { Settings } from './save';
+
+export interface GameEvents {
+  'settings:changed': Settings;
+  'audio:started': void;
+  'input:back': void;
+  'input:mute': void;
+  'input:hint': void;
+  'input:restart': void;
+  'input:key': string;
+}
+
+type Handler<T> = (payload: T) => void;
+
+class EventBus {
+  private handlers = new Map<keyof GameEvents, Set<Handler<unknown>>>();
+
+  on<K extends keyof GameEvents>(event: K, handler: Handler<GameEvents[K]>): () => void {
+    let set = this.handlers.get(event);
+    if (!set) {
+      set = new Set();
+      this.handlers.set(event, set);
+    }
+    set.add(handler as Handler<unknown>);
+    return () => set!.delete(handler as Handler<unknown>);
+  }
+
+  emit<K extends keyof GameEvents>(event: K, ...args: GameEvents[K] extends void ? [] : [GameEvents[K]]): void {
+    this.handlers.get(event)?.forEach((h) => h(args[0]));
+  }
+}
+
+export const events = new EventBus();

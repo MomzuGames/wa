@@ -1,83 +1,74 @@
 import './style.css';
-import { Application, Container, FillGradient, Graphics } from 'pixi.js';
-import { GlowFilter } from 'pixi-filters';
-import gsap from 'gsap';
-import { palette } from './design/palette';
-import { easings, heroBreathe } from './design/motion';
+import '@fontsource/quicksand/300.css';
+import { createApp, onResize } from './core/app';
+import { SceneManager } from './core/sceneManager';
+import { installKeyboard } from './core/input';
+import { createRng } from './core/rng';
+import { load } from './core/save';
+import { events } from './core/events';
+import { exposeDevHandles, installFpsMeter } from './core/dev';
+import { Background } from './fx/background';
+import { ParticleSystem, createSoftDotTexture } from './fx/particles';
+import { AudioEngine } from './audio/engine';
+import { SettingsPanel } from './ui/settings';
+import { Hud } from './ui/hud';
+import { TitleScene } from './scenes/title';
+import { WorldMapScene } from './map/worldMap';
 
 async function main() {
-  const app = new Application();
-  await app.init({
-    resizeTo: window,
-    backgroundColor: palette.void,
-    antialias: true,
-    resolution: window.devicePixelRatio || 1,
-    autoDensity: true,
+  await document.fonts.load("300 64px 'Quicksand'");
+  load();
+
+  const app = await createApp(document.querySelector<HTMLDivElement>('#app')!);
+  const rng = createRng('luma');
+  const audio = new AudioEngine();
+
+  const softDot = createSoftDotTexture(app.renderer);
+  const background = new Background(softDot, rng);
+  const particles = new ParticleSystem(softDot);
+  const scenes = new SceneManager();
+  const settings = new SettingsPanel(audio);
+  const hud = new Hud(settings);
+
+  app.stage.addChild(background.container, scenes.root, particles.container, hud, settings);
+
+  onResize(app, (w, h) => {
+    background.resize(w, h);
+    scenes.resize(w, h);
+    hud.resize(w);
+    settings.resize(w, h);
   });
 
-  document.querySelector<HTMLDivElement>('#app')!.appendChild(app.canvas);
-
-  const root = new Container();
-  app.stage.addChild(root);
-
-  const haloGradient = new FillGradient({
-    type: 'radial',
-    center: { x: 0.5, y: 0.5 },
-    innerRadius: 0,
-    outerCenter: { x: 0.5, y: 0.5 },
-    outerRadius: 0.5,
-    textureSize: 512,
-    colorStops: [
-      { offset: 0, color: palette.mint },
-      { offset: 0.35, color: palette.mint },
-      { offset: 1, color: palette.void },
-    ],
+  app.ticker.add((ticker) => {
+    const dt = ticker.deltaMS / 1000;
+    background.update(dt);
+    scenes.update(dt);
+    particles.update(dt);
   });
-  const halo = new Graphics().circle(0, 0, 90).fill(haloGradient);
-  halo.blendMode = 'screen';
-  halo.alpha = heroBreathe.haloFrom;
 
-  const dot = new Graphics().circle(0, 0, 24).fill({ color: palette.mint });
-  const glow = new GlowFilter({
-    color: palette.mint,
-    distance: 48,
-    outerStrength: heroBreathe.glowFrom,
-    innerStrength: 0,
-    quality: 0.4,
-  });
-  glow.resolution = 'inherit';
-  glow.antialias = 'inherit';
-  dot.filters = [glow];
+  installKeyboard();
+  installFpsMeter(app);
+  exposeDevHandles(app, scenes, audio);
 
-  root.addChild(halo, dot);
-
-  const center = () => {
-    root.x = app.screen.width / 2;
-    root.y = app.screen.height / 2;
+  const showTitle = () => {
+    hud.setBackVisible(false);
+    void scenes.go(new TitleScene(showMap));
   };
-  center();
-  window.addEventListener('resize', center);
+  const showMap = () => {
+    void audio.start();
+    hud.setBackVisible(true);
+    void scenes.go(new WorldMapScene());
+  };
 
-  gsap
-    .timeline({ repeat: -1 })
-    .to(dot.scale, {
-      x: heroBreathe.scaleTo,
-      y: heroBreathe.scaleTo,
-      duration: heroBreathe.inhale,
-      ease: easings.ambient,
-    })
-    .to(glow, { outerStrength: heroBreathe.glowTo, duration: heroBreathe.inhale, ease: easings.ambient }, 0)
-    .to(halo, { alpha: heroBreathe.haloTo, duration: heroBreathe.inhale, ease: easings.ambient }, 0)
-    .to(halo.scale, { x: heroBreathe.haloScaleTo, y: heroBreathe.haloScaleTo, duration: heroBreathe.inhale, ease: easings.ambient }, 0)
-    .to(dot.scale, {
-      x: heroBreathe.scaleFrom,
-      y: heroBreathe.scaleFrom,
-      duration: heroBreathe.exhale,
-      ease: easings.ambient,
-    })
-    .to(glow, { outerStrength: heroBreathe.glowFrom, duration: heroBreathe.exhale, ease: easings.ambient }, '<')
-    .to(halo, { alpha: heroBreathe.haloFrom, duration: heroBreathe.exhale, ease: easings.ambient }, '<')
-    .to(halo.scale, { x: heroBreathe.scaleFrom, y: heroBreathe.scaleFrom, duration: heroBreathe.exhale, ease: easings.ambient }, '<');
+  events.on('input:back', () => {
+    if (settings.isOpen) {
+      settings.toggle();
+      return;
+    }
+    if (scenes.scene instanceof WorldMapScene) showTitle();
+  });
+
+  showTitle();
 }
 
-main();
+void main();

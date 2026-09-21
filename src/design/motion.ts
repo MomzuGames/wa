@@ -11,6 +11,9 @@ export const durations = {
   sceneTransition: 1.1,
   completion: 3.2,
   breathe: 4,
+  logoFadeIn: 2.4,
+  hudHover: 0.25,
+  panelToggle: 0.45,
 } as const;
 
 export const breathe = {
@@ -30,3 +33,28 @@ export const heroBreathe = {
   inhale: 1.7,
   exhale: 2.5,
 } as const;
+
+export const dust = {
+  count: 32,
+  speedMin: 2,
+  speedMax: 9,
+  radiusMin: 1,
+  radiusMax: 2.6,
+  wobble: 0.35,
+} as const;
+
+let reducedBySetting = false;
+const reducedByOS = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+export function setReducedMotion(value: boolean): void {
+  reducedBySetting = value;
+}
+
+export function reducedMotion(): boolean {
+  return reducedBySetting || reducedByOS;
+}
+
+// Scales any long-form duration down when reduced motion is on; feedback stays intact.
+export function scaled(duration: number): number {
+  return reducedMotion() ? duration * 0.4 : duration;
+}

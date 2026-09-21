@@ -10,6 +10,30 @@ export const palette = {
   rose: 0xffc8dd,
   lemon: 0xfff1b8,
   pearl: 0xf7f4ff,
+  shadow: 0x000000, // only ever used at partial alpha, to darken (vignette, backdrops)
 } as const;
 
 export type PaletteToken = keyof typeof palette;
+
+// Alpha levels for UI states, so the same "quietness" is used everywhere.
+export const alphas = {
+  hudIdle: 0.45,
+  hudHover: 0.95,
+  panelBackdrop: 0.6,
+  dustMin: 0.05,
+  dustMax: 0.2,
+  vignette: 0.55,
+  logo: 0.85,
+} as const;
+
+export function rgba(token: PaletteToken, alpha: number): string {
+  const hex = palette[token];
+  const r = (hex >> 16) & 0xff;
+  const g = (hex >> 8) & 0xff;
+  const b = hex & 0xff;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+export function cssHex(token: PaletteToken): string {
+  return `#${palette[token].toString(16).padStart(6, '0')}`;
+}
