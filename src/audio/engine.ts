@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 import { events } from '../core/events';
 import { getSettings, type Settings } from '../core/save';
 import { Ambient } from './ambient';
+import { note } from './scale';
 
 export const audioConfig = {
   limiterCeilingDb: -12,
@@ -19,6 +20,7 @@ function sliderToDb(value: number): number {
 
 export class AudioEngine {
   private started = false;
+  private starting = false;
   private master!: Tone.Volume;
   private musicBus!: Tone.Volume;
   private sfxBus!: Tone.Volume;
@@ -37,8 +39,11 @@ export class AudioEngine {
     return this.sfxBus;
   }
 
+  private ambientWanted = false;
+
   async start(): Promise<void> {
-    if (this.started) return;
+    if (this.started || this.starting) return;
+    this.starting = true;
     await Tone.start();
 
     const limiter = new Tone.Limiter(audioConfig.limiterCeilingDb);
@@ -57,7 +62,7 @@ export class AudioEngine {
     await reverb.ready;
 
     this.ambient = new Ambient(this.musicBus);
-    this.ambient.start();
+    if (this.ambientWanted) this.ambient.start();
 
     this.uiVoice = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: 'sine' },
@@ -66,14 +71,49 @@ export class AudioEngine {
     }).connect(this.sfxBus);
 
     this.started = true;
+    this.starting = false;
     this.applySettings(getSettings());
     events.on('settings:changed', (s) => this.applySettings(s));
     events.emit('audio:started');
   }
 
+  // The drone is title-screen only; it fades out as the player enters the game.
+  setAmbient(on: boolean): void {
+    this.ambientWanted = on;
+    if (!this.ambient) return;
+    if (on) this.ambient.start();
+    else this.ambient.stop();
+  }
+
   // A single soft pentatonic tone for UI feedback.
-  pluck(noteName: string): void {
-    this.uiVoice?.triggerAttackRelease(noteName, '8n');
+  pluck(noteName: string, velocity = 0.8): void {
+    this.uiVoice?.triggerAttackRelease(noteName, '8n', undefined, velocity);
+  }
+
+  // A quiet descending three-note breath.
+  failure(): void {
+    if (!this.uiVoice) return;
+    const now = Tone.now();
+    this.uiVoice.triggerAttackRelease(note(3, 4), '8n', now, 0.25);
+    this.uiVoice.triggerAttackRelease(note(2, 4), '8n', now + 0.22, 0.2);
+    this.uiVoice.triggerAttackRelease(note(0, 4), '4n', now + 0.46, 0.16);
+  }
+
+  // A single wind-chime tone for a newly available clue.
+  chime(): void {
+    if (!this.uiVoice) return;
+    const now = Tone.now();
+    this.uiVoice.triggerAttackRelease(note(4, 5), '2n', now, 0.35);
+    this.uiVoice.triggerAttackRelease(note(6, 5), '2n', now + 0.03, 0.18);
+  }
+
+  // A short rising phrase for a solved level.
+  solvePhrase(): void {
+    if (!this.uiVoice) return;
+    const now = Tone.now();
+    [0, 2, 4, 5].forEach((degree, i) => {
+      this.uiVoice!.triggerAttackRelease(note(degree, 4), '4n', now + i * 0.16, 0.5);
+    });
   }
 
   applySettings(settings: Settings): void {

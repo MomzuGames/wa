@@ -35,7 +35,7 @@ describe('save', () => {
   });
 
   it('ignores corrupt data', async () => {
-    localStorage.setItem('luma.save.v1', '{not json');
+    localStorage.setItem('chowa.save.v1', '{not json');
     const { load } = await import('./save');
     expect(load().version).toBe(1);
   });

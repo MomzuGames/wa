@@ -23,7 +23,8 @@ interface Voice {
 }
 
 export class Ambient {
-  private output: Tone.Volume;
+  private output: Tone.Gain;
+  private sourcesStarted = false;
   private voices: Voice[] = [];
   private filter: Tone.Filter;
   private filterLfo: Tone.LFO;
@@ -35,7 +36,7 @@ export class Ambient {
   private airLevel: Tone.Volume;
 
   constructor(destination: Tone.ToneAudioNode) {
-    this.output = new Tone.Volume(-Infinity).connect(destination);
+    this.output = new Tone.Gain(0).connect(destination);
 
     this.swell = new Tone.Gain(0.85).connect(this.output);
     this.swellLfo = new Tone.LFO({ frequency: ambientConfig.swellLfoHz, min: 0.7, max: 1 }).connect(this.swell.gain);
@@ -76,18 +77,24 @@ export class Ambient {
 
   start(): void {
     const now = Tone.now();
-    for (const v of this.voices) {
-      v.osc.start(now);
-      v.detuneLfo.start(now);
+    if (!this.sourcesStarted) {
+      this.sourcesStarted = true;
+      for (const v of this.voices) {
+        v.osc.start(now);
+        v.detuneLfo.start(now);
+      }
+      this.filterLfo.start(now);
+      this.swellLfo.start(now);
+      this.airLfo.start(now);
+      this.air.start(now);
     }
-    this.filterLfo.start(now);
-    this.swellLfo.start(now);
-    this.airLfo.start(now);
-    this.air.start(now);
-    this.output.volume.rampTo(0, ambientConfig.fadeInSeconds, now);
+    this.output.gain.cancelScheduledValues(now);
+    this.output.gain.rampTo(1, ambientConfig.fadeInSeconds, now);
   }
 
   stop(): void {
-    this.output.volume.rampTo(-Infinity, ambientConfig.fadeOutSeconds);
+    const now = Tone.now();
+    this.output.gain.cancelScheduledValues(now);
+    this.output.gain.rampTo(0, ambientConfig.fadeOutSeconds, now);
   }
 }

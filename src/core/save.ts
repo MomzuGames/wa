@@ -1,7 +1,8 @@
 import { events } from './events';
 import type { RegionId } from '../regions/types';
+import { SAVE_KEY } from '../config/game';
+import { REGION_ORDER as REGION_IDS } from '../regions/catalog';
 
-export const SAVE_KEY = 'luma.save.v1';
 
 export interface RegionProgress {
   solved: number[];
@@ -22,7 +23,6 @@ export interface SaveData {
   settings: Settings;
 }
 
-const REGION_IDS: RegionId[] = ['tidepools', 'nightsky', 'stonegarden', 'crystalcaves', 'moonlake'];
 
 function emptyRegion(): RegionProgress {
   return { solved: [], attempts: {}, cluesUsed: {} };

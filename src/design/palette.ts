@@ -20,8 +20,8 @@ export const alphas = {
   hudIdle: 0.45,
   hudHover: 0.95,
   panelBackdrop: 0.6,
-  dustMin: 0.05,
-  dustMax: 0.2,
+  dustMin: 0.14,
+  dustMax: 0.42,
   vignette: 0.55,
   logo: 0.85,
 } as const;

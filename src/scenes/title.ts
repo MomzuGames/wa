@@ -4,8 +4,8 @@ import type { Scene } from '../core/sceneManager';
 import { alphas, palette } from '../design/palette';
 import { durations, easings, scaled } from '../design/motion';
 import { BreathingDot } from '../ui/breathingDot';
+import { GAME_TITLE } from '../config/game';
 
-export const GAME_TITLE = 'LUMA';
 
 const titleStyle = {
   fontSize: 64,

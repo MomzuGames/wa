@@ -38,8 +38,8 @@ export const dust = {
   count: 32,
   speedMin: 2,
   speedMax: 9,
-  radiusMin: 1,
-  radiusMax: 2.6,
+  radiusMin: 1.6,
+  radiusMax: 4,
   wobble: 0.35,
 } as const;
 

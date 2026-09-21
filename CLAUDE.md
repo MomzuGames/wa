@@ -1,6 +1,6 @@
 # CLAUDE.md — Project Brief
 
-> Working title: **LUMA** (the owner may rename it later; keep the name in one constant).
+> Title: **Chōwa** (renamed from the working title LUMA; the name lives in one constant in `src/config/game.ts`).
 > This file is the single source of truth. Re-read the relevant section before starting any phase.
 
 ---
@@ -219,7 +219,7 @@ Quicksand, light weight, generous letter-spacing. It is used only for the title 
 - Completed regions and levels can always be replayed.
 - **Optional stretch, "The Summit":** unlocked after all 5 regions. Mixed-mechanic levels. Build it only in Phase 9, if the owner asks.
 
-### Save data (`localStorage` key `luma.save.v1`)
+### Save data (`localStorage` key `chowa.save.v1`)
 ```ts
 {
   version: 1,

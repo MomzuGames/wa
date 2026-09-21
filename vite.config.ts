@@ -7,8 +7,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'LUMA',
-        short_name: 'LUMA',
+        name: 'Chōwa',
+        short_name: 'Chōwa',
         description: 'A calm, wordless puzzle journey.',
         theme_color: '#0B0B10',
         background_color: '#0B0B10',

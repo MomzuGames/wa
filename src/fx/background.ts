@@ -26,7 +26,8 @@ export class Background {
       sprite.anchor.set(0.5);
       sprite.tint = palette.pearl;
       const radius = rng.next() * (dust.radiusMax - dust.radiusMin) + dust.radiusMin;
-      sprite.scale.set(radius / 8);
+      sprite.scale.set(radius / 6);
+      sprite.blendMode = 'screen';
       const baseAlpha = rng.next() * (alphas.dustMax - alphas.dustMin) + alphas.dustMin;
       sprite.alpha = baseAlpha;
       this.container.addChild(sprite);
