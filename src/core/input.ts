@@ -10,6 +10,9 @@ const KEY_EVENTS: Record<string, 'input:back' | 'input:mute' | 'input:hint' | 'i
 export function installKeyboard(): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // Never steal keystrokes from a text field (the sign-in card is HTML).
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     const mapped = KEY_EVENTS[key];
     if (mapped) {
