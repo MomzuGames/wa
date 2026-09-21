@@ -3,6 +3,7 @@ import { Text, type Application } from 'pixi.js';
 import { alphas, palette } from '../design/palette';
 import type { SceneManager } from './sceneManager';
 import type { AudioEngine } from '../audio/engine';
+import type { Game } from './game';
 
 export const devFlags = {
   enabled: import.meta.env.DEV && new URLSearchParams(location.search).get('dev') === '1',
@@ -35,7 +36,7 @@ export function installFpsMeter(app: Application): void {
 }
 
 // Exposes internals on window for poking at the game from the console in dev builds.
-export function exposeDevHandles(app: Application, scenes: SceneManager, audio: AudioEngine): void {
+export function exposeDevHandles(app: Application, scenes: SceneManager, audio: AudioEngine, game: Game): void {
   if (!devFlags.enabled) return;
-  (window as unknown as { __luma: unknown }).__luma = { app, scenes, audio, gsap };
+  (window as unknown as { __chowa: unknown }).__chowa = { app, scenes, audio, game, gsap };
 }

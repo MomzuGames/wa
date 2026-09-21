@@ -3,13 +3,14 @@ import { Container, Graphics } from 'pixi.js';
 import { alphas, palette } from '../design/palette';
 import { durations, easings, setReducedMotion } from '../design/motion';
 import { layout } from '../design/layout';
-import { getSettings, updateSettings } from '../core/save';
+import { getSettings, resetProgress, updateSettings } from '../core/save';
 import { events } from '../core/events';
 import type { AudioEngine } from '../audio/engine';
 import { IconButton } from './iconButton';
 import { Slider } from './slider';
 import { note } from '../audio/scale';
 import { drawIcon } from './icons';
+import { HoldButton } from './holdButton';
 
 const panelStyle = {
   width: 300,
@@ -28,7 +29,10 @@ export class SettingsPanel extends Container {
   private screenW = 0;
   private screenH = 0;
 
-  constructor(private audio: AudioEngine) {
+  constructor(
+    private audio: AudioEngine,
+    onReset: () => void,
+  ) {
     super();
     this.visible = false;
     this.alpha = 0;
@@ -81,6 +85,16 @@ export class SettingsPanel extends Container {
     this.card.addChild(this.motionButton);
     this.syncToggleAlpha(this.motionButton, settings.reducedMotion);
     setReducedMotion(settings.reducedMotion);
+
+    // Hold to erase progress: the ring around the icon fills over 1.5 s.
+    const reset = new HoldButton('restart', panelStyle.iconSize, () => {
+      resetProgress();
+      this.audio.failure();
+      this.toggle();
+      onReset();
+    });
+    reset.position.set(panelStyle.width / 2 - layout.margin - panelStyle.iconSize / 2, y);
+    this.card.addChild(reset);
 
     this.addChild(this.backdrop, this.card);
     events.on('input:mute', () => this.toggleMute());
