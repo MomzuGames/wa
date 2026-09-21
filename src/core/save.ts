@@ -21,6 +21,8 @@ export interface SaveData {
   version: 1;
   regions: Record<RegionId, RegionProgress>;
   settings: Settings;
+  // Instruction lines already shown, per region, so cards appear once per new idea.
+  seenIntros: Partial<Record<RegionId, string[]>>;
 }
 
 
@@ -35,6 +37,7 @@ export function defaultSave(): SaveData {
     version: 1,
     regions,
     settings: { music: 0.7, sfx: 0.8, muted: false, reducedMotion: false },
+    seenIntros: {},
   };
 }
 
@@ -55,6 +58,7 @@ export function load(): SaveData {
         version: 1,
         regions: { ...fresh.regions, ...parsed.regions },
         settings: { ...fresh.settings, ...parsed.settings },
+        seenIntros: { ...(parsed.seenIntros ?? {}) },
       };
       return current;
     }
@@ -93,5 +97,18 @@ export function getRegion(id: RegionId): RegionProgress {
 export function resetProgress(): void {
   const data = load();
   for (const id of REGION_IDS) data.regions[id] = emptyRegion();
+  data.seenIntros = {};
   persist();
+}
+
+// True when any of these lines is new for the region; marks them all as seen.
+export function markIntroSeen(id: RegionId, lines: string[]): boolean {
+  const data = load();
+  const seen = new Set(data.seenIntros[id] ?? []);
+  const fresh = lines.some((l) => !seen.has(l));
+  if (fresh) {
+    data.seenIntros[id] = [...new Set([...seen, ...lines])];
+    persist();
+  }
+  return fresh;
 }

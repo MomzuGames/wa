@@ -65,25 +65,28 @@ export class Game {
 
   showTitle(): void {
     this.deps.hud.setBackVisible(false);
-    this.deps.audio.setAmbient(true);
+    this.deps.hud.setLevelButtons(null);
+    this.deps.audio.setScene('title');
     void this.deps.scenes.go(new TitleScene(() => this.showMap()));
   }
 
   showMap(reveal: MapReveal | null = null): void {
     this.deps.hud.setBackVisible(true);
-    this.deps.audio.setAmbient(false);
+    this.deps.hud.setLevelButtons(null);
+    this.deps.audio.setScene('quiet');
     void this.deps.scenes.go(new WorldMapScene((id) => this.showRegion(id), reveal));
   }
 
   showRegion(id: RegionId, justSolved: number | null = null): void {
     this.deps.hud.setBackVisible(true);
-    this.deps.audio.setAmbient(false);
+    this.deps.hud.setLevelButtons(null);
+    this.deps.audio.setScene(id);
     void this.deps.scenes.go(new RegionScene(id, (level) => this.showLevel(id, level), justSolved));
   }
 
   showLevel(id: RegionId, levelIndex: number): void {
     this.deps.hud.setBackVisible(true);
-    this.deps.audio.setAmbient(false);
+    this.deps.audio.setScene(id);
     const module = getModule(id);
     const scene = new LevelShellScene(
       module,
@@ -91,6 +94,7 @@ export class Game {
       { audio: this.deps.audio, particles: this.deps.particles, width: this.width, height: this.height },
       (result) => void this.afterLevel(result),
     );
+    this.deps.hud.setLevelButtons({ onHelp: () => scene.showInstructions(), onHint: () => scene.askHint() });
     void this.deps.scenes.go(scene);
   }
 

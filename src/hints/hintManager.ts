@@ -103,4 +103,12 @@ export class HintManager {
     this.revealed++;
     return this.revealed as ClueTier;
   }
+
+  // Reveals the next tier regardless of attempts (the "ask for a hint" button).
+  forceReveal(): ClueTier | null {
+    if (this.revealed >= hintRules.tierThresholds.length) return null;
+    if (this.units < hintRules.tierThresholds[this.revealed]!) this.units = hintRules.tierThresholds[this.revealed]!;
+    this.revealed++;
+    return this.revealed as ClueTier;
+  }
 }

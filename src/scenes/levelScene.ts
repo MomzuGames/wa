@@ -6,7 +6,8 @@ import { durations, easings } from '../design/motion';
 import { layout } from '../design/layout';
 import { createRng } from '../core/rng';
 import { events } from '../core/events';
-import { getRegion } from '../core/save';
+import { getRegion, markIntroSeen } from '../core/save';
+import { ConfirmCard } from '../ui/confirm';
 import { markSolved, recordAttempts } from '../core/progress';
 import { HintManager } from '../hints/hintManager';
 import { HintOrb } from '../hints/hintOrb';
@@ -128,6 +129,15 @@ export class LevelShellScene implements Scene {
   enter(): void {
     const inset = layout.hudInset + layout.hudIconSize / 2;
     events.emit('spirit:glide', { x: this.width / 2 + 52, y: inset });
+    // The card appears on its own only when a level introduces something new for this region.
+    const lines = this.level.introLines?.() ?? [];
+    if (markIntroSeen(this.module.id, lines)) this.showInstructions(true);
+    else this.level.begin?.();
+  }
+
+  // Opens the instruction card; the ? button uses this at any time.
+  showInstructions(first = false): void {
+    if (this.intro || this.finished) return;
     this.intro = new LevelIntro(this.levelIndex, palette[this.module.accent], {
       glyph: this.level.introGlyph?.() ?? null,
       lines: this.level.introLines?.() ?? [],
@@ -135,8 +145,23 @@ export class LevelShellScene implements Scene {
     this.container.addChild(this.intro);
     void this.intro.play(this.width, this.height).then(() => {
       this.intro = null;
-      this.level.begin?.();
+      if (first) this.level.begin?.();
     });
+  }
+
+  // The hint button asks first, then reveals the next tier even if it is not earned yet.
+  askHint(): void {
+    if (this.finished || this.intro) return;
+    const card = new ConfirmCard('Would you like a hint?', palette[this.module.accent], (yes) => {
+      if (!yes) return;
+      const tier = this.hints.forceReveal();
+      if (tier) {
+        this.level.showClue(tier);
+        events.emit('spirit:react', 'move');
+      }
+    });
+    this.container.addChild(card);
+    card.open(this.width, this.height);
   }
 
   private countMove(): void {

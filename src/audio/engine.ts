@@ -2,6 +2,8 @@ import * as Tone from 'tone';
 import { events } from '../core/events';
 import { getSettings, type Settings } from '../core/save';
 import { Ambient } from './ambient';
+import { createBed, type Bed } from './beds';
+import type { RegionId } from '../regions/types';
 import { note } from './scale';
 
 export const audioConfig = {
@@ -48,6 +50,8 @@ export class AudioEngine {
   }
 
   private ambientWanted = false;
+  private scene: 'title' | 'quiet' | RegionId = 'quiet';
+  private beds = new Map<RegionId, Bed>();
 
   async start(): Promise<void> {
     if (this.started || this.starting) return;
@@ -71,6 +75,7 @@ export class AudioEngine {
 
     this.ambient = new Ambient(this.musicBus);
     if (this.ambientWanted) this.ambient.start();
+    if (this.scene !== 'title' && this.scene !== 'quiet') this.bedFor(this.scene).start();
 
     this.uiVoice = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: 'sine' },
@@ -93,6 +98,26 @@ export class AudioEngine {
     if (!this.ambient) return;
     if (on) this.ambient.start();
     else this.ambient.stop();
+  }
+
+  private bedFor(id: RegionId): Bed {
+    let bed = this.beds.get(id);
+    if (!bed) {
+      bed = createBed(id, this.musicBus);
+      this.beds.set(id, bed);
+    }
+    return bed;
+  }
+
+  // Which music plays: the title drone, a region's bed, or nothing (the map). Cross-fades.
+  setScene(scene: 'title' | 'quiet' | RegionId): void {
+    if (scene === this.scene) return;
+    const previous = this.scene;
+    this.scene = scene;
+    this.setAmbient(scene === 'title');
+    if (!this.started) return;
+    if (previous !== 'title' && previous !== 'quiet') this.beds.get(previous)?.stop();
+    if (scene !== 'title' && scene !== 'quiet') this.bedFor(scene).start();
   }
 
   // A single soft pentatonic tone for UI feedback.
