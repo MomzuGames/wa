@@ -18,7 +18,7 @@ const skyStyle = {
   edgeAlpha: 0.32,
   doubleEdgeAlpha: 0.7,
   halfTracedAlpha: 0.5,
-  snapFraction: 0.06,
+  snapFraction: 0.085,
   shimmerSpeed: 0.35,
   driftAmount: 0.018,
   driftSpeed: 0.35,
@@ -318,21 +318,25 @@ export class SkyLevelScene implements LevelScene {
     if (this.isTutorial) this.scheduleTutorial();
   }
 
-  showClue(tier: ClueTier): void {
+  showClue(tier: ClueTier): string | void {
     if (this.solved) return;
+    let caption: string | undefined;
     switch (tier) {
       case 1: {
         const star = startClue(this.level, this.stroke);
         if (star === null) return;
         const dot = this.starDots[star]!;
-        gsap.to(dot, { alpha: 0.3, duration: durations.microFeedback * 2, yoyo: true, repeat: 5, ease: easings.ambient });
+        gsap.to(dot, { alpha: 0.3, duration: durations.microFeedback * 2, yoyo: true, repeat: 7, ease: easings.ambient });
+        caption = this.stroke.current === null ? 'Begin your stroke from the pulsing star.' : 'The pulsing star is where to continue from.';
         break;
       }
       case 2:
         this.clueEdges = nextEdgesClue(this.level, this.stroke);
+        caption = this.stroke.current === null ? 'Start at the shimmering lines and follow them.' : 'Follow the shimmering lines next.';
         break;
       case 3:
         this.clueRings = oddStarsClue(this.level);
+        caption = this.clueRings.length ? 'Ringed stars have an odd number of lines: a stroke must start or end at one.' : 'Every star has an even number of lines: you can start anywhere.';
         break;
       case 4: {
         const edges = halfPathClue(this.level, this.stroke);
@@ -341,10 +345,12 @@ export class SkyLevelScene implements LevelScene {
           this.clueEdges = this.clueEdges === edges ? [] : this.clueEdges;
           this.redrawAll();
         });
+        caption = 'For a moment, half of a working path shimmers.';
         break;
       }
     }
     this.redrawAll();
+    return caption;
   }
 
   private scheduleTutorial(): void {
@@ -423,10 +429,15 @@ export class SkyLevelScene implements LevelScene {
   }
 
   introLines(): string[] {
-    const lines = ['Press a star and drag through every line in one stroke.', 'Drag back over a line to undo it.'];
-    if (this.level.chapter === 1) lines.push('Some stars only work as the start or the end.');
-    if (this.level.edges.some((e) => e.oneWay)) lines.push('Shimmering lines can only be crossed in one direction.');
-    if (this.level.edges.some((e) => e.required === 2)) lines.push('Brighter lines must be traced twice.');
+    const lines = [
+      'Press on a star and drag through every line without letting go.',
+      'A line lights only when you drag along it to the star at its other end.',
+      'Each line can be used once. Drag back to the previous star to undo.',
+      'Let go before every line is lit and the stroke fades: try again.',
+    ];
+    if (this.level.chapter === 1) lines.push('When two stars have an odd number of lines, the stroke must start at one and end at the other.');
+    if (this.level.edges.some((e) => e.oneWay)) lines.push('Shimmering lines can only be crossed the way the shimmer travels.');
+    if (this.level.edges.some((e) => e.required === 2)) lines.push('Brighter double lines must be traced twice.');
     return lines;
   }
 

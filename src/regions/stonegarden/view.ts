@@ -31,24 +31,30 @@ const stoneStyle = {
   seamAlpha: 0.55,
   silhouetteAlpha: 0.9,
   snapFraction: 0.5,
+  magnetPull: 0.35,
+  tapDistance: 6,
   turnSeconds: 0.28,
   settleSeconds: 0.32,
   returnSeconds: 0.4,
   clueGhostSeconds: 3,
   tutorialDelay: 1.6,
   wheelCooldown: 0.18,
+  shadowOffset: 5,
+  shadowAlpha: 0.5,
 } as const;
 
 type Handler = () => void;
 
 interface PieceView {
   root: Container;
+  shadow: Graphics;
   body: Graphics;
   rot: number;
   flip: number;
   placed: Placement | null;
   slot: { x: number; y: number };
   animating: boolean;
+  lastPlacement: Placement | null;
 }
 
 export class StoneLevelScene implements LevelScene {
@@ -68,6 +74,8 @@ export class StoneLevelScene implements LevelScene {
   private trayScale: number = stoneStyle.trayScale;
   private dragging: PieceView | null = null;
   private grabOffset = { x: 0, y: 0 };
+  private grabStart = { x: 0, y: 0 };
+  private magnet = new Graphics();
   private hovered: PieceView | null = null;
   private lastTouched: PieceView | null = null;
   private solved = false;
@@ -95,7 +103,8 @@ export class StoneLevelScene implements LevelScene {
     this.hit.on('globalpointermove', (e: FederatedPointerEvent) => this.onMove(e));
     this.hit.on('pointerup', () => this.onUp());
     this.hit.on('pointerupoutside', () => this.onUp());
-    this.container.addChild(this.hit, this.rake, this.silhouette, this.clueLayer, this.piecesLayer);
+    this.magnet.eventMode = 'none';
+    this.container.addChild(this.hit, this.rake, this.silhouette, this.clueLayer, this.magnet, this.piecesLayer);
     this.buildPieces();
     this.layout(ctx.width, ctx.height);
     this.unsubscribe.push(
@@ -122,8 +131,10 @@ export class StoneLevelScene implements LevelScene {
   private buildPieces(): void {
     this.level.pieces.forEach((piece, i) => {
       const root = new Container();
+      const shadow = new Graphics();
       const body = new Graphics();
-      root.addChild(body);
+      shadow.position.set(stoneStyle.shadowOffset * 0.6, stoneStyle.shadowOffset);
+      root.addChild(shadow, body);
       root.eventMode = 'static';
       root.cursor = 'grab';
       root.on('pointerdown', (e: FederatedPointerEvent) => this.onDown(i, e));
@@ -137,7 +148,7 @@ export class StoneLevelScene implements LevelScene {
         if (e.detail === 2) this.flip(this.views[i]!);
       });
       this.piecesLayer.addChild(root);
-      this.views.push({ root, body, rot: piece.tray.rot, flip: piece.tray.flip, placed: null, slot: { x: 0, y: 0 }, animating: false });
+      this.views.push({ root, shadow, body, rot: piece.tray.rot, flip: piece.tray.flip, placed: null, slot: { x: 0, y: 0 }, animating: false, lastPlacement: null });
     });
   }
 
@@ -195,6 +206,10 @@ export class StoneLevelScene implements LevelScene {
     const v = this.views[i]!;
     const tris = this.shapeOf(i, v.rot, v.flip);
     this.drawShape(v.body, tris, this.accent, v.placed ? stoneStyle.placedAlpha : stoneStyle.pieceAlpha, this.cell, true);
+    this.drawShape(v.shadow, tris, palette.shadow, stoneStyle.shadowAlpha, this.cell, false);
+    // Lifted stones cast a longer shadow.
+    const lift = v.placed ? 1 : 1.8;
+    v.shadow.position.set(stoneStyle.shadowOffset * 0.6 * lift, stoneStyle.shadowOffset * lift);
   }
 
   private boardCenterFor(i: number, placement: Placement): { x: number; y: number } {
@@ -263,6 +278,8 @@ export class StoneLevelScene implements LevelScene {
     this.lastTouched = v;
     this.dragging = v;
     const local = this.container.toLocal(e.global);
+    this.grabStart = { x: local.x, y: local.y };
+    v.lastPlacement = v.placed;
     if (v.placed) {
       this.unplace(i);
     }
@@ -280,16 +297,42 @@ export class StoneLevelScene implements LevelScene {
 
   private onMove(e: FederatedPointerEvent): void {
     if (!this.dragging) return;
+    const v = this.dragging;
     const local = this.container.toLocal(e.global);
-    this.dragging.root.position.set(local.x + this.grabOffset.x, local.y + this.grabOffset.y);
+    let x = local.x + this.grabOffset.x;
+    let y = local.y + this.grabOffset.y;
+    // Magnetism: near a spot where the stone fits, it is drawn toward it and the spot is outlined.
+    v.root.position.set(x, y);
+    const i = this.views.indexOf(v);
+    const placement = this.snapPlacement(i, v);
+    this.magnet.clear();
+    if (placement && this.canPlace(i, placement)) {
+      const target = this.boardCenterFor(i, placement);
+      x += (target.x - x) * stoneStyle.magnetPull;
+      y += (target.y - y) * stoneStyle.magnetPull;
+      const tris = this.shapeOf(i, placement.rot, placement.flip);
+      this.strokeOutline(this.magnet, tris, this.cell, this.origin.x + placement.x * this.cell, this.origin.y + placement.y * this.cell, this.accent, 0.5);
+    }
+    v.root.position.set(x, y);
   }
 
   private onUp(): void {
     const v = this.dragging;
     if (!v) return;
     this.dragging = null;
+    this.magnet.clear();
     v.root.cursor = 'grab';
     const i = this.views.indexOf(v);
+    const moved = Math.hypot(v.root.x - this.grabOffset.x - this.grabStart.x, v.root.y - this.grabOffset.y - this.grabStart.y);
+    if (moved < stoneStyle.tapDistance) {
+      // A plain click turns the stone where it is.
+      if (v.lastPlacement) {
+        v.placed = v.lastPlacement;
+        this.placedCount++;
+      }
+      this.turn(1, v);
+      return;
+    }
     const placement = this.snapPlacement(i, v);
     if (placement && this.canPlace(i, placement)) {
       this.place(i, placement);
@@ -397,6 +440,7 @@ export class StoneLevelScene implements LevelScene {
   private turn(direction: 1 | -1, target: PieceView | null = this.dragging ?? this.hovered ?? this.lastTouched): void {
     if (this.solved || !target || target.animating) return;
     const i = this.views.indexOf(target);
+    const wasAt = target.placed;
     if (target.placed) this.unplace(i);
     target.rot = (target.rot + direction + 4) % 4;
     this.voice.turn();
@@ -411,7 +455,10 @@ export class StoneLevelScene implements LevelScene {
         target.root.rotation = 0;
         target.animating = false;
         this.redrawPiece(i);
-        if (!this.dragging && !target.placed) this.returnToTray(i);
+        if (this.dragging === target || target.placed) return;
+        const again = wasAt ? { ...wasAt, rot: target.rot } : null;
+        if (again && this.canPlace(i, again)) this.place(i, again, true);
+        else this.returnToTray(i);
       },
     });
   }
@@ -456,35 +503,43 @@ export class StoneLevelScene implements LevelScene {
     return placed;
   }
 
-  showClue(tier: ClueTier): void {
+  showClue(tier: ClueTier): string | void {
     if (this.solved) return;
     const placed = this.currentPlacements();
+    let caption: string | undefined;
     switch (tier) {
       case 1: {
         const clue = pieceClue(this.level, placed, `${this.level.seed}:clue1`);
-        if (clue) this.ghosts.push({ ...clue, until: null });
+        if (!clue) return 'Every stone is already on the board.';
+        this.ghosts = this.ghosts.filter((g) => g.until !== null);
+        this.ghosts.push({ ...clue, until: null });
+        caption = 'The outline shows where one of your stones belongs. Match its shape exactly.';
         break;
       }
       case 2: {
-        const clue = pieceClue(this.level, placed, `${this.level.seed}:clue2`);
-        if (!clue) return;
+        const clue = pieceClue(this.level, placed, `${this.level.seed}:clue2:${this.placedCount}`);
+        if (!clue) return 'Every stone is already on the board.';
         const v = this.views[clue.piece]!;
         if (this.dragging === v) this.dragging = null;
         this.place(clue.piece, clue.placement, true);
         this.voice.settle(this.placedCount);
+        caption = 'One stone has settled into its place by itself.';
         break;
       }
       case 3:
         this.seamSolution = solutionFor(this.level, placed);
         this.seamsUntil = this.time + stoneStyle.clueGhostSeconds;
+        caption = 'For a moment, the seams show how the shape divides into stones.';
         break;
       case 4:
         for (const g of halfClue(this.level, placed, `${this.level.seed}:clue4`)) {
           this.ghosts.push({ ...g, until: this.time + stoneStyle.clueGhostSeconds });
         }
+        caption = 'For a moment, outlines show where half of the stones belong.';
         break;
     }
     this.drawClues();
+    return caption;
   }
 
   private drawClues(): void {
@@ -617,9 +672,14 @@ export class StoneLevelScene implements LevelScene {
   }
 
   introLines(): string[] {
-    const lines = ['Drag the stones into the shape until it is filled exactly.', 'Scroll or press R to turn a stone.'];
-    if (this.level.allowFlip) lines.push('Double-click or press F to flip a stone over.');
-    if (this.level.chapter >= 3) lines.push('Some stones look alike. Look closely.');
+    const lines = [
+      'Drag the stones from below into the outline until it is filled exactly.',
+      'A stone only settles when all of it fits inside the outline on empty ground.',
+      'If it does not fit, it slides back down. Feel for the pull when it is close.',
+      'Click a stone to turn it. Scroll over it or press R to turn it too.',
+    ];
+    if (this.level.allowFlip) lines.push('Double-click a stone, or press F, to flip it over. Some stones only fit flipped.');
+    if (this.level.chapter >= 3) lines.push('Some stones look alike but differ by one corner. Look closely.');
     return lines;
   }
 

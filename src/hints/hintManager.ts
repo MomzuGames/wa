@@ -105,8 +105,9 @@ export class HintManager {
   }
 
   // Reveals the next tier regardless of attempts (the "ask for a hint" button).
-  forceReveal(): ClueTier | null {
-    if (this.revealed >= hintRules.tierThresholds.length) return null;
+  // Once every tier has been shown, keeps handing out concrete steps (tier 2).
+  forceReveal(): ClueTier {
+    if (this.revealed >= hintRules.tierThresholds.length) return 2;
     if (this.units < hintRules.tierThresholds[this.revealed]!) this.units = hintRules.tierThresholds[this.revealed]!;
     this.revealed++;
     return this.revealed as ClueTier;

@@ -13,6 +13,8 @@ const titleStyle = {
   letterSpacing: 22,
   logoOffsetY: -120,
   dotOffsetY: 40,
+  floatAmount: 10,
+  anticEvery: 5,
 } as const;
 
 export class TitleScene implements Scene {
@@ -20,6 +22,8 @@ export class TitleScene implements Scene {
   private logo: Text;
   private dot: BreathingDot;
   private pressed = false;
+  private anticTimer: gsap.core.Tween | null = null;
+  private floatTween: gsap.core.Tween | null = null;
 
   constructor(private onStart: () => void) {
     this.logo = new Text({
@@ -35,6 +39,7 @@ export class TitleScene implements Scene {
     });
     this.logo.anchor.set(0.5);
     this.logo.alpha = 0;
+    this.logo.eventMode = 'none';
 
     this.dot = new BreathingDot('mint', () => this.press());
     this.container.addChild(this.logo, this.dot);
@@ -47,6 +52,29 @@ export class TitleScene implements Scene {
       duration: scaled(durations.logoFadeIn),
       ease: easings.ambient,
       delay: 0.3,
+    });
+    // The title drifts like something floating on water.
+    this.floatTween = gsap.to(this.logo, {
+      y: `+=${titleStyle.floatAmount}`,
+      rotation: 0.012,
+      duration: durations.breathe,
+      ease: easings.ambient,
+      yoyo: true,
+      repeat: -1,
+    });
+    this.scheduleAntic();
+  }
+
+  // Every so often the light hops up onto a letter of the title, wobbles, and hops back.
+  private scheduleAntic(): void {
+    this.anticTimer?.kill();
+    this.anticTimer = gsap.delayedCall(titleStyle.anticEvery, () => {
+      if (this.pressed) return;
+      const letters = GAME_TITLE.length;
+      const k = Math.floor(Math.random() * letters);
+      const x = this.logo.x - this.logo.width / 2 + ((k + 0.5) / letters) * this.logo.width;
+      const y = this.logo.y - this.logo.height / 2 - 26;
+      void this.dot.visit(x, y).then(() => this.scheduleAntic());
     });
   }
 
@@ -66,10 +94,12 @@ export class TitleScene implements Scene {
     const cy = height / 2;
     // Nudge the letter-spacing trailing gap so the word looks centred.
     this.logo.position.set(cx + titleStyle.letterSpacing / 2, cy + titleStyle.logoOffsetY);
-    this.dot.position.set(cx, cy + titleStyle.dotOffsetY);
+    this.dot.settle(cx, cy + titleStyle.dotOffsetY);
   }
 
   destroy(): void {
+    this.anticTimer?.kill();
+    this.floatTween?.kill();
     this.container.destroy({ children: true });
   }
 }

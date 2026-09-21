@@ -23,6 +23,7 @@ const mapStyle = {
   twinkleAlpha: 0.3,
   pulseSpeed: 0.18,
   spiritOffsetY: -78,
+  orbitRadius: 96,
 } as const;
 
 // Region positions as fractions of the screen, forming a gentle winding journey.
@@ -116,9 +117,20 @@ export class WorldMapScene implements Scene {
   }
 
   enter(): void {
-    const spot = this.spiritSpot(this.reveal ? this.reveal.completed : this.activeRegion());
-    events.emit('spirit:glide', { x: spot.x, y: spot.y });
+    const active = this.reveal ? this.reveal.completed : this.activeRegion();
+    const spot = this.spiritSpot(active);
+    this.nodes.get(active)!.setFocused(true);
+    void this.glideThenOrbit(active, spot);
     if (this.reveal) void this.playReveal(this.reveal.completed);
+  }
+
+  // The light settles at a region and then circles it slowly, like it lives there.
+  private async glideThenOrbit(id: RegionId, spot: { x: number; y: number }): Promise<void> {
+    events.emit('spirit:glide', { x: spot.x, y: spot.y });
+    await new Promise((r) => gsap.delayedCall(scaled(durations.sceneTransition) + 0.2, r));
+    if (this.container.destroyed) return;
+    const p = this.position(id);
+    events.emit('spirit:orbit', { x: p.x + this.world.x, y: p.y + this.world.y, radius: mapStyle.orbitRadius });
   }
 
   update(dt: number): void {
@@ -168,8 +180,9 @@ export class WorldMapScene implements Scene {
     await this.drawLitPath(completed, next);
     this.pendingReveal = null;
     await this.nodes.get(next)!.setState(this.stateFor(next), false);
-    const spot = this.spiritSpot(next);
-    events.emit('spirit:glide', { x: spot.x, y: spot.y, duration: durations.completion * 0.6 });
+    this.nodes.get(completed)!.setFocused(false);
+    this.nodes.get(next)!.setFocused(true);
+    void this.glideThenOrbit(next, this.spiritSpot(next));
   }
 
   private position(id: RegionId): { x: number; y: number } {

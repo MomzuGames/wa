@@ -22,7 +22,8 @@ export interface LevelScene {
   container: Container;
   on(event: 'attempt' | 'solved' | 'move', cb: () => void): void;
   restart(): void;
-  showClue(tier: ClueTier): void;
+  // Shows a clue and returns a one-line caption explaining what just happened.
+  showClue(tier: ClueTier): string | void;
   playCompletion(): Promise<void>;
   resize?(width: number, height: number): void;
   // For the instruction card: a small looping demonstration and a few short lines of text.

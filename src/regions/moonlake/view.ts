@@ -22,12 +22,15 @@ const lakeStyle = {
   clueSeconds: 3,
   tutorialDelay: 1.6,
   dotGap: 12,
+  shadowOffset: 4,
+  shadowAlpha: 0.45,
 } as const;
 
 type Handler = () => void;
 
 interface PadView {
   root: Container;
+  shadow: Graphics;
   disc: Graphics;
   ring: Graphics;
   hint: Graphics;
@@ -91,15 +94,16 @@ export class RippleLevelScene implements LevelScene {
   private buildPads(): void {
     this.level.nodes.forEach((_, i) => {
       const root = new Container();
+      const shadow = new Graphics();
       const ring = new Graphics();
       const disc = new Graphics();
       const hint = new Graphics();
-      root.addChild(hint, ring, disc);
+      root.addChild(hint, shadow, ring, disc);
       root.eventMode = 'static';
       root.cursor = 'pointer';
       root.on('pointertap', () => this.pressPad(i));
       this.padsLayer.addChild(root);
-      this.views.push({ root, disc, ring, hint });
+      this.views.push({ root, shadow, disc, ring, hint });
     });
   }
 
@@ -144,6 +148,7 @@ export class RippleLevelScene implements LevelScene {
     const lit = s === this.level.states - 1;
     const alpha = lit ? lakeStyle.litAlpha : s === 0 ? lakeStyle.darkAlpha : lakeStyle.halfAlpha;
     const r = this.radius;
+    v.shadow.clear().circle(lakeStyle.shadowOffset * 0.6, lakeStyle.shadowOffset, r).fill({ color: palette.shadow, alpha: lakeStyle.shadowAlpha });
     v.disc.clear();
     v.disc.circle(0, 0, Math.max(layout.minHitSize / 2, r)).fill({ color: palette.pearl, alpha: 0.001 });
     // A lily pad: a disc with a small notch.
@@ -225,23 +230,31 @@ export class RippleLevelScene implements LevelScene {
     if (this.isTutorial) this.scheduleTutorial();
   }
 
-  showClue(tier: ClueTier): void {
+  showClue(tier: ClueTier): string | void {
     if (this.solved) return;
+    let caption: string | undefined;
     switch (tier) {
       case 1:
-      case 2:
-        for (const i of nodeClue(this.level, this.state, tier === 1 ? 1 : 2, this.hinted, `${this.level.seed}:clue${tier}`)) this.hinted.add(i);
+      case 2: {
+        const found = nodeClue(this.level, this.state, 1, this.hinted, `${this.level.seed}:clue${tier}:${this.hinted.size}`);
+        if (found.length === 0) return this.hinted.size ? 'Press the pads that are glowing.' : 'No single press helps from here: try restarting the level.';
+        for (const i of found) this.hinted.add(i);
+        caption = this.hinted.size === 1 ? 'Press the glowing pad.' : 'Another pad glows. Press every glowing pad, in any order.';
         break;
+      }
       case 3:
         this.countValue = countClue(this.level, this.state);
         this.countUntil = this.time + lakeStyle.clueSeconds;
         this.drawDots(this.ctx.width, this.ctx.height);
+        caption = `The dots below show how many presses are still needed: ${this.countValue}.`;
         break;
       case 4:
         this.shimmer = { nodes: halfClue(this.level, this.state, `${this.level.seed}:clue4`), until: this.time + lakeStyle.clueSeconds };
+        caption = 'For a moment, half of the pads still to press shimmer.';
         break;
     }
     this.views.forEach((_, i) => this.drawPad(i));
+    return caption;
   }
 
   private scheduleTutorial(): void {
@@ -312,9 +325,13 @@ export class RippleLevelScene implements LevelScene {
   }
 
   introLines(): string[] {
-    const lines = ['Light every lily pad.', 'Pressing a pad changes it and every pad touching it.'];
-    if (this.level.states === 3) lines.push('Pads here have three states: dark, half-lit and lit.');
-    if (this.level.nodes.some((n) => n.wide)) lines.push('Ringed pads send their ripple two pads away.');
+    const lines = [
+      'Light every lily pad.',
+      'Pressing a pad flips it and every pad joined to it by a line: dark pads light up, lit pads go dark.',
+      'Pressing the same pad twice undoes it. The order of presses does not matter.',
+    ];
+    if (this.level.states === 3) lines.push('Here pads have three states: dark, half-lit, then lit. A press moves each one a step.');
+    if (this.level.nodes.some((n) => n.wide)) lines.push('A pad with an outer ring sends its ripple two pads away.');
     return lines;
   }
 

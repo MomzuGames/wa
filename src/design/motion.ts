@@ -36,11 +36,11 @@ export const heroBreathe = {
 
 export const dust = {
   count: 32,
-  speedMin: 2,
-  speedMax: 9,
+  speedMin: 5,
+  speedMax: 16,
   radiusMin: 1.6,
   radiusMax: 4,
-  wobble: 0.35,
+  wobble: 0.9,
 } as const;
 
 let reducedBySetting = false;

@@ -13,7 +13,9 @@ The player journeys across a **world map of 5 regions**. Each region is one visu
 The feeling to aim for: **meditative focus**. Think soft glowing light on black, slow breathing motion, gentle generative music, and a steady sense of mastery.
 
 ### Character
-- **The light** is the player's companion: the breathing dot on the title screen becomes a small travelling spirit (`ui/spirit.ts`). It glides to the current region on the map, hops along the level trail, sits beside the level number while playing, flinches on a failed attempt and bounces on a solve. Scenes talk to it only through `spirit:*` events.
+- **The light** is the player's companion: a small creature with a blinking face (`ui/face.ts`). On the title it hops up onto the letters; on the map it orbits the current region and leaves a streak of light when it travels; on the trail it hops to your level; in a level it sits by the level number, does little antics when idle, flinches on a mistake and spins with sparks on a solve. Scenes talk to it only through `spirit:*` events (`ui/spirit.ts`).
+- **Every hint explains itself.** `showClue` returns a caption shown in a toast (`ui/toast.ts`); hints are one concrete thing at a time and region-specific (a tile turns into place; a start star pulses; a stone outline appears; a mirror locks; one pad glows). After all four tiers, the hint button keeps giving concrete steps.
+- **Depth:** a spotlight under every puzzle, shadows under tiles, stones and pads, a colour wash and region-specific backdrop (`fx/atmosphere.ts`: caustics, star field, raked sand, crystal facets, waves and fireflies) with pointer parallax, and the map shows each region's name and colour pool on hover/focus.
 - **Nothing is static.** The map drifts slowly, stars twinkle, each region figure has its own idle life, light pulses travel along completed trails, and every region has an atmosphere layer (`fx/atmosphere.ts`) behind its trail and puzzles.
 - **Instruction cards** (`ui/levelIntro.ts`) show level number, chapter dots, a looping animated demo (`LevelScene.introGlyph`), short caption lines (`LevelScene.introLines`) and a continue button. A card appears by itself only when a level's lines contain something the player has not seen in that region (tracked in the save); the `?` button in the HUD reopens it any time. The bulb button asks "Would you like a hint?" and reveals the next clue tier on yes, even before it is earned.
 - **Music:** the drone plays on the title screen, the map is quiet, and each region has its own generative bed (`audio/beds.ts`) that plays on its trail and in its levels, cross-faded by `AudioEngine.setScene`. Map audio layering is intentionally not implemented.
@@ -269,7 +271,7 @@ For every region:
 - All other levels are generated from seeds.
 
 ### Region 1 — Tidepools (Loop) · accent `mint`
-- **Board:** a grid of tiles. Each tile has 0–4 connectors (end, straight, corner, T, cross).
+- **Board:** a grid of tiles. Each tile has 0–4 connectors (end, straight, corner, T, cross). Every level of every region is verified solvable by its solver in tests (`src/regions/allLevels.test.ts` plus per-region suites).
 - **Input:** click to rotate clockwise; right-click (or Shift-click) rotates counter-clockwise. Rotation is a smooth 90° tween with a slight overshoot.
 - **Win condition:** every connector meets a matching connector, with no open ends. Accept **any** valid configuration, not just the stored one.
 - **Generator:** randomly create consistent connections between neighbouring cells, derive the tile types, then scramble the rotations. Reject levels where the scrambled board is already solved or has more than 20% blank tiles.
@@ -314,7 +316,7 @@ For every region:
 - **Grid model:** keeps geometry exact. Each grid cell is split by its diagonals into 4 triangles (N, E, S, W). A piece is a connected set of these triangles.
 - **Input:**
   - Drag pieces from the tray; they snap to the whole-cell grid, with smooth magnetic easing when near a snap point.
-  - Rotate 90° with the scroll wheel, the `R` key or a two-finger trackpad rotate.
+  - Rotate 90° by clicking a stone (without dragging), with the scroll wheel, or the `R` key. Stones snap magnetically when near a spot where they fit, and a stone turned in place stays if it still fits.
   - Flip with a double-click or the `F` key (from chapter 3 onward).
 - **Win condition:** the placed triangles cover the silhouette exactly, with no overlap and nothing outside it. Accept any exact cover.
 - **Generator:** grow a random silhouette (or use a handcrafted figure), partition it into pieces by seeded region-growing (with a range of piece sizes), then scramble rotation and flip into the tray. Reject levels where pieces are trivially identical.

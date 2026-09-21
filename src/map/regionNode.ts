@@ -1,8 +1,8 @@
 import gsap from 'gsap';
-import { Container, Graphics } from 'pixi.js';
+import { Container, FillGradient, Graphics, Text } from 'pixi.js';
 import type { RegionId } from '../regions/types';
-import { REGION_ACCENT } from '../regions/catalog';
-import { alphas, palette } from '../design/palette';
+import { REGION_ACCENT, REGION_NAME } from '../regions/catalog';
+import { alphas, palette, rgba } from '../design/palette';
 import { breathe, durations, easings, scaled } from '../design/motion';
 import { layout } from '../design/layout';
 import { createGlow } from '../fx/glow';
@@ -74,7 +74,10 @@ export class RegionNode extends Container {
   private fill = new Graphics();
   private hit = new Graphics();
   private life = new Graphics();
+  private nameLabel: Text;
+  private aura = new Graphics();
   private time = 0;
+  private focused = false;
   private breatheTween: gsap.core.Tween | null = null;
   private _state: RegionState = 'locked';
   readonly accent: number;
@@ -85,7 +88,32 @@ export class RegionNode extends Container {
     const half = regionNodeStyle.size / 2;
     this.hit.circle(0, 0, Math.max(layout.minHitSize, half * 0.9)).fill({ color: palette.pearl, alpha: 0.001 });
     this.life.eventMode = 'none';
-    this.addChild(this.hit, this.fill, this.outline, this.life);
+    this.aura.eventMode = 'none';
+    // A soft pool of the region's own colour beneath the figure, brighter when focused.
+    const gradient = new FillGradient({
+      type: 'radial',
+      center: { x: 0.5, y: 0.5 },
+      innerRadius: 0,
+      outerCenter: { x: 0.5, y: 0.5 },
+      outerRadius: 0.5,
+      colorStops: [
+        { offset: 0, color: rgba(REGION_ACCENT[id], 0.16) },
+        { offset: 1, color: rgba(REGION_ACCENT[id], 0) },
+      ],
+    });
+    this.aura.circle(0, 0, regionNodeStyle.size * 2.2).fill(gradient);
+    this.aura.blendMode = 'screen';
+    this.aura.alpha = 0;
+    this.nameLabel = new Text({
+      text: REGION_NAME[id],
+      style: { fontFamily: 'Quicksand', fontWeight: '300', fontSize: 15, letterSpacing: 5, fill: palette.pearl },
+      resolution: window.devicePixelRatio || 1,
+    });
+    this.nameLabel.anchor.set(0.5);
+    this.nameLabel.y = regionNodeStyle.size * 0.72;
+    this.nameLabel.alpha = 0;
+    this.nameLabel.eventMode = 'none';
+    this.addChild(this.aura, this.hit, this.fill, this.outline, this.life, this.nameLabel);
     this.eventMode = 'static';
     this.on('pointertap', () => {
       if (this._state !== 'locked') onPress();
@@ -122,6 +150,7 @@ export class RegionNode extends Container {
       });
     }
 
+    if (state !== 'locked' && !this.focused) this.aura.alpha = 0.45;
     this.fill.clear();
     if (state === 'complete') {
       drawFigure(this.fill, this.id, regionNodeStyle.size);
@@ -193,5 +222,18 @@ export class RegionNode extends Container {
   private hover(over: boolean): void {
     if (this._state === 'locked') return;
     gsap.to(this, { alpha: over ? 1 : alphas.hudHover, duration: durations.hudHover });
+    this.showName(over || this.focused);
+    gsap.to(this.aura, { alpha: over || this.focused ? 1 : 0.45, duration: durations.panelToggle });
+  }
+
+  // The region the player is "at" keeps its name and aura showing.
+  setFocused(focused: boolean): void {
+    this.focused = focused;
+    this.showName(focused);
+    gsap.to(this.aura, { alpha: focused ? 1 : this._state === 'locked' ? 0 : 0.45, duration: durations.panelToggle });
+  }
+
+  private showName(visible: boolean): void {
+    gsap.to(this.nameLabel, { alpha: visible ? alphas.hudHover : 0, y: regionNodeStyle.size * (visible ? 0.72 : 0.78), duration: durations.panelToggle, ease: easings.response });
   }
 }

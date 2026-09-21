@@ -36,12 +36,15 @@ const loopStyle = {
   flowSpacing: 0.9,
   clueGhostSeconds: 3,
   tutorialDelay: 1.6,
+  shadowOffset: 4,
+  shadowAlpha: 0.45,
 } as const;
 
 type Handler = () => void;
 
 interface TileView {
   root: Container;
+  shadow: Graphics;
   base: Graphics;
   pipes: Graphics;
   lit: Graphics;
@@ -114,6 +117,7 @@ export class LoopLevelScene implements LevelScene {
         return;
       }
       const root = new Container();
+      const shadow = new Graphics();
       const base = new Graphics();
       const pipes = new Graphics();
       const mark = new Graphics();
@@ -123,14 +127,14 @@ export class LoopLevelScene implements LevelScene {
       mark.visible = false;
       ghost.visible = false;
       lit.visible = false;
-      root.addChild(base, mark, pipes, lockDot);
+      root.addChild(shadow, base, mark, pipes, lockDot);
       this.boardLayer.addChild(root);
       this.litLayer.addChild(lit);
       this.ghostLayer.addChild(ghost);
       root.eventMode = 'static';
       root.cursor = tile.locked ? 'default' : 'pointer';
       root.on('pointerdown', (e: FederatedPointerEvent) => this.onPress(i, e));
-      this.views.push({ root, base, pipes, lit, mark, ghost, lockDot, flowPhase: 0, animating: false, spin: 0 });
+      this.views.push({ root, shadow, base, pipes, lit, mark, ghost, lockDot, flowPhase: 0, animating: false, spin: 0 });
     });
   }
 
@@ -181,10 +185,15 @@ export class LoopLevelScene implements LevelScene {
     const half = this.cell / 2;
     const gap = this.cell * loopStyle.gapFraction;
     const size = this.cell - gap * 2;
+    v.shadow
+      .clear()
+      .roundRect(-half + gap + loopStyle.shadowOffset * 0.6, -half + gap + loopStyle.shadowOffset, size, size, this.cell * loopStyle.cornerFraction)
+      .fill({ color: palette.shadow, alpha: loopStyle.shadowAlpha });
     v.base
       .clear()
       .roundRect(-half + gap, -half + gap, size, size, this.cell * loopStyle.cornerFraction)
-      .fill({ color: palette.ink });
+      .fill({ color: palette.ink })
+      .stroke({ color: palette.dim, width: 1, alpha: 0.5 });
     this.drawPipes(v.pipes, tile.mask, palette.dim, 1);
     v.spin = (tile.rotation * Math.PI) / 2;
     v.pipes.rotation = v.spin;
@@ -326,15 +335,15 @@ export class LoopLevelScene implements LevelScene {
     if (this.isTutorial) this.scheduleTutorial();
   }
 
-  showClue(tier: ClueTier): void {
+  showClue(tier: ClueTier): string | void {
     if (this.solved) return;
     switch (tier) {
       case 1:
       case 2: {
-        const clue = lockClue(this.board, tier === 1 ? 1 : 2, `${this.level.seed}:clue${tier}`);
-        if (!clue) return;
+        const clue = lockClue(this.board, tier === 1 ? 1 : 2, `${this.level.seed}:clue${tier}:${this.clueLocked.size}`);
+        if (!clue || clue.cells.length === 0) return 'Every tile that can be fixed already is. The rest is yours.';
         clue.cells.forEach((i, k) => this.lockTile(i, clue.rotations[k]!));
-        break;
+        return clue.cells.length === 1 ? 'That tile has turned into place and will stay put.' : 'Two more tiles have turned into place and will stay put.';
       }
       case 3: {
         for (const i of forcedClue(this.board).cells) {
@@ -343,7 +352,7 @@ export class LoopLevelScene implements LevelScene {
           v.mark.alpha = 0;
           gsap.to(v.mark, { alpha: 1, duration: scaled(durations.pieceMove) });
         }
-        break;
+        return 'Framed tiles sit against an edge: their lines can only face one way.';
       }
       case 4: {
         const clue = ghostClue(this.board, `${this.level.seed}:clue4`);
@@ -364,7 +373,7 @@ export class LoopLevelScene implements LevelScene {
             },
           });
         });
-        break;
+        return 'For a moment, half the tiles show the shape they should make.';
       }
     }
   }
@@ -486,9 +495,14 @@ export class LoopLevelScene implements LevelScene {
   }
 
   introLines(): string[] {
-    const lines = ['Turn the tiles until every line meets another line.', 'Click to turn. Right-click to turn back.'];
-    if (this.level.chapter >= 2) lines.push('Tiles with a dot are already in place.');
-    if (this.level.chapter >= 3) lines.push('Larger boards may hold more than one loop.');
+    const lines = [
+      'Turn the tiles until every line meets a line on the next tile.',
+      'A line pointing at the edge, or at an empty tile, is not connected.',
+      'Connected tiles light up. The level is done when nothing is left dark.',
+      'Click a tile to turn it. Right-click to turn it the other way.',
+    ];
+    if (this.level.chapter >= 2) lines.push('Tiles with a small dot are already correct and cannot turn.');
+    if (this.level.chapter >= 3) lines.push('Larger boards may hold more than one separate loop.');
     return lines;
   }
 

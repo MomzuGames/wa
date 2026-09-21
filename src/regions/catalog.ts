@@ -3,6 +3,14 @@ import type { PaletteToken } from '../design/palette';
 
 export const REGION_ORDER: RegionId[] = ['tidepools', 'nightsky', 'stonegarden', 'crystalcaves', 'moonlake'];
 
+export const REGION_NAME: Record<RegionId, string> = {
+  tidepools: 'Tidepools',
+  nightsky: 'Night Sky',
+  stonegarden: 'Stone Garden',
+  crystalcaves: 'Crystal Caves',
+  moonlake: 'Moon Lake',
+};
+
 export const REGION_ACCENT: Record<RegionId, PaletteToken> = {
   tidepools: 'mint',
   nightsky: 'lavender',

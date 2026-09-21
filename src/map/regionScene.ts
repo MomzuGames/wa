@@ -1,5 +1,5 @@
 import gsap from 'gsap';
-import { Container, Graphics, Text } from 'pixi.js';
+import { Container, FederatedPointerEvent, Graphics, Text } from 'pixi.js';
 import type { Scene } from '../core/sceneManager';
 import type { RegionId } from '../regions/types';
 import { REGION_ACCENT } from '../regions/catalog';
@@ -44,6 +44,7 @@ export class RegionScene implements Scene {
   private atmosphere: Atmosphere;
   private pulse = new Graphics();
   private time = 0;
+  private screen = { x: 1, y: 1 };
 
   constructor(
     private regionId: RegionId,
@@ -55,6 +56,10 @@ export class RegionScene implements Scene {
     this.pulse.eventMode = 'none';
     this.pulse.filters = [createGlow(this.accent, { distance: 10, strength: 1.2 })];
     this.container.addChild(this.atmosphere.container, this.trail, this.pulse);
+    this.container.eventMode = 'static';
+    this.container.on('globalpointermove', (e: FederatedPointerEvent) => {
+      this.atmosphere.setParallax(e.global.x / Math.max(1, this.screen.x) - 0.5, e.global.y / Math.max(1, this.screen.y) - 0.5);
+    });
     for (let i = 0; i < progression.levelsPerRegion; i++) {
       const isChapterEnd = (i + 1) % progression.levelsPerChapter === 0;
       const radius = isChapterEnd ? trailStyle.chapterEndRadius : trailStyle.nodeRadius;
@@ -190,6 +195,7 @@ export class RegionScene implements Scene {
   }
 
   resize(width: number, height: number): void {
+    this.screen = { x: width, y: height };
     this.atmosphere.resize(width, height);
     const perRow = progression.levelsPerChapter;
     const rows = progression.chapters;

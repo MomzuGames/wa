@@ -340,13 +340,14 @@ export class PrismLevelScene implements LevelScene {
     if (this.isTutorial) this.scheduleTutorial();
   }
 
-  showClue(tier: ClueTier): void {
+  showClue(tier: ClueTier): string | void {
     if (this.solved) return;
+    let caption: string | undefined;
     switch (tier) {
       case 1:
       case 2: {
-        const clue = lockClue(this.level, this.orients, this.locked, tier === 1 ? 1 : 2, `${this.level.seed}:clue${tier}`);
-        if (!clue) return;
+        const clue = lockClue(this.level, this.orients, this.locked, tier === 1 ? 1 : 2, `${this.level.seed}:clue${tier}:${this.locked.size}`);
+        if (!clue || clue.pieces.length === 0) return 'Every piece that can be fixed already is.';
         clue.pieces.forEach((i, k) => {
           const target = clue.orients[k]!;
           if (this.orients[i] !== target) this.turn(i, target);
@@ -354,21 +355,25 @@ export class PrismLevelScene implements LevelScene {
           if (this.orients[i] === target && !this.views[i]!.animating) this.drawPiece(i);
           this.views[i]!.root.cursor = 'default';
         });
+        caption = clue.pieces.length === 1 ? 'That piece has turned to its correct angle and will stay put.' : 'Two more pieces have turned to their correct angles and will stay put.';
         break;
       }
       case 3:
         this.routeSegments = routeClue(this.level, this.orients);
         this.routeUntil = this.time + prismStyle.clueSeconds;
+        caption = 'For a moment, dots trace the path each beam should take.';
         break;
       case 4: {
         const clue = ghostClue(this.level, this.orients, `${this.level.seed}:clue4`);
         if (!clue) return;
         this.ghostPieces = clue.pieces.map((piece, k) => ({ piece, orient: clue.orients[k]! }));
         this.ghostUntil = this.time + prismStyle.clueSeconds;
+        caption = 'For a moment, half the pieces show the angle they should have.';
         break;
       }
     }
     this.drawClues();
+    return caption;
   }
 
   private scheduleTutorial(): void {
@@ -418,10 +423,15 @@ export class PrismLevelScene implements LevelScene {
   }
 
   introLines(): string[] {
-    const lines = ['Turn the mirrors so every crystal receives light.', 'Click a ringed piece to turn it.'];
-    if (this.level.pieces.some((p) => p.kind === 'splitter')) lines.push('Double lines split a beam in two.');
-    if (this.level.chapter >= 2) lines.push('Beams that meet at a crystal mix their colours. The marks below show what it needs.');
-    if (this.level.pieces.some((p) => p.kind === 'filter')) lines.push('Tinted squares let only their own colour through.');
+    const lines = [
+      'Turn the mirrors so a beam reaches every crystal.',
+      'Click a piece with a ring around it to turn it. Pieces without a ring are fixed.',
+      'A beam bounces off a mirror, passes straight through empty cells, and stops at a crystal, a stone or the edge.',
+      'A crystal lights fully only when it receives exactly the colour its marks show.',
+    ];
+    if (this.level.pieces.some((p) => p.kind === 'splitter')) lines.push('A double line lets half the beam through and bounces the other half.');
+    if (this.level.chapter >= 2) lines.push('Two beams meeting at a crystal mix: pink and blue make violet, blue and yellow make green.');
+    if (this.level.pieces.some((p) => p.kind === 'filter')) lines.push('A tinted square lets only its own colour pass.');
     return lines;
   }
 

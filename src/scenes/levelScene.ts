@@ -1,13 +1,14 @@
-import { Container, Text } from 'pixi.js';
+import { Container, FederatedPointerEvent, FillGradient, Graphics, Text } from 'pixi.js';
 import type { Scene } from '../core/sceneManager';
-import type { LevelScene, PuzzleModule, RegionId, ShellContext } from '../regions/types';
-import { alphas, palette } from '../design/palette';
+import type { ClueTier, LevelScene, PuzzleModule, RegionId, ShellContext } from '../regions/types';
+import { alphas, palette, rgba } from '../design/palette';
 import { durations, easings } from '../design/motion';
 import { layout } from '../design/layout';
 import { createRng } from '../core/rng';
 import { events } from '../core/events';
 import { getRegion, markIntroSeen } from '../core/save';
 import { ConfirmCard } from '../ui/confirm';
+import { Toast } from '../ui/toast';
 import { markSolved, recordAttempts } from '../core/progress';
 import { HintManager } from '../hints/hintManager';
 import { HintOrb } from '../hints/hintOrb';
@@ -43,7 +44,11 @@ export class LevelShellScene implements Scene {
   private moves = 0;
   private hud = new Container();
   private atmosphere: Atmosphere;
+  private spotlight = new Graphics();
+  private stage = new Container();
+  private parallax = { x: 0, y: 0 };
   private intro: LevelIntro | null = null;
+  private toast: Toast;
   private width: number;
   private height: number;
   private unsubscribe: Array<() => void> = [];
@@ -102,8 +107,11 @@ export class LevelShellScene implements Scene {
     this.moveLabel.anchor.set(0.5);
     this.moveLabel.alpha = alphas.hudIdle * 0.7;
 
-    this.hud.addChild(this.label, this.moveLabel, this.restartButton, this.orb);
-    this.container.addChild(this.atmosphere.container, this.level.container, this.hud);
+    this.toast = new Toast(accent);
+    this.hud.addChild(this.label, this.moveLabel, this.restartButton, this.orb, this.toast);
+    this.spotlight.eventMode = 'none';
+    this.stage.addChild(this.level.container);
+    this.container.addChild(this.atmosphere.container, this.spotlight, this.stage, this.hud);
 
     this.unsubscribe.push(
       events.on('input:restart', () => {
@@ -118,6 +126,10 @@ export class LevelShellScene implements Scene {
     document.addEventListener('visibilitychange', this.onVisibility);
     this.container.eventMode = 'static';
     this.container.on('pointerdown', () => this.hints.recordInput());
+    this.container.on('globalpointermove', (e: FederatedPointerEvent) => {
+      this.parallax = { x: e.global.x / this.width - 0.5, y: e.global.y / this.height - 0.5 };
+      this.atmosphere.setParallax(this.parallax.x, this.parallax.y);
+    });
 
     if (devFlags.enabled) this.installSolutionOverlay();
   }
@@ -154,11 +166,7 @@ export class LevelShellScene implements Scene {
     if (this.finished || this.intro) return;
     const card = new ConfirmCard('Would you like a hint?', palette[this.module.accent], (yes) => {
       if (!yes) return;
-      const tier = this.hints.forceReveal();
-      if (tier) {
-        this.level.showClue(tier);
-        events.emit('spirit:react', 'move');
-      }
+      this.applyClue(this.hints.forceReveal());
     });
     this.container.addChild(card);
     card.open(this.width, this.height);
@@ -174,6 +182,9 @@ export class LevelShellScene implements Scene {
     this.hints.tick(dt);
     this.orb.setFill(this.hints.fill, this.hints.hasUnrevealed);
     this.atmosphere.update(dt);
+    // The puzzle itself leans very slightly toward the pointer: the opposite of the backdrop.
+    this.stage.x += (this.parallax.x * 5 - this.stage.x) * Math.min(1, dt * 4);
+    this.stage.y += (this.parallax.y * 5 - this.stage.y) * Math.min(1, dt * 4);
   }
 
   resize(width: number, height: number): void {
@@ -181,6 +192,21 @@ export class LevelShellScene implements Scene {
     this.height = height;
     this.level.resize?.(width, height);
     this.atmosphere.resize(width, height);
+    const radius = Math.min(width, height) * 0.46;
+    const token = this.module.accent;
+    const gradient = new FillGradient({
+      type: 'radial',
+      center: { x: 0.5, y: 0.5 },
+      innerRadius: 0,
+      outerCenter: { x: 0.5, y: 0.5 },
+      outerRadius: 0.5,
+      colorStops: [
+        { offset: 0, color: rgba(token, 0.09) },
+        { offset: 0.6, color: rgba(token, 0.03) },
+        { offset: 1, color: rgba(token, 0) },
+      ],
+    });
+    this.spotlight.clear().circle(width / 2, height / 2, radius).fill(gradient);
     this.intro?.resize(width, height);
     const inset = layout.hudInset + layout.hudIconSize / 2;
     this.label.position.set(width / 2, inset);
@@ -198,7 +224,13 @@ export class LevelShellScene implements Scene {
   private revealClue(): void {
     if (this.finished) return;
     const tier = this.hints.reveal();
-    if (tier) this.level.showClue(tier);
+    if (tier) this.applyClue(tier);
+  }
+
+  private applyClue(tier: ClueTier): void {
+    const caption = this.level.showClue(tier);
+    if (caption) this.toast.show(caption, this.width, this.height);
+    events.emit('spirit:react', 'move');
   }
 
   private async solved(): Promise<void> {
@@ -221,7 +253,7 @@ export class LevelShellScene implements Scene {
   destroy(): void {
     this.unsubscribe.forEach((u) => u());
     document.removeEventListener('visibilitychange', this.onVisibility);
-    this.container.removeChild(this.level.container);
+    this.stage.removeChild(this.level.container);
     this.level.destroy();
     this.atmosphere.destroy();
     this.container.destroy({ children: true });

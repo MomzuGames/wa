@@ -5,6 +5,7 @@ export type SpiritReaction = 'move' | 'attempt' | 'solved' | 'hide' | 'show';
 export interface GameEvents {
   'settings:changed': Settings;
   'spirit:glide': { x: number; y: number; duration?: number; hop?: boolean };
+  'spirit:orbit': { x: number; y: number; radius: number };
   'spirit:react': SpiritReaction;
   'audio:started': void;
   'input:back': void;
