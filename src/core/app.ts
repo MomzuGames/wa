@@ -12,6 +12,8 @@ export async function createApp(mount: HTMLElement): Promise<Application> {
     preference: 'webgl',
   });
   mount.appendChild(app.canvas);
+  // Right-click is a game input (counter-clockwise rotation), not a menu.
+  app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   return app;
 }
 

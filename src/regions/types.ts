@@ -24,6 +24,7 @@ export interface LevelScene {
   restart(): void;
   showClue(tier: ClueTier): void;
   playCompletion(): Promise<void>;
+  resize?(width: number, height: number): void;
   destroy(): void;
 }
 

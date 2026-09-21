@@ -27,8 +27,16 @@ export class AudioEngine {
   private ambient: Ambient | null = null;
   private uiVoice: Tone.PolySynth | null = null;
 
+  private readyCallbacks: Array<() => void> = [];
+
   get isStarted(): boolean {
     return this.started;
+  }
+
+  // Runs immediately if audio is up, otherwise once the first gesture has unlocked it.
+  onReady(cb: () => void): void {
+    if (this.started) cb();
+    else this.readyCallbacks.push(cb);
   }
 
   get music(): Tone.ToneAudioNode {
@@ -75,6 +83,8 @@ export class AudioEngine {
     this.applySettings(getSettings());
     events.on('settings:changed', (s) => this.applySettings(s));
     events.emit('audio:started');
+    this.readyCallbacks.forEach((cb) => cb());
+    this.readyCallbacks = [];
   }
 
   // The drone is title-screen only; it fades out as the player enters the game.

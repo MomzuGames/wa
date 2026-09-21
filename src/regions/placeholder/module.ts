@@ -193,9 +193,12 @@ class PlaceholderLevel implements LevelScene {
     this.container.destroy({ children: true });
   }
 
-  // Dev-only: the solution overlay for this placeholder is simply the correct index.
-  solutionIndex(): number {
-    return this.correct;
+  // Dev only: a faint ring around the correct dot.
+  showSolutionOverlay(): void {
+    const target = this.dots[this.correct]!;
+    const ring = new Graphics().circle(0, 0, placeholderStyle.dotRadius * 1.6).stroke({ color: palette.pearl, width: 1, alpha: 0.25 });
+    ring.position.copyFrom(target.position);
+    this.container.addChild(ring);
   }
 }
 

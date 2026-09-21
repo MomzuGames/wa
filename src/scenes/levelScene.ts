@@ -102,6 +102,7 @@ export class LevelShellScene implements Scene {
   }
 
   resize(width: number, height: number): void {
+    this.level.resize?.(width, height);
     const inset = layout.hudInset + layout.hudIconSize / 2;
     this.label.position.set(width / 2, inset);
     this.restartButton.position.set(width - inset, height - inset);
@@ -131,17 +132,9 @@ export class LevelShellScene implements Scene {
   }
 
   private installSolutionOverlay(): void {
-    // Only the placeholder exposes a solution today; real regions add their own in later phases.
-    const withSolution = this.level as LevelScene & { solutionIndex?: () => number };
-    if (!withSolution.solutionIndex) return;
-    const overlay = new Text({
-      text: `solution: dot ${withSolution.solutionIndex() + 1}`,
-      style: { fontFamily: 'Quicksand', fontSize: 12, fill: palette.pearl },
-      resolution: window.devicePixelRatio || 1,
-    });
-    overlay.alpha = alphas.hudIdle;
-    overlay.position.set(10, 10);
-    this.hud.addChild(overlay);
+    if (!import.meta.env.DEV) return;
+    const withOverlay = this.level as LevelScene & { showSolutionOverlay?: () => void };
+    withOverlay.showSolutionOverlay?.();
   }
 
   destroy(): void {
