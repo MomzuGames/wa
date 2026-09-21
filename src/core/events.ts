@@ -1,4 +1,5 @@
 import type { Settings } from './save';
+import type { PaletteToken } from '../design/palette';
 
 export type SpiritReaction = 'move' | 'attempt' | 'solved' | 'hide' | 'show';
 
@@ -6,11 +7,11 @@ export interface GameEvents {
   'settings:changed': Settings;
   'spirit:glide': { x: number; y: number; duration?: number; hop?: boolean };
   'spirit:orbit': { x: number; y: number; radius: number };
+  'spirit:tint': PaletteToken;
   'spirit:react': SpiritReaction;
   'audio:started': void;
   'progress:changed': void;
-  'sync:state': 'synced' | 'offline' | 'signed-out';
-  'auth:changed': { email: string | null };
+  'profile:changed': void;
   'input:back': void;
   'input:mute': void;
   'input:hint': void;

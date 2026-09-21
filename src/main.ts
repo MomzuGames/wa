@@ -4,7 +4,7 @@ import { createApp, onResize } from './core/app';
 import { SceneManager } from './core/sceneManager';
 import { installKeyboard } from './core/input';
 import { createRng } from './core/rng';
-import { load } from './core/save';
+import { hasProfiles, load } from './core/save';
 import { exposeDevHandles, installFpsMeter } from './core/dev';
 import { Game } from './core/game';
 import { Background } from './fx/background';
@@ -14,10 +14,7 @@ import { SettingsPanel } from './ui/settings';
 import { Hud } from './ui/hud';
 import { Spirit } from './ui/spirit';
 import { GAME_TITLE } from './config/game';
-import { AccountOverlay } from './ui/accountOverlay';
-import { completeSignInFromUrl, watchAuth } from './cloud/auth';
-import { installSyncTriggers, setSyncUser } from './cloud/sync';
-import { events } from './core/events';
+import { ProfileOverlay } from './ui/profileOverlay';
 
 async function main() {
   await document.fonts.load("300 64px 'Quicksand'", GAME_TITLE);
@@ -34,8 +31,8 @@ async function main() {
   const settings = new SettingsPanel(audio, () => game.restartJourney());
   const hud = new Hud(settings);
   const spirit = new Spirit(particles);
-  const account = new AccountOverlay();
-  const game = new Game({ app, scenes, audio, particles, hud, settings, openAccount: () => account.open() });
+  const profiles = new ProfileOverlay(() => game.profileChanged());
+  const game = new Game({ app, scenes, audio, particles, hud, settings, openAccount: () => profiles.open() });
 
   app.stage.addChild(background.container, scenes.root, particles.container, spirit, hud, settings);
 
@@ -59,15 +56,8 @@ async function main() {
   exposeDevHandles(app, scenes, audio, game);
 
   game.start();
-
-  // Cloud sign-in is optional: the game plays from the local save either way.
-  installSyncTriggers();
-  watchAuth((user) => {
-    setSyncUser(user);
-    events.emit('auth:changed', { email: user?.email ?? null });
-  });
-  const signedIn = await completeSignInFromUrl();
-  if (signedIn) account.open();
+  // First visit: choose or create a light before playing.
+  if (!hasProfiles()) profiles.open();
 }
 
 void main();

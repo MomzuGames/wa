@@ -45,13 +45,90 @@ function isSaveData(value: unknown): value is SaveData {
   return typeof value === 'object' && value !== null && (value as SaveData).version === 1;
 }
 
+// ----- Profiles: each player is a named light with its own save on this device -----
+
+export type ProfileColor = 'mint' | 'lavender' | 'peach' | 'sky' | 'rose';
+
+export interface Profile {
+  id: string;
+  name: string;
+  color: ProfileColor;
+  createdAt: number;
+}
+
+const PROFILES_KEY = `${SAVE_KEY}.profiles`;
+const CURRENT_KEY = `${SAVE_KEY}.current`;
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJson(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage may be full or blocked.
+  }
+}
+
+export function listProfiles(): Profile[] {
+  return readJson<Profile[]>(PROFILES_KEY, []);
+}
+
+export function hasProfiles(): boolean {
+  return listProfiles().length > 0;
+}
+
+export function currentProfile(): Profile | null {
+  const id = readJson<string | null>(CURRENT_KEY, null);
+  return listProfiles().find((p) => p.id === id) ?? null;
+}
+
+export function createProfile(name: string, color: ProfileColor): Profile {
+  const profile: Profile = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, name: name.trim().slice(0, 24), color, createdAt: Date.now() };
+  writeJson(PROFILES_KEY, [...listProfiles(), profile]);
+  return profile;
+}
+
+export function deleteProfile(id: string): void {
+  writeJson(PROFILES_KEY, listProfiles().filter((p) => p.id !== id));
+  try {
+    localStorage.removeItem(saveKeyFor(id));
+  } catch {
+    // ignore
+  }
+  if (currentProfile()?.id === id) writeJson(CURRENT_KEY, null);
+}
+
+// Switching profiles swaps the whole save in memory; callers re-enter the map afterwards.
+export function selectProfile(id: string): void {
+  writeJson(CURRENT_KEY, id);
+  current = null;
+  load();
+  events.emit('profile:changed');
+}
+
+function saveKeyFor(id: string): string {
+  return `${SAVE_KEY}.${id}`;
+}
+
+function activeKey(): string {
+  const profile = currentProfile();
+  return profile ? saveKeyFor(profile.id) : SAVE_KEY;
+}
+
 let current: SaveData | null = null;
 
 export function load(): SaveData {
   if (current) return current;
   const fresh = defaultSave();
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
+    const raw = localStorage.getItem(activeKey());
     const parsed: unknown = raw ? JSON.parse(raw) : null;
     if (isSaveData(parsed)) {
       current = {
@@ -72,7 +149,7 @@ export function load(): SaveData {
 export function persist(): void {
   if (!current) return;
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(current));
+    localStorage.setItem(activeKey(), JSON.stringify(current));
   } catch {
     // Storage may be full or blocked; the game keeps running from memory.
   }

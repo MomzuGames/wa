@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@fontsource/quicksand": "^5.1.0",
-    "firebase": "^12.19.0",
     "gsap": "^3.12.5",
     "pixi-filters": "^6.0.4",
     "pixi.js": "^8.5.2",

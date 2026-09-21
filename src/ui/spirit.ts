@@ -1,6 +1,6 @@
 import gsap from 'gsap';
 import { Container, FillGradient, Graphics } from 'pixi.js';
-import { palette, rgba } from '../design/palette';
+import { palette, rgba, type PaletteToken } from '../design/palette';
 import { breathe, durations, easings, reducedMotion, scaled } from '../design/motion';
 import { createGlow } from '../fx/glow';
 import type { ParticleSystem } from '../fx/particles';
@@ -36,24 +36,13 @@ export class Spirit extends Container {
   private orbit: { cx: number; cy: number; r: number; angle: number } | null = null;
   private idleTimer: gsap.core.Tween | null = null;
   private busy = false;
+  private hue: PaletteToken = 'mint';
 
   constructor(private particles: ParticleSystem) {
     super();
-    const gradient = new FillGradient({
-      type: 'radial',
-      center: { x: 0.5, y: 0.5 },
-      innerRadius: 0,
-      outerCenter: { x: 0.5, y: 0.5 },
-      outerRadius: 0.5,
-      colorStops: [
-        { offset: 0, color: rgba('mint', 0.8) },
-        { offset: 1, color: rgba('mint', 0) },
-      ],
-    });
-    this.halo.circle(0, 0, spiritStyle.haloRadius).fill(gradient);
     this.halo.blendMode = 'screen';
     this.dot.circle(0, 0, spiritStyle.radius).fill({ color: palette.pearl });
-    this.dot.filters = [createGlow(palette.mint, { distance: 16, strength: 1.4 })];
+    this.setTint('mint');
     this.face = new Face(spiritStyle.radius);
     this.body.addChild(this.halo, this.dot, this.face);
     this.addChild(this.body);
@@ -70,7 +59,26 @@ export class Spirit extends Container {
     events.on('spirit:glide', ({ x, y, duration, hop }) => (hop ? this.hop(x, y) : this.glideTo(x, y, duration)));
     events.on('spirit:orbit', ({ x, y, radius }) => this.startOrbit(x, y, radius));
     events.on('spirit:react', (r) => this.react(r));
+    events.on('spirit:tint', (t) => this.setTint(t));
     this.scheduleIdle();
+  }
+
+  // Each player's light has its own colour.
+  setTint(token: PaletteToken): void {
+    this.hue = token;
+    const gradient = new FillGradient({
+      type: 'radial',
+      center: { x: 0.5, y: 0.5 },
+      innerRadius: 0,
+      outerCenter: { x: 0.5, y: 0.5 },
+      outerRadius: 0.5,
+      colorStops: [
+        { offset: 0, color: rgba(token, 0.8) },
+        { offset: 1, color: rgba(token, 0) },
+      ],
+    });
+    this.halo.clear().circle(0, 0, spiritStyle.haloRadius).fill(gradient);
+    this.dot.filters = [createGlow(palette[token], { distance: 16, strength: 1.4 })];
   }
 
   show(x?: number, y?: number): void {
@@ -164,7 +172,7 @@ export class Spirit extends Container {
           this.particles.emit({
             x: this.x,
             y: this.y,
-            color: palette.mint,
+            color: palette[this.hue],
             vx: Math.cos(a) * 50,
             vy: Math.sin(a) * 50 - 20,
             life: 1,
@@ -243,7 +251,7 @@ export class Spirit extends Container {
       this.particles.emit({
         x: this.x + (Math.random() - 0.5) * 6,
         y: this.y + (Math.random() - 0.5) * 6,
-        color: k === 0 ? palette.mint : palette.pearl,
+        color: k === 0 ? palette[this.hue] : palette.pearl,
         vx: bx * 30 + (Math.random() - 0.5) * 10,
         vy: by * 30 - 6,
         life: spiritStyle.trailLife,

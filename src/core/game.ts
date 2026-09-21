@@ -4,6 +4,7 @@ import { events } from './events';
 import { devFlags } from './dev';
 import { createRng } from './rng';
 import { levelUnlocked, progression, setBypassLocks } from './progress';
+import { currentProfile } from './save';
 import type { RegionId, ShellContext } from '../regions/types';
 import { REGION_ORDER } from '../regions/catalog';
 import { getModule } from '../regions/registry';
@@ -42,6 +43,7 @@ export class Game {
   }
 
   start(): void {
+    this.applyProfileTint();
     if (devFlags.enabled) {
       setBypassLocks(true);
       const jump = new URLSearchParams(location.search).get('level');
@@ -142,6 +144,17 @@ export class Game {
 
   // Used by the settings reset so the player lands back on a fresh map.
   restartJourney(): void {
+    this.showMap();
+  }
+
+  private applyProfileTint(): void {
+    events.emit('spirit:tint', currentProfile()?.color ?? 'mint');
+  }
+
+  // A different light was chosen: recolour the companion and start from its map.
+  profileChanged(): void {
+    this.applyProfileTint();
+    if (this.deps.scenes.scene instanceof TitleScene) return;
     this.showMap();
   }
 }

@@ -42,8 +42,7 @@ The feeling to aim for: **meditative focus**. Think soft glowing light on black,
 | Tests | **Vitest** |
 | Fonts | `@fontsource/quicksand` (bundled locally so it works offline) |
 | Installable app | **vite-plugin-pwa** (installable from Chrome/Edge, works offline) |
-| Save data | `localStorage`, optionally synced to Firestore per signed-in user (`src/cloud/`) |
-| Accounts | Firebase Auth, passwordless email link; the game is fully playable signed out |
+| Save data | `localStorage`, one save per local profile ("light"); no accounts, nothing leaves the device |
 | Hosting | GitHub Pages from the `wa` repo via `.github/workflows/deploy.yml`; built with `base: '/wa/'` |
 
 Use the latest stable versions. Don't add other frameworks (no React, no game engines) without asking the owner.
@@ -229,10 +228,8 @@ Quicksand, light weight, generous letter-spacing. It is used only for the title 
 - Completed regions and levels can always be replayed.
 - **Optional stretch, "The Summit":** unlocked after all 5 regions. Mixed-mechanic levels. Build it only in Phase 9, if the owner asks.
 
-### Cloud sync
-- Signing in (account icon on the title/map) sends a magic link; opening it, or pasting it into the app (needed inside the iPhone home-screen app), completes sign-in.
-- `cloud/sync.ts` pulls `saves/{uid}` on sign-in, **merges** (union of solved levels, max attempts/clues, union of seen intros), persists, and pushes; later local changes push after a debounce and retry when back online. Settings stay per device.
-- Firestore rules live in `firestore.rules`: a user can read/write only their own document. The Firebase config in `cloud/firebase.ts` is public by design.
+### Profiles
+- The person icon (title and map) opens the profile card (`ui/profileOverlay.ts`, the game's one piece of DOM): each player is a named light with a colour and its own save under `chowa.save.v1.<id>`. The first visit asks you to make a light. The companion takes the chosen colour. Progress is per device by design; there is no login and no server.
 
 ### Save data (`localStorage` key `chowa.save.v1`)
 ```ts
