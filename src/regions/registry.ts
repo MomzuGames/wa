@@ -1,13 +1,14 @@
 import type { PuzzleModule, RegionId } from './types';
 import { createPlaceholderModule } from './placeholder/module';
 import { tidepoolsModule } from './tidepools/module';
+import { nightskyModule } from './nightsky/module';
 
 export { REGION_ORDER, REGION_ACCENT } from './catalog';
 
 // Every region starts as the placeholder; each is replaced as its phase lands.
 const modules: Record<RegionId, PuzzleModule> = {
   tidepools: tidepoolsModule,
-  nightsky: createPlaceholderModule('nightsky'),
+  nightsky: nightskyModule,
   stonegarden: createPlaceholderModule('stonegarden'),
   crystalcaves: createPlaceholderModule('crystalcaves'),
   moonlake: createPlaceholderModule('moonlake'),
