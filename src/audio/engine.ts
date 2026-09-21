@@ -76,7 +76,17 @@ export class AudioEngine {
     if (this.started || this.starting) return;
     this.starting = true;
     unlockMediaSession();
-    await Tone.start();
+    try {
+      await Tone.start();
+    } catch {
+      this.starting = false;
+      return;
+    }
+    // Some browsers resolve start() without actually running; try again on the next gesture.
+    if (Tone.getContext().state !== 'running') {
+      this.starting = false;
+      return;
+    }
 
     const limiter = new Tone.Limiter(audioConfig.limiterCeilingDb);
     const reverb = new Tone.Reverb({ decay: audioConfig.reverbDecaySeconds, wet: audioConfig.reverbWet });

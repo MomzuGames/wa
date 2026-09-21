@@ -32,13 +32,16 @@ export interface GameDeps {
 export class Game {
   constructor(private deps: GameDeps) {
     events.on('input:back', () => this.back());
-    // Browsers only allow audio after a gesture; the first one anywhere unlocks it.
-    // iOS Safari counts touchend/click (not touchstart), so listen to all of them.
+    // Browsers only allow audio after a gesture. iOS Safari accepts only a finished
+    // tap (touchend/click) or a key, never touchstart/pointerdown, so listen to those
+    // and keep trying until the audio context is really running.
+    const types = ['touchend', 'click', 'keydown'];
     const unlock = () => {
-      void deps.audio.start();
-      for (const type of ['pointerdown', 'touchend', 'click', 'keydown']) window.removeEventListener(type, unlock);
+      void deps.audio.start().then(() => {
+        if (deps.audio.isStarted) for (const type of types) window.removeEventListener(type, unlock);
+      });
     };
-    for (const type of ['pointerdown', 'touchend', 'click', 'keydown']) window.addEventListener(type, unlock);
+    for (const type of types) window.addEventListener(type, unlock);
   }
 
   start(): void {
