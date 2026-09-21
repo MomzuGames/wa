@@ -15,12 +15,14 @@ import { Hud } from './ui/hud';
 import { Spirit } from './ui/spirit';
 import { GAME_TITLE } from './config/game';
 import { ProfileOverlay } from './ui/profileOverlay';
+import { installUpdates } from './core/updates';
 
 async function main() {
   await document.fonts.load("300 64px 'Quicksand'", GAME_TITLE);
   load();
 
   installTweenSafety();
+  installUpdates();
   const app = await createApp(document.querySelector<HTMLDivElement>('#app')!);
   const rng = createRng('chowa');
   const audio = new AudioEngine();

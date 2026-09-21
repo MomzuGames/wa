@@ -5,6 +5,7 @@ import { devFlags } from './dev';
 import { createRng } from './rng';
 import { levelUnlocked, progression, setBypassLocks } from './progress';
 import { currentProfile } from './save';
+import { applyUpdateIfReady } from './updates';
 import type { RegionId, ShellContext } from '../regions/types';
 import { REGION_ORDER } from '../regions/catalog';
 import { getModule } from '../regions/registry';
@@ -69,6 +70,7 @@ export class Game {
   }
 
   showTitle(): void {
+    applyUpdateIfReady();
     this.deps.hud.setBackVisible(false);
     this.deps.hud.setLevelButtons(null);
     this.deps.hud.setAccountButton(() => this.deps.openAccount());
@@ -77,6 +79,7 @@ export class Game {
   }
 
   showMap(reveal: MapReveal | null = null): void {
+    if (!reveal) applyUpdateIfReady();
     this.deps.hud.setBackVisible(true);
     this.deps.hud.setLevelButtons(null);
     this.deps.hud.setAccountButton(() => this.deps.openAccount());

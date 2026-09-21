@@ -1,4 +1,4 @@
-import { createProfile, currentProfile, deleteProfile, listProfiles, selectProfile, type Profile, type ProfileColor } from '../core/save';
+import { createProfile, currentProfile, deleteProfile, exportBackup, importBackup, listProfiles, selectProfile, type Profile, type ProfileColor } from '../core/save';
 import { cssHex } from '../design/palette';
 
 // The one piece of DOM in the game: choosing which light you are. Each light is a
@@ -38,6 +38,10 @@ const css = `
 .chowa-profiles button.action.quiet { border-color: ${cssHex('dim')}; opacity: .75; }
 .chowa-profiles button.action:hover { background: rgba(184,242,230,.08); }
 .chowa-profiles .error { color: ${cssHex('peach')}; font-size: 13px; margin-top: 8px; }
+.chowa-profiles .ok { color: ${cssHex('mint')}; font-size: 13px; margin-top: 8px; }
+.chowa-profiles textarea { width: 100%; box-sizing: border-box; background: ${cssHex('void')}; color: ${cssHex('pearl')}; border: 1px solid ${cssHex('dim')}; border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 12px; outline: none; margin-bottom: 12px; min-height: 84px; word-break: break-all; }
+.chowa-profiles .links { margin-top: 14px; font-size: 13px; opacity: .6; }
+.chowa-profiles .links a { color: inherit; cursor: pointer; text-decoration: underline; margin-right: 14px; }
 `;
 
 let styled = false;
@@ -97,6 +101,62 @@ export class ProfileOverlay {
     const add = button(profiles.length ? 'New light' : 'Make my light', '', () => this.renderNew());
     card.appendChild(add);
     if (current) card.appendChild(button('Close', 'quiet', () => this.close()));
+    const links = document.createElement('div');
+    links.className = 'links';
+    const backup = document.createElement('a');
+    backup.textContent = 'Back up';
+    backup.addEventListener('click', () => this.renderBackup());
+    const restore = document.createElement('a');
+    restore.textContent = 'Restore';
+    restore.addEventListener('click', () => this.renderRestore());
+    links.append(backup, restore);
+    card.appendChild(links);
+  }
+
+  // A backup code holds every light and its progress on this device.
+  private renderBackup(): void {
+    const card = this.card();
+    card.innerHTML = `<h2>Back up</h2><p>Copy this code somewhere safe (Notes, an email to yourself). Paste it into Restore on any device to bring your lights and progress back.</p>`;
+    const box = document.createElement('textarea');
+    box.readOnly = true;
+    box.value = exportBackup();
+    const ok = document.createElement('div');
+    ok.className = 'ok';
+    const copy = button('Copy code', '', async () => {
+      try {
+        await navigator.clipboard.writeText(box.value);
+        ok.textContent = 'Copied.';
+      } catch {
+        box.select();
+        ok.textContent = 'Select the code above and copy it.';
+      }
+    });
+    const back = button('Back', 'quiet', () => this.renderList());
+    card.append(box, copy, back, ok);
+  }
+
+  private renderRestore(): void {
+    const card = this.card();
+    card.innerHTML = `<h2>Restore</h2><p>Paste a backup code. Lights are added to this device; progress for a light already here is combined, never lost.</p>`;
+    const box = document.createElement('textarea');
+    box.placeholder = 'chowa1.…';
+    const error = document.createElement('div');
+    error.className = 'error';
+    const go = button('Restore', '', () => {
+      try {
+        const n = importBackup(box.value);
+        this.onChange();
+        this.renderList();
+        const note = document.createElement('div');
+        note.className = 'ok';
+        note.textContent = `Restored ${n} light${n === 1 ? '' : 's'}.`;
+        this.root?.querySelector('.card')?.appendChild(note);
+      } catch {
+        error.textContent = 'That is not a backup code. Copy the whole code, starting with chowa1.';
+      }
+    });
+    const back = button('Back', 'quiet', () => this.renderList());
+    card.append(box, go, back, error);
   }
 
   private row(p: Profile, isCurrent: boolean): HTMLElement {

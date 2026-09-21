@@ -190,3 +190,60 @@ export function markIntroSeen(id: RegionId, lines: string[]): boolean {
   }
   return fresh;
 }
+
+// ----- Backup codes: everything on this device as one pasteable string -----
+
+interface Backup {
+  v: 1;
+  profiles: Profile[];
+  saves: Record<string, SaveData>;
+}
+
+function toBase64(text: string): string {
+  return btoa(unescape(encodeURIComponent(text)));
+}
+
+function fromBase64(code: string): string {
+  return decodeURIComponent(escape(atob(code)));
+}
+
+export function exportBackup(): string {
+  const profiles = listProfiles();
+  const saves: Record<string, SaveData> = {};
+  for (const p of profiles) {
+    const raw = readJson<SaveData | null>(saveKeyFor(p.id), null);
+    if (raw) saves[p.id] = raw;
+  }
+  const backup: Backup = { v: 1, profiles, saves };
+  return `chowa1.${toBase64(JSON.stringify(backup))}`;
+}
+
+// Merges a backup into this device: lights are added, and progress for a light that
+// already exists here keeps whatever is solved on either side.
+export function importBackup(code: string): number {
+  const trimmed = code.trim();
+  if (!trimmed.startsWith('chowa1.')) throw new Error('not a backup code');
+  const backup = JSON.parse(fromBase64(trimmed.slice(7))) as Backup;
+  if (backup.v !== 1 || !Array.isArray(backup.profiles)) throw new Error('not a backup code');
+  const existing = listProfiles();
+  const merged = existing.slice();
+  for (const p of backup.profiles) {
+    if (!merged.some((m) => m.id === p.id)) merged.push(p);
+    const incoming = backup.saves[p.id];
+    if (!incoming) continue;
+    const mine = readJson<SaveData | null>(saveKeyFor(p.id), null) ?? defaultSave();
+    for (const id of REGION_IDS) {
+      const theirs = incoming.regions?.[id];
+      if (!theirs) continue;
+      mine.regions[id].solved = [...new Set([...mine.regions[id].solved, ...theirs.solved])].sort((a, b) => a - b);
+      for (const [k, v] of Object.entries(theirs.attempts ?? {})) mine.regions[id].attempts[Number(k)] = Math.max(mine.regions[id].attempts[Number(k)] ?? 0, v);
+      for (const [k, v] of Object.entries(theirs.cluesUsed ?? {})) mine.regions[id].cluesUsed[Number(k)] = Math.max(mine.regions[id].cluesUsed[Number(k)] ?? 0, v);
+      mine.seenIntros[id] = [...new Set([...(mine.seenIntros[id] ?? []), ...(incoming.seenIntros?.[id] ?? [])])];
+    }
+    writeJson(saveKeyFor(p.id), mine);
+  }
+  writeJson(PROFILES_KEY, merged);
+  current = null;
+  load();
+  return backup.profiles.length;
+}

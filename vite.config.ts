@@ -8,7 +8,7 @@ export default defineConfig(({ command }) => ({
   base: command === 'build' ? BASE : '/',
   plugins: [
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Chōwa',
