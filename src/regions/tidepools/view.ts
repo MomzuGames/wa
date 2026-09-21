@@ -93,7 +93,10 @@ export class LoopLevelScene implements LevelScene {
     this.matchedCount = this.countMatched();
     this.completeCount = components(this.board).filter((c) => c.complete).length;
     this.refreshLit();
-    if (isTutorial) this.scheduleTutorial();
+  }
+
+  begin(): void {
+    if (this.isTutorial) this.scheduleTutorial();
   }
 
   on(event: 'attempt' | 'solved' | 'move', cb: Handler): void {
@@ -480,6 +483,13 @@ export class LoopLevelScene implements LevelScene {
     this.voice.dispose();
     this.views.forEach((v) => v && gsap.killTweensOf([v.pipes, v.root, v.lit, v.ghost, v.mark]));
     this.container.destroy({ children: true });
+  }
+
+  introLines(): string[] {
+    const lines = ['Turn the tiles until every line meets another line.', 'Click to turn. Right-click to turn back.'];
+    if (this.level.chapter >= 2) lines.push('Tiles with a dot are already in place.');
+    if (this.level.chapter >= 3) lines.push('Larger boards may hold more than one loop.');
+    return lines;
   }
 
   // Intro card: a tile that keeps being tapped and turned; locked tiles appear from chapter 3.

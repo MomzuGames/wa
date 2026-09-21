@@ -86,7 +86,10 @@ export class SkyLevelScene implements LevelScene {
     this.hit.on('pointerupoutside', () => this.onUp());
     this.container.addChildAt(this.hit, 0);
     this.layout(ctx.width, ctx.height);
-    if (isTutorial) this.scheduleTutorial();
+  }
+
+  begin(): void {
+    if (this.isTutorial) this.scheduleTutorial();
   }
 
   on(event: 'attempt' | 'solved' | 'move', cb: Handler): void {
@@ -417,6 +420,14 @@ export class SkyLevelScene implements LevelScene {
     this.stopTutorial();
     this.voice.dispose();
     this.container.destroy({ children: true });
+  }
+
+  introLines(): string[] {
+    const lines = ['Press a star and drag through every line in one stroke.', 'Drag back over a line to undo it.'];
+    if (this.level.chapter === 1) lines.push('Some stars only work as the start or the end.');
+    if (this.level.edges.some((e) => e.oneWay)) lines.push('Shimmering lines can only be crossed in one direction.');
+    if (this.level.edges.some((e) => e.required === 2)) lines.push('Brighter lines must be traced twice.');
+    return lines;
   }
 
   // Intro card: a light traces a small triangle of stars; one-way and double lines appear when relevant.

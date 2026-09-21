@@ -122,11 +122,15 @@ export class LevelShellScene implements Scene {
 
   enter(): void {
     const inset = layout.hudInset + layout.hudIconSize / 2;
-    events.emit('spirit:glide', { x: this.width / 2 + 34, y: inset });
-    this.intro = new LevelIntro(this.levelIndex, palette[this.module.accent], this.level.introGlyph?.() ?? null);
+    events.emit('spirit:glide', { x: this.width / 2 + 52, y: inset });
+    this.intro = new LevelIntro(this.levelIndex, palette[this.module.accent], {
+      glyph: this.level.introGlyph?.() ?? null,
+      lines: this.level.introLines?.() ?? [],
+    });
     this.container.addChild(this.intro);
     void this.intro.play(this.width, this.height).then(() => {
       this.intro = null;
+      this.level.begin?.();
     });
   }
 

@@ -1,7 +1,7 @@
 import { Graphics } from 'pixi.js';
 
 // All icons are drawn centred on (0,0) inside a box of `size` px, stroked in `color`.
-export type IconName = 'settings' | 'back' | 'speaker' | 'speakerOff' | 'note' | 'sparkle' | 'leaf' | 'restart';
+export type IconName = 'settings' | 'back' | 'speaker' | 'speakerOff' | 'note' | 'sparkle' | 'leaf' | 'restart' | 'play';
 
 export function drawIcon(g: Graphics, name: IconName, size: number, color: number): Graphics {
   const s = size / 2;
@@ -56,6 +56,9 @@ export function drawIcon(g: Graphics, name: IconName, size: number, color: numbe
         .quadraticCurveTo(s * 0.7, s * 0.7, -s * 0.7, s * 0.7)
         .stroke(stroke);
       g.moveTo(-s * 0.7, s * 0.7).lineTo(s * 0.35, -s * 0.35).stroke(stroke);
+      break;
+    case 'play':
+      g.moveTo(-s * 0.35, -s * 0.5).lineTo(s * 0.5, 0).lineTo(-s * 0.35, s * 0.5).closePath().stroke(stroke);
       break;
     case 'restart':
       g.arc(0, 0, s * 0.62, -Math.PI * 0.35, Math.PI * 1.35).stroke(stroke);

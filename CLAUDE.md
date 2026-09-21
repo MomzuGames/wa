@@ -15,11 +15,11 @@ The feeling to aim for: **meditative focus**. Think soft glowing light on black,
 ### Character
 - **The light** is the player's companion: the breathing dot on the title screen becomes a small travelling spirit (`ui/spirit.ts`). It glides to the current region on the map, hops along the level trail, sits beside the level number while playing, flinches on a failed attempt and bounces on a solve. Scenes talk to it only through `spirit:*` events.
 - **Nothing is static.** The map drifts slowly, stars twinkle, each region figure has its own idle life, light pulses travel along completed trails, and every region has an atmosphere layer (`fx/atmosphere.ts`) behind its trail and puzzles.
-- **Every level opens with a wordless intro card** (`ui/levelIntro.ts`): level number, chapter dots and a looping animated demo of the mechanic supplied by the region (`LevelScene.introGlyph`). Any click dismisses it.
+- **Every level opens with an instruction card** (`ui/levelIntro.ts`): level number, chapter dots, a looping animated demo (`LevelScene.introGlyph`), a few short caption lines (`LevelScene.introLines`) and a continue button that must be pressed (Enter/Space also work).
 - **Audio is sparse by the owner's request:** the ambient drone plays only on the title screen; inside the game there are only short interaction sounds. Region ambient beds and map audio layering are intentionally not implemented.
 
 ### Non-negotiable principles
-1. **No word puzzles. No reading required to play.** The UI uses icons and motion, not text. The only text allowed is the title screen logo, level numbers and the small move counter under the level number.
+1. **No word puzzles.** The UI uses icons and motion, not text. Text is allowed only for the title logo, level numbers, the small move counter, and the short captions on each level's instruction card (the owner asked for clearer instructions).
 2. **Black and light pastel only.** Use near-black backgrounds with soft pastel light. No saturated colours, and no pure white except as a tiny highlight.
 3. **Nothing harsh.** No red error flashes, buzzers, shaking screens, timers or countdowns. Failure is shown as a gentle unravel or fade.
 4. **The answer is never shown in full.** Clues unlock progressively after failed attempts (see §7).
