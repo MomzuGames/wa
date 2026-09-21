@@ -3,9 +3,10 @@ import type { PrismParams } from './generator';
 import { LEMON, type PrismLevel, type PrismPiece, ROSE, SKY, isSolved } from './model';
 import { solvePrism } from './solver';
 
-export function paramsForChapter(chapter: number, seed: string, levelInChapter: number): PrismParams {
+export function paramsForChapter(chapter: number, seed: string, levelInChapter: number, ultra = false): PrismParams {
   const rng = createRng(seed);
-  const late = levelInChapter >= 3;
+  if (ultra) return { size: [8, 8], emitters: [3, 3], mirrors: [7, 9], splitters: [2, 3], filters: [2, 3], blockers: [2, 4], targets: [4, 5], colors: rng.shuffle([ROSE, SKY, LEMON]), requireMix: true };
+  const late = levelInChapter >= 1;
   switch (chapter) {
     case 0:
       return { size: [4, 5], emitters: [1, 1], mirrors: [late ? 3 : 2, late ? 4 : 3], splitters: [0, 0], filters: [0, 0], blockers: [0, 0], targets: [1, late ? 2 : 1], colors: [SKY], requireMix: false };

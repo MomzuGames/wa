@@ -8,7 +8,7 @@ import { breathe, durations, easings, reducedMotion, scaled } from '../design/mo
 import { layout } from '../design/layout';
 import { createGlow } from '../fx/glow';
 import { getRegion } from '../core/save';
-import { earliestUnsolved, levelUnlocked, progression } from '../core/progress';
+import { earliestUnsolved, isChapterEnd, levelUnlocked, progression } from '../core/progress';
 import { events } from '../core/events';
 import { Atmosphere } from '../fx/atmosphere';
 import { createRng } from '../core/rng';
@@ -16,12 +16,13 @@ import { createRng } from '../core/rng';
 const trailStyle = {
   nodeRadius: 15,
   chapterEndRadius: 19,
-  rowFraction: 0.16,
+  rowFraction: 0.22,
   widthFraction: 0.66,
   waveAmplitude: 0.35,
   lineAlpha: 0.5,
   pulseSpeed: 0.05,
   spiritOffsetY: -34,
+  perRow: 5,
 } as const;
 
 type NodeState = 'locked' | 'unlocked' | 'solved';
@@ -61,8 +62,7 @@ export class RegionScene implements Scene {
       this.atmosphere.setParallax(e.global.x / Math.max(1, this.screen.x) - 0.5, e.global.y / Math.max(1, this.screen.y) - 0.5);
     });
     for (let i = 0; i < progression.levelsPerRegion; i++) {
-      const isChapterEnd = (i + 1) % progression.levelsPerChapter === 0;
-      const radius = isChapterEnd ? trailStyle.chapterEndRadius : trailStyle.nodeRadius;
+      const radius = isChapterEnd(i) ? trailStyle.chapterEndRadius : trailStyle.nodeRadius;
       const root = new Container();
       const disc = new Graphics();
       const label = new Text({
@@ -197,8 +197,8 @@ export class RegionScene implements Scene {
   resize(width: number, height: number): void {
     this.screen = { x: width, y: height };
     this.atmosphere.resize(width, height);
-    const perRow = progression.levelsPerChapter;
-    const rows = progression.chapters;
+    const perRow = trailStyle.perRow;
+    const rows = Math.ceil(progression.levelsPerRegion / perRow);
     const span = width * trailStyle.widthFraction;
     const left = (width - span) / 2;
     const rowGap = height * trailStyle.rowFraction;

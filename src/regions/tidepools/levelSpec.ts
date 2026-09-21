@@ -23,7 +23,8 @@ const chapterParams: Array<(rng: { int(a: number, b: number): number }) => LoopP
   },
 ];
 
-export function paramsForChapter(chapter: number, seed: string): LoopParams {
+export function paramsForChapter(chapter: number, seed: string, ultra = false): LoopParams {
+  if (ultra) return { width: 10, height: 10, irregular: false, loopiness: 0.34, components: 3, lockedFraction: 0.03 };
   return chapterParams[chapter]!(createRng(seed));
 }
 
@@ -104,8 +105,8 @@ export function handcraftedLevels(): Record<number, () => LoopLevel> {
         '|   |',
         'o x o',
       ]),
-    5: () =>
-      handcraftedPattern('tidepools:hand:6', 0, [
+    2: () =>
+      handcraftedPattern('tidepools:hand:3', 0, [
         'o-o-o-o', //
         '|     |',
         'o-o o-o',
@@ -114,9 +115,9 @@ export function handcraftedLevels(): Record<number, () => LoopLevel> {
         '|     |',
         'o-o-o-o',
       ]),
-    11: () =>
+    5: () =>
       handcraftedShape(
-        'tidepools:hand:12',
+        'tidepools:hand:6',
         1,
         [
           '..####', // bird
@@ -130,9 +131,9 @@ export function handcraftedLevels(): Record<number, () => LoopLevel> {
         1,
         0,
       ),
-    17: () =>
+    7: () =>
       handcraftedShape(
-        'tidepools:hand:18',
+        'tidepools:hand:8',
         2,
         [
           '.#.#.#.', // lotus
@@ -146,25 +147,6 @@ export function handcraftedLevels(): Record<number, () => LoopLevel> {
         0.22,
         1,
         0.1,
-      ),
-    23: () =>
-      handcraftedShape(
-        'tidepools:hand:24',
-        3,
-        [
-          '.......##', // whale
-          '..#####.#',
-          '.########',
-          '#########',
-          '#########',
-          '.#######.',
-          '..#####..',
-          '...#.#...',
-          '..##.##..',
-        ],
-        0.3,
-        2,
-        0.05,
       ),
   };
 }

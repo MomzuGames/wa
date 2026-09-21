@@ -3,6 +3,8 @@ import type { RegionId } from '../regions/types';
 import { SAVE_KEY } from '../config/game';
 import { REGION_ORDER as REGION_IDS } from '../regions/catalog';
 
+const LEVELS_PER_REGION = 10;
+
 
 export interface RegionProgress {
   solved: number[];
@@ -137,6 +139,8 @@ export function load(): SaveData {
         settings: { ...fresh.settings, ...parsed.settings },
         seenIntros: { ...(parsed.seenIntros ?? {}) },
       };
+      // Regions used to have more levels; drop progress that no longer exists.
+      for (const id of REGION_IDS) current.regions[id].solved = current.regions[id].solved.filter((i) => i < LEVELS_PER_REGION);
       return current;
     }
   } catch {

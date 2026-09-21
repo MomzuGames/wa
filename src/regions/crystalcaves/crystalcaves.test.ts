@@ -65,8 +65,8 @@ describe('prism generator', () => {
 });
 
 describe('baked crystalcaves levels', () => {
-  it('has 24 levels', () => {
-    expect(levels).toHaveLength(24);
+  it('has 10 levels', () => {
+    expect(levels).toHaveLength(10);
   });
 
   levels.forEach((level, i) => {

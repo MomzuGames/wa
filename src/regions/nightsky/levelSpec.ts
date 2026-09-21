@@ -3,9 +3,10 @@ import type { SkyParams } from './generator';
 import { type Edge, type SkyLevel, type Star, isSolutionValid } from './model';
 import { solveLevel, validStarts } from './solver';
 
-export function paramsForChapter(chapter: number, seed: string, levelInChapter: number): SkyParams {
+export function paramsForChapter(chapter: number, seed: string, levelInChapter: number, ultra = false): SkyParams {
   const rng = createRng(seed);
-  const late = levelInChapter >= 3;
+  if (ultra) return { stars: [12, 16], edges: [18, 24], crossings: [4, 9], closed: false, oneWayFraction: 0.25, doubleEdges: 3, drift: true };
+  const late = levelInChapter >= 1;
   switch (chapter) {
     case 0:
       return { stars: [4, 8], edges: [4, 8], crossings: [0, 1], closed: true, oneWayFraction: 0, doubleEdges: 0, drift: false };
@@ -71,9 +72,9 @@ export function handcraftedLevels(): Record<number, () => SkyLevel> {
         ],
         [0, 3, 2, 1, 0],
       ),
-    5: () =>
+    2: () =>
       figure(
-        'nightsky:hand:6',
+        'nightsky:hand:3',
         0,
         [
           { x: 0.05, y: 0.5 }, // beak
@@ -86,9 +87,9 @@ export function handcraftedLevels(): Record<number, () => SkyLevel> {
         ],
         [0, 1, 6, 2, 3, 4, 5, 0],
       ),
-    11: () =>
+    5: () =>
       figure(
-        'nightsky:hand:12',
+        'nightsky:hand:6',
         1,
         [
           { x: 0.05, y: 0.5 }, // nose
@@ -101,9 +102,9 @@ export function handcraftedLevels(): Record<number, () => SkyLevel> {
         ],
         [5, 0, 1, 6, 3, 2, 4, 3, 5, 1],
       ),
-    17: () =>
+    7: () =>
       figure(
-        'nightsky:hand:18',
+        'nightsky:hand:8',
         2,
         [
           { x: 0.1, y: 0.6 }, // nose
@@ -116,24 +117,6 @@ export function handcraftedLevels(): Record<number, () => SkyLevel> {
         ],
         [0, 1, 5, 2, 3, 4, 0, 6, 5],
         { oneWay: [[0, 1], [3, 4]] },
-      ),
-    23: () =>
-      figure(
-        'nightsky:hand:24',
-        3,
-        [
-          { x: 0.1, y: 0.45 }, // head
-          { x: 0.35, y: 0.25 }, // top
-          { x: 0.6, y: 0.3 }, // back
-          { x: 0.8, y: 0.45 }, // tail join
-          { x: 0.95, y: 0.3 }, // fluke top
-          { x: 0.95, y: 0.65 }, // fluke bottom
-          { x: 0.5, y: 0.7 }, // belly
-          { x: 0.2, y: 0.65 }, // chin
-          { x: 0.3, y: 0.05 }, // spout
-        ],
-        [0, 1, 2, 3, 4, 5, 3, 6, 7, 0, 1, 8],
-        { drift: true },
       ),
   };
 }

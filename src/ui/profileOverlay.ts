@@ -109,8 +109,29 @@ export class ProfileOverlay {
     const restore = document.createElement('a');
     restore.textContent = 'Restore';
     restore.addEventListener('click', () => this.renderRestore());
-    links.append(backup, restore);
+    const share = document.createElement('a');
+    share.textContent = 'Share the game';
+    share.addEventListener('click', () => void this.share(card));
+    links.append(backup, restore, share);
     card.appendChild(links);
+  }
+
+  // Sends the game's address with the phone's share sheet, or copies it.
+  private async share(card: HTMLElement): Promise<void> {
+    const url = `${location.origin}${location.pathname}`;
+    const note = document.createElement('div');
+    note.className = 'ok';
+    try {
+      if (navigator.share) await navigator.share({ title: 'Chōwa', text: 'A calm puzzle journey. Open it in Safari or Chrome and add it to your home screen.', url });
+      else {
+        await navigator.clipboard.writeText(url);
+        note.textContent = 'Link copied. Send it to anyone; on a phone they can add it to their home screen.';
+        card.appendChild(note);
+      }
+    } catch {
+      note.textContent = url;
+      card.appendChild(note);
+    }
   }
 
   // A backup code holds every light and its progress on this device.

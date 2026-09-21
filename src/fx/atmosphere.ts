@@ -4,6 +4,7 @@ import { REGION_ACCENT } from '../regions/catalog';
 import { palette, rgba } from '../design/palette';
 import { reducedMotion } from '../design/motion';
 import type { Rng } from '../core/rng';
+import { Scenery } from './scenery';
 
 export const atmosphereStyle = {
   tintAlpha: 0.11,
@@ -41,13 +42,15 @@ export class Atmosphere {
   private shootingStar: { x: number; y: number; dx: number; dy: number; t: number } | null = null;
   private nextShootingStar: number;
   private parallax = { x: 0, y: 0 };
+  private scenery: Scenery;
 
   constructor(
     private id: RegionId,
     private rng: Rng,
   ) {
     this.accent = palette[REGION_ACCENT[id]];
-    this.container.addChild(this.tint, this.g);
+    this.scenery = new Scenery(id, rng);
+    this.container.addChild(this.tint, this.scenery.back, this.g, this.scenery.front);
     this.container.eventMode = 'none';
     for (let i = 0; i < 240; i++) this.seeds.push(rng.next());
     this.nextShootingStar = atmosphereStyle.shootingStarEvery * (0.5 + rng.next());
@@ -67,12 +70,14 @@ export class Atmosphere {
       ],
     });
     this.tint.clear().rect(-atmosphereStyle.parallax, -atmosphereStyle.parallax, width + atmosphereStyle.parallax * 2, height + atmosphereStyle.parallax * 2).fill(gradient);
+    this.scenery.resize(width, height);
     this.draw();
   }
 
   // Pointer parallax: nudges the whole layer a little against the cursor.
   setParallax(nx: number, ny: number): void {
     this.parallax = { x: -nx * atmosphereStyle.parallax, y: -ny * atmosphereStyle.parallax };
+    this.scenery.setParallax(nx, ny);
   }
 
   update(dt: number): void {
@@ -80,6 +85,7 @@ export class Atmosphere {
     this.time += dt;
     this.container.x += (this.parallax.x - this.container.x) * Math.min(1, dt * 4);
     this.container.y += (this.parallax.y - this.container.y) * Math.min(1, dt * 4);
+    this.scenery.update(dt);
     this.draw();
   }
 
@@ -211,6 +217,7 @@ export class Atmosphere {
   }
 
   destroy(): void {
+    this.scenery.destroy();
     this.container.destroy({ children: true });
   }
 }

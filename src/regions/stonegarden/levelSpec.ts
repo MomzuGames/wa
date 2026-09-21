@@ -3,8 +3,9 @@ import { generateStoneLevel, type StoneParams } from './generator';
 import { type Piece, type StoneLevel, type Tri, isConnected, normalise, triKey } from './model';
 import { solveStone } from './solver';
 
-export function paramsForChapter(chapter: number, seed: string): StoneParams {
+export function paramsForChapter(chapter: number, seed: string, ultra = false): StoneParams {
   const rng = createRng(seed);
+  if (ultra) return { cells: [22, 28], pieces: [10, 11], diagonalCuts: [3, 5], diagonalSplits: [3, 4], allowFlip: true, requireFlip: true };
   switch (chapter) {
     case 0:
       return { cells: [6, 9], pieces: [3, 4], diagonalCuts: [0, 2], diagonalSplits: [0, 0], allowFlip: false, requireFlip: false };
@@ -94,9 +95,9 @@ export function handcraftedLevels(): Record<number, () => StoneLevel> {
         { A: { rot: 2, flip: 0 }, B: { rot: 0, flip: 0 }, C: { rot: 3, flip: 0 } },
         false,
       ),
-    5: () =>
+    2: () =>
       fromSilhouette(
-        'stonegarden:hand:6',
+        'stonegarden:hand:3',
         0,
         [
           '.b#a.', // stone
@@ -106,9 +107,9 @@ export function handcraftedLevels(): Record<number, () => StoneLevel> {
         ],
         { pieces: [4, 4], diagonalCuts: [0, 0], diagonalSplits: [0, 0], allowFlip: false, requireFlip: false },
       ),
-    11: () =>
+    5: () =>
       fromSilhouette(
-        'stonegarden:hand:12',
+        'stonegarden:hand:6',
         1,
         [
           'd...c', // fox
@@ -120,9 +121,9 @@ export function handcraftedLevels(): Record<number, () => StoneLevel> {
         ],
         { pieces: [6, 6], diagonalCuts: [0, 0], diagonalSplits: [0, 1], allowFlip: false, requireFlip: false },
       ),
-    17: () =>
+    7: () =>
       fromSilhouette(
-        'stonegarden:hand:18',
+        'stonegarden:hand:8',
         2,
         [
           '..b#a..', // lotus
@@ -133,22 +134,6 @@ export function handcraftedLevels(): Record<number, () => StoneLevel> {
           '.c###d.',
         ],
         { pieces: [7, 7], diagonalCuts: [0, 0], diagonalSplits: [1, 2], allowFlip: true, requireFlip: true },
-      ),
-    23: () =>
-      fromSilhouette(
-        'stonegarden:hand:24',
-        3,
-        [
-          '.....b#', // bird
-          '..b###a',
-          'b######',
-          '#######',
-          'c#####d',
-          '.c###d.',
-          '...#...',
-          '..c#d..',
-        ],
-        { pieces: [9, 9], diagonalCuts: [0, 0], diagonalSplits: [2, 3], allowFlip: true, requireFlip: false },
       ),
   };
 }

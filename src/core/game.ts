@@ -3,7 +3,7 @@ import { SceneManager } from './sceneManager';
 import { events } from './events';
 import { devFlags } from './dev';
 import { createRng } from './rng';
-import { levelUnlocked, progression, setBypassLocks } from './progress';
+import { isChapterEnd, levelUnlocked, progression, setBypassLocks } from './progress';
 import { currentProfile } from './save';
 import { applyUpdateIfReady } from './updates';
 import type { RegionId, ShellContext } from '../regions/types';
@@ -127,7 +127,7 @@ export class Game {
       return;
     }
     const next = levelIndex + 1;
-    const chapterEnded = next % progression.levelsPerChapter === 0;
+    const chapterEnded = isChapterEnd(levelIndex);
     if (!chapterEnded && next < progression.levelsPerRegion && levelUnlocked(regionId, next)) {
       this.showLevel(regionId, next);
     } else {

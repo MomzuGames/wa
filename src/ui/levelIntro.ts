@@ -2,7 +2,7 @@ import gsap from 'gsap';
 import { Container, Graphics, Text } from 'pixi.js';
 import { alphas, palette } from '../design/palette';
 import { breathe, durations, easings, scaled } from '../design/motion';
-import { progression } from '../core/progress';
+import { chapterOf, progression } from '../core/progress';
 import { isCompact, layout } from '../design/layout';
 import { events } from '../core/events';
 import { drawIcon } from './icons';
@@ -57,7 +57,7 @@ export class LevelIntro extends Container {
     number.alpha = alphas.hudHover;
     this.card.addChild(number);
 
-    const chapter = Math.floor(levelIndex / progression.levelsPerChapter);
+    const chapter = chapterOf(levelIndex);
     const dots = new Graphics();
     const startX = (-(progression.chapters - 1) * introStyle.dotGap) / 2;
     for (let i = 0; i < progression.chapters; i++) {

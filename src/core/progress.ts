@@ -3,13 +3,33 @@ import { events } from './events';
 import type { RegionId } from '../regions/types';
 import { REGION_ORDER } from '../regions/catalog';
 
+// Ten levels per region in four short chapters (3, 3, 2, 2). Each chapter adds one
+// twist; the last level of a region is generated to be the hardest.
 export const progression = {
-  levelsPerRegion: 24,
+  levelsPerRegion: 10,
   chapters: 4,
-  levelsPerChapter: 6,
+  chapterStarts: [0, 3, 6, 8] as const,
   lookahead: 2,
-  unlockNextAt: 20,
+  unlockNextAt: 8,
 } as const;
+
+export function chapterOf(levelIndex: number): number {
+  let c = 0;
+  progression.chapterStarts.forEach((start, i) => {
+    if (levelIndex >= start) c = i;
+  });
+  return c;
+}
+
+export function chapterRange(chapter: number): { start: number; end: number } {
+  const start = progression.chapterStarts[chapter]!;
+  const end = chapter + 1 < progression.chapters ? progression.chapterStarts[chapter + 1]! : progression.levelsPerRegion;
+  return { start, end };
+}
+
+export function isChapterEnd(levelIndex: number): boolean {
+  return chapterRange(chapterOf(levelIndex)).end === levelIndex + 1;
+}
 
 export function earliestUnsolved(solved: readonly number[], levelCount = progression.levelsPerRegion): number {
   const set = new Set(solved);
