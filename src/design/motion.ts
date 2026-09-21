@@ -17,3 +17,16 @@ export const breathe = {
   scaleFrom: 1.0,
   scaleTo: 1.05,
 } as const;
+
+// For a single focal element (title dot): a fuller breath, inhale shorter than exhale.
+export const heroBreathe = {
+  scaleFrom: 1.0,
+  scaleTo: 1.18,
+  glowFrom: 1.2,
+  glowTo: 3.4,
+  haloFrom: 0.0,
+  haloTo: 0.22,
+  haloScaleTo: 1.25,
+  inhale: 1.7,
+  exhale: 2.5,
+} as const;
