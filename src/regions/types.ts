@@ -30,6 +30,8 @@ export interface LevelScene {
   introLines?(): string[];
   // Called once the instruction card has been dismissed and play can begin.
   begin?(): void;
+  // Regions that use R to rotate: restart is the icon or Backspace instead.
+  usesRotateKey?: boolean;
   destroy(): void;
 }
 

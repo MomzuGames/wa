@@ -105,7 +105,12 @@ export class LevelShellScene implements Scene {
     this.container.addChild(this.atmosphere.container, this.level.container, this.hud);
 
     this.unsubscribe.push(
-      events.on('input:restart', () => this.restart()),
+      events.on('input:restart', () => {
+        if (!this.level.usesRotateKey) this.restart();
+      }),
+      events.on('input:key', (key) => {
+        if (key === 'Backspace' && this.level.usesRotateKey) this.restart();
+      }),
       events.on('input:hint', () => this.revealClue()),
       events.on('input:key', () => this.hints.recordInput()),
     );

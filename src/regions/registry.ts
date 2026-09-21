@@ -2,6 +2,7 @@ import type { PuzzleModule, RegionId } from './types';
 import { createPlaceholderModule } from './placeholder/module';
 import { tidepoolsModule } from './tidepools/module';
 import { nightskyModule } from './nightsky/module';
+import { stonegardenModule } from './stonegarden/module';
 
 export { REGION_ORDER, REGION_ACCENT } from './catalog';
 
@@ -9,7 +10,7 @@ export { REGION_ORDER, REGION_ACCENT } from './catalog';
 const modules: Record<RegionId, PuzzleModule> = {
   tidepools: tidepoolsModule,
   nightsky: nightskyModule,
-  stonegarden: createPlaceholderModule('stonegarden'),
+  stonegarden: stonegardenModule,
   crystalcaves: createPlaceholderModule('crystalcaves'),
   moonlake: createPlaceholderModule('moonlake'),
 };
