@@ -109,6 +109,7 @@ export function markIntroSeen(id: RegionId, lines: string[]): boolean {
   if (fresh) {
     data.seenIntros[id] = [...new Set([...seen, ...lines])];
     persist();
+    events.emit('progress:changed');
   }
   return fresh;
 }

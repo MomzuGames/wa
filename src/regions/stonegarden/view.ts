@@ -3,7 +3,7 @@ import { Container, FederatedPointerEvent, Graphics } from 'pixi.js';
 import type { ClueTier, LevelScene, ShellContext } from '../types';
 import { alphas, palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
-import { puzzleArea } from '../../design/layout';
+import { isCompact, isTouch, puzzleArea } from '../../design/layout';
 import { GhostHand } from '../../ui/ghostHand';
 import { events } from '../../core/events';
 import {
@@ -41,6 +41,7 @@ const stoneStyle = {
   wheelCooldown: 0.18,
   shadowOffset: 5,
   shadowAlpha: 0.5,
+  longPressSeconds: 0.5,
 } as const;
 
 type Handler = () => void;
@@ -89,6 +90,8 @@ export class StoneLevelScene implements LevelScene {
   private seamsUntil: number | null = null;
   private seamSolution: Map<number, Placement> | null = null;
   private onWheel = (e: WheelEvent) => this.wheel(e);
+  private pressTimer: gsap.core.Tween | null = null;
+  private compact = false;
 
   constructor(
     private ctx: ShellContext,
@@ -219,7 +222,7 @@ export class StoneLevelScene implements LevelScene {
 
   layout(width: number, height: number): void {
     const area = puzzleArea(width, height);
-    const boardHeight = height * stoneStyle.boardFraction;
+    const boardHeight = height * (isCompact(width) && this.views.length > 5 ? stoneStyle.boardFraction - 0.1 : stoneStyle.boardFraction);
     this.cell = Math.max(stoneStyle.minCell, Math.min(stoneStyle.maxCell, area.width / this.level.width, boardHeight / this.level.height));
     this.origin = {
       x: width / 2 - (this.level.width * this.cell) / 2,
@@ -227,16 +230,22 @@ export class StoneLevelScene implements LevelScene {
     };
     this.hit.clear().rect(0, 0, width, height).fill({ color: palette.pearl, alpha: 0.001 });
     this.drawSilhouette();
-    // Tray slots along the bottom.
+    // Tray slots along the bottom; two rows on narrow screens with many stones.
     const count = this.views.length;
-    const trayY = height - height * stoneStyle.trayFraction * 0.55;
-    const span = Math.min(width * stoneStyle.trayWidthFraction, count * this.cell * 3.2);
+    this.compact = isCompact(width);
+    const rows = this.compact && count > 5 ? 2 : 1;
+    const perRow = Math.ceil(count / rows);
+    const trayY = height - height * stoneStyle.trayFraction * (rows === 2 ? 0.8 : 0.55);
+    const rowGap = height * stoneStyle.trayFraction * 0.5;
+    const span = Math.min(width * stoneStyle.trayWidthFraction, perRow * this.cell * 3.2);
     const left = width / 2 - span / 2;
     // Shrink tray pieces further when the widest one would not fit its slot.
     const widest = Math.max(...this.views.map((_, i) => Math.max(this.bbox(this.shapeOf(i, this.views[i]!.rot, this.views[i]!.flip)).w, 1)));
-    this.trayScale = Math.min(stoneStyle.trayScale, (span / count) * 0.85 / (widest * this.cell));
+    this.trayScale = Math.min(stoneStyle.trayScale, (span / perRow) * 0.85 / (widest * this.cell));
     this.views.forEach((v, i) => {
-      v.slot = { x: left + ((i + 0.5) / count) * span, y: trayY };
+      const row = Math.floor(i / perRow);
+      const col = i % perRow;
+      v.slot = { x: left + ((col + 0.5) / perRow) * span, y: trayY + row * rowGap };
       this.redrawPiece(i);
       if (v.placed) {
         v.root.position.copyFrom(this.boardCenterFor(i, v.placed));
@@ -280,6 +289,23 @@ export class StoneLevelScene implements LevelScene {
     const local = this.container.toLocal(e.global);
     this.grabStart = { x: local.x, y: local.y };
     v.lastPlacement = v.placed;
+    // Holding a stone still flips it (the touch equivalent of a double-click).
+    this.pressTimer?.kill();
+    if (this.level.allowFlip) {
+      this.pressTimer = gsap.delayedCall(stoneStyle.longPressSeconds, () => {
+        if (this.dragging !== v) return;
+        const moved = Math.hypot(v.root.x - this.grabOffset.x - this.grabStart.x, v.root.y - this.grabOffset.y - this.grabStart.y);
+        if (moved >= stoneStyle.tapDistance) return;
+        this.dragging = null;
+        this.magnet.clear();
+        v.root.cursor = 'grab';
+        if (v.lastPlacement) {
+          v.placed = v.lastPlacement;
+          this.placedCount++;
+        }
+        this.flip(v);
+      });
+    }
     if (v.placed) {
       this.unplace(i);
     }
@@ -317,6 +343,8 @@ export class StoneLevelScene implements LevelScene {
   }
 
   private onUp(): void {
+    this.pressTimer?.kill();
+    this.pressTimer = null;
     const v = this.dragging;
     if (!v) return;
     this.dragging = null;
@@ -466,6 +494,7 @@ export class StoneLevelScene implements LevelScene {
   private flip(target: PieceView | null = this.dragging ?? this.hovered ?? this.lastTouched): void {
     if (this.solved || !this.level.allowFlip || !target || target.animating) return;
     const i = this.views.indexOf(target);
+    const wasAt = target.placed;
     if (target.placed) this.unplace(i);
     target.flip = target.flip ? 0 : 1;
     this.voice.turn();
@@ -481,7 +510,10 @@ export class StoneLevelScene implements LevelScene {
         target.root.scale.x = s;
         target.animating = false;
         this.redrawPiece(i);
-        if (!this.dragging && !target.placed) this.returnToTray(i);
+        if (this.dragging === target || target.placed) return;
+        const again = wasAt ? { ...wasAt, flip: target.flip } : null;
+        if (again && this.canPlace(i, again)) this.place(i, again, true);
+        else this.returnToTray(i);
       },
     });
   }
@@ -676,9 +708,9 @@ export class StoneLevelScene implements LevelScene {
       'Drag the stones from below into the outline until it is filled exactly.',
       'A stone only settles when all of it fits inside the outline on empty ground.',
       'If it does not fit, it slides back down. Feel for the pull when it is close.',
-      'Click a stone to turn it. Scroll over it or press R to turn it too.',
+      isTouch() ? 'Tap a stone to turn it.' : 'Click a stone to turn it. Scroll over it or press R to turn it too.',
     ];
-    if (this.level.allowFlip) lines.push('Double-click a stone, or press F, to flip it over. Some stones only fit flipped.');
+    if (this.level.allowFlip) lines.push(isTouch() ? 'Hold a stone still to flip it over. Some stones only fit flipped.' : 'Double-click a stone, or press F, to flip it over. Some stones only fit flipped.');
     if (this.level.chapter >= 3) lines.push('Some stones look alike but differ by one corner. Look closely.');
     return lines;
   }
@@ -724,6 +756,7 @@ export class StoneLevelScene implements LevelScene {
 
   destroy(): void {
     this.stopTutorial();
+    this.pressTimer?.kill();
     this.unsubscribe.forEach((u) => u());
     window.removeEventListener('wheel', this.onWheel);
     this.voice.dispose();

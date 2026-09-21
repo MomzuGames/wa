@@ -133,6 +133,8 @@ export class SettingsPanel extends Container {
     this.screenH = height;
     this.backdrop.clear().rect(0, 0, width, height).fill({ color: palette.shadow, alpha: alphas.panelBackdrop });
     this.card.position.set(width / 2, height / 2);
+    const fit = Math.min(1, (width - 24) / panelStyle.width);
+    this.card.scale.set(fit);
   }
 
   toggle(): void {
@@ -140,9 +142,10 @@ export class SettingsPanel extends Container {
     if (this.open) {
       this.visible = true;
       this.resize(this.screenW, this.screenH);
-      this.card.scale.set(0.96);
+      const fit = Math.min(1, (this.screenW - 24) / panelStyle.width);
+      this.card.scale.set(fit * 0.96);
       gsap.to(this, { alpha: 1, duration: durations.panelToggle, ease: easings.response });
-      gsap.to(this.card.scale, { x: 1, y: 1, duration: durations.panelToggle, ease: easings.response });
+      gsap.to(this.card.scale, { x: fit, y: fit, duration: durations.panelToggle, ease: easings.response });
     } else {
       gsap.to(this, {
         alpha: 0,

@@ -3,7 +3,7 @@ import { Container, FederatedPointerEvent, Graphics } from 'pixi.js';
 import type { ClueTier, LevelScene, ShellContext } from '../types';
 import { palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
-import { puzzleArea } from '../../design/layout';
+import { isTouch, puzzleArea } from '../../design/layout';
 import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
 import {
@@ -38,6 +38,7 @@ const loopStyle = {
   tutorialDelay: 1.6,
   shadowOffset: 4,
   shadowAlpha: 0.45,
+  longPressSeconds: 0.42,
 } as const;
 
 type Handler = () => void;
@@ -76,6 +77,8 @@ export class LoopLevelScene implements LevelScene {
   private clueLocked = new Set<number>();
   private voice: TidepoolsVoice;
   private tutorialTimer: gsap.core.Tween | null = null;
+  private pressTimer: gsap.core.Tween | null = null;
+  private pressHandled = false;
 
   constructor(
     private ctx: ShellContext,
@@ -134,6 +137,8 @@ export class LoopLevelScene implements LevelScene {
       root.eventMode = 'static';
       root.cursor = tile.locked ? 'default' : 'pointer';
       root.on('pointerdown', (e: FederatedPointerEvent) => this.onPress(i, e));
+      root.on('pointerup', () => this.onRelease(i));
+      root.on('pointerupoutside', () => this.cancelPress());
       this.views.push({ root, shadow, base, pipes, lit, mark, ghost, lockDot, flowPhase: 0, animating: false, spin: 0 });
     });
   }
@@ -207,12 +212,36 @@ export class LoopLevelScene implements LevelScene {
     v.mark.stroke({ color: this.accent, width: 1, alpha: 0.35 });
   }
 
+  // Click turns clockwise; right-click, shift-click or a long press turns the other way.
   private onPress(i: number, e: FederatedPointerEvent): void {
     if (this.solved) return;
     const tile = this.board.cells[i]!;
     if (tile.locked || tile.mask === 0) return;
-    const counter = e.button === 2 || e.shiftKey;
-    this.rotate(i, counter ? -1 : 1);
+    if (e.button === 2 || e.shiftKey) {
+      this.pressHandled = true;
+      this.rotate(i, -1);
+      return;
+    }
+    this.pressHandled = false;
+    this.pressTimer?.kill();
+    this.pressTimer = gsap.delayedCall(loopStyle.longPressSeconds, () => {
+      this.pressHandled = true;
+      this.rotate(i, -1);
+    });
+  }
+
+  private onRelease(i: number): void {
+    this.pressTimer?.kill();
+    this.pressTimer = null;
+    if (this.pressHandled) return;
+    this.pressHandled = true;
+    this.rotate(i, 1);
+  }
+
+  private cancelPress(): void {
+    this.pressTimer?.kill();
+    this.pressTimer = null;
+    this.pressHandled = true;
   }
 
   private rotate(i: number, direction: 1 | -1): void {
@@ -489,6 +518,7 @@ export class LoopLevelScene implements LevelScene {
 
   destroy(): void {
     this.stopTutorial();
+    this.pressTimer?.kill();
     this.voice.dispose();
     this.views.forEach((v) => v && gsap.killTweensOf([v.pipes, v.root, v.lit, v.ghost, v.mark]));
     this.container.destroy({ children: true });
@@ -499,7 +529,7 @@ export class LoopLevelScene implements LevelScene {
       'Turn the tiles until every line meets a line on the next tile.',
       'A line pointing at the edge, or at an empty tile, is not connected.',
       'Connected tiles light up. The level is done when nothing is left dark.',
-      'Click a tile to turn it. Right-click to turn it the other way.',
+      isTouch() ? 'Tap a tile to turn it. Hold a tile to turn it the other way.' : 'Click a tile to turn it. Right-click to turn it the other way.',
     ];
     if (this.level.chapter >= 2) lines.push('Tiles with a small dot are already correct and cannot turn.');
     if (this.level.chapter >= 3) lines.push('Larger boards may hold more than one separate loop.');

@@ -20,7 +20,7 @@ export class Toast extends Container {
     super();
     this.text = new Text({
       text: '',
-      style: { fontFamily: 'Quicksand', fontWeight: '300', fontSize: toastStyle.fontSize, letterSpacing: 1, fill: palette.pearl, align: 'center', wordWrap: true, wordWrapWidth: 560 },
+      style: { fontFamily: 'Quicksand', fontWeight: '300', fontSize: toastStyle.fontSize, letterSpacing: 1, fill: palette.pearl, align: 'center', wordWrap: true, wordWrapWidth: Math.min(560, window.innerWidth - 48) },
       resolution: window.devicePixelRatio || 1,
     });
     this.text.anchor.set(0.5);

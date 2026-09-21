@@ -9,6 +9,8 @@ export class Hud extends Container {
   private backButton: IconButton;
   private helpButton: IconButton;
   private hintButton: IconButton;
+  private accountButton: IconButton;
+  private onAccount: () => void = () => {};
   private screenWidth = 0;
   private onHelp: () => void = () => {};
   private onHint: () => void = () => {};
@@ -19,14 +21,20 @@ export class Hud extends Container {
     this.backButton = new IconButton('back', () => events.emit('input:back'));
     this.helpButton = new IconButton('help', () => this.onHelp());
     this.hintButton = new IconButton('hint', () => this.onHint());
+    this.accountButton = new IconButton('account', () => this.onAccount());
     this.backButton.visible = false;
     this.helpButton.visible = false;
     this.hintButton.visible = false;
-    this.addChild(this.settingsButton, this.backButton, this.helpButton, this.hintButton);
+    this.addChild(this.settingsButton, this.backButton, this.helpButton, this.hintButton, this.accountButton);
   }
 
   setBackVisible(visible: boolean): void {
     this.backButton.visible = visible;
+  }
+
+  setAccountButton(handler: (() => void) | null): void {
+    this.accountButton.visible = handler !== null;
+    this.onAccount = handler ?? (() => {});
   }
 
   // The help (?) and hint buttons only exist while a level is being played.
@@ -44,6 +52,7 @@ export class Hud extends Container {
     this.settingsButton.position.set(this.screenWidth - inset, inset);
     this.helpButton.position.set(this.screenWidth - inset - gap, inset);
     this.hintButton.position.set(this.screenWidth - inset - gap * 2, inset);
+    this.accountButton.position.set(this.screenWidth - inset - gap, inset);
     this.backButton.position.set(inset, inset);
   }
 }

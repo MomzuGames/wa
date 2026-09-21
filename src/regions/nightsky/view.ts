@@ -3,7 +3,7 @@ import { Container, FederatedPointerEvent, Graphics } from 'pixi.js';
 import type { ClueTier, LevelScene, ShellContext } from '../types';
 import { alphas, palette } from '../../design/palette';
 import { durations, easings, reducedMotion, scaled } from '../../design/motion';
-import { layout, puzzleArea } from '../../design/layout';
+import { isTouch, layout, puzzleArea } from '../../design/layout';
 import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
 import { type SkyLevel, type Star, type Stroke, edgeBetween, isComplete, newStroke, traverse, undo } from './model';
@@ -430,7 +430,7 @@ export class SkyLevelScene implements LevelScene {
 
   introLines(): string[] {
     const lines = [
-      'Press on a star and drag through every line without letting go.',
+      isTouch() ? 'Touch a star and slide through every line without lifting your finger.' : 'Press on a star and drag through every line without letting go.',
       'A line lights only when you drag along it to the star at its other end.',
       'Each line can be used once. Drag back to the previous star to undo.',
       'Let go before every line is lit and the stroke fades: try again.',

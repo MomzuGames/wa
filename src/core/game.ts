@@ -19,6 +19,7 @@ import { RegionScene } from '../map/regionScene';
 import { LevelShellScene, type LevelResult } from '../scenes/levelScene';
 
 export interface GameDeps {
+  openAccount: () => void;
   app: Application;
   scenes: SceneManager;
   audio: AudioEngine;
@@ -66,6 +67,7 @@ export class Game {
   showTitle(): void {
     this.deps.hud.setBackVisible(false);
     this.deps.hud.setLevelButtons(null);
+    this.deps.hud.setAccountButton(() => this.deps.openAccount());
     this.deps.audio.setScene('title');
     void this.deps.scenes.go(new TitleScene(() => this.showMap()));
   }
@@ -73,6 +75,7 @@ export class Game {
   showMap(reveal: MapReveal | null = null): void {
     this.deps.hud.setBackVisible(true);
     this.deps.hud.setLevelButtons(null);
+    this.deps.hud.setAccountButton(() => this.deps.openAccount());
     this.deps.audio.setScene('quiet');
     void this.deps.scenes.go(new WorldMapScene((id) => this.showRegion(id), reveal));
   }
@@ -80,12 +83,14 @@ export class Game {
   showRegion(id: RegionId, justSolved: number | null = null): void {
     this.deps.hud.setBackVisible(true);
     this.deps.hud.setLevelButtons(null);
+    this.deps.hud.setAccountButton(null);
     this.deps.audio.setScene(id);
     void this.deps.scenes.go(new RegionScene(id, (level) => this.showLevel(id, level), justSolved));
   }
 
   showLevel(id: RegionId, levelIndex: number): void {
     this.deps.hud.setBackVisible(true);
+    this.deps.hud.setAccountButton(null);
     this.deps.audio.setScene(id);
     const module = getModule(id);
     const scene = new LevelShellScene(

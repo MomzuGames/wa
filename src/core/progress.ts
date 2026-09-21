@@ -1,4 +1,5 @@
 import { getRegion, persist } from './save';
+import { events } from './events';
 import type { RegionId } from '../regions/types';
 import { REGION_ORDER } from '../regions/catalog';
 
@@ -58,6 +59,7 @@ export function markSolved(id: RegionId, levelIndex: number): boolean {
     region.solved.push(levelIndex);
     region.solved.sort((a, b) => a - b);
     persist();
+    events.emit('progress:changed');
   }
   return !wasComplete && isRegionComplete(region.solved.length);
 }
@@ -67,6 +69,7 @@ export function recordAttempts(id: RegionId, levelIndex: number, attempts: numbe
   region.attempts[levelIndex] = attempts;
   region.cluesUsed[levelIndex] = cluesUsed;
   persist();
+  events.emit('progress:changed');
 }
 
 // Dev mode: everything reachable, nothing marked solved.

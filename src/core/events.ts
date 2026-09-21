@@ -8,6 +8,9 @@ export interface GameEvents {
   'spirit:orbit': { x: number; y: number; radius: number };
   'spirit:react': SpiritReaction;
   'audio:started': void;
+  'progress:changed': void;
+  'sync:state': 'synced' | 'offline' | 'signed-out';
+  'auth:changed': { email: string | null };
   'input:back': void;
   'input:mute': void;
   'input:hint': void;

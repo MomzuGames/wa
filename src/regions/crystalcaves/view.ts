@@ -3,7 +3,7 @@ import { Container, Graphics } from 'pixi.js';
 import type { ClueTier, LevelScene, ShellContext } from '../types';
 import { alphas, palette } from '../../design/palette';
 import { durations, easings, reducedMotion, scaled } from '../../design/motion';
-import { layout, puzzleArea } from '../../design/layout';
+import { isTouch, layout, puzzleArea } from '../../design/layout';
 import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
 import { COLOR_NAMES, DIR_DELTA, LEMON, ORIENTATIONS, type PrismLevel, ROSE, SKY, type Segment, isSolved, trace } from './model';
@@ -425,7 +425,7 @@ export class PrismLevelScene implements LevelScene {
   introLines(): string[] {
     const lines = [
       'Turn the mirrors so a beam reaches every crystal.',
-      'Click a piece with a ring around it to turn it. Pieces without a ring are fixed.',
+      `${isTouch() ? 'Tap' : 'Click'} a piece with a ring around it to turn it. Pieces without a ring are fixed.`,
       'A beam bounces off a mirror, passes straight through empty cells, and stops at a crystal, a stone or the edge.',
       'A crystal lights fully only when it receives exactly the colour its marks show.',
     ];

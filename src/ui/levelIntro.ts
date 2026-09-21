@@ -3,7 +3,7 @@ import { Container, Graphics, Text } from 'pixi.js';
 import { alphas, palette } from '../design/palette';
 import { breathe, durations, easings, scaled } from '../design/motion';
 import { progression } from '../core/progress';
-import { layout } from '../design/layout';
+import { isCompact, layout } from '../design/layout';
 import { events } from '../core/events';
 import { drawIcon } from './icons';
 
@@ -39,6 +39,7 @@ export class LevelIntro extends Container {
   private finish: () => void = () => {};
   private unsubscribe: () => void = () => {};
   private buttonTween: gsap.core.Tween | null = null;
+  private compactScale = 1;
 
   constructor(levelIndex: number, accent: number, content: IntroContent) {
     super();
@@ -82,7 +83,7 @@ export class LevelIntro extends Container {
           fill: palette.pearl,
           align: 'center',
           wordWrap: true,
-          wordWrapWidth: introStyle.captionMaxWidth,
+          wordWrapWidth: Math.min(introStyle.captionMaxWidth, window.innerWidth * 1.15),
         },
         resolution: window.devicePixelRatio || 1,
       });
@@ -112,11 +113,15 @@ export class LevelIntro extends Container {
 
   // Resolves when the card has been dismissed and faded out.
   play(width: number, height: number): Promise<void> {
+    if (isCompact(width)) {
+      this.card.scale.set(0.8);
+      this.compactScale = 0.8;
+    }
     this.resize(width, height);
     return new Promise((resolve) => {
       this.finish = resolve;
       gsap.to(this, { alpha: 1, duration: scaled(durations.pieceMove) * 1.5, ease: easings.ambient });
-      gsap.to(this.card.scale, { x: 1, y: 1, duration: scaled(durations.pieceMove) * 2, ease: easings.response });
+      gsap.to(this.card.scale, { x: this.compactScale, y: this.compactScale, duration: scaled(durations.pieceMove) * 2, ease: easings.response });
       this.buttonTween = gsap.to(this.button.scale, {
         x: breathe.scaleTo + 0.03,
         y: breathe.scaleTo + 0.03,

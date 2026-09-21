@@ -9,10 +9,12 @@
     "preview": "vite preview",
     "play": "npm run build && npm run preview -- --open",
     "test": "vitest run",
-    "levels": "tsx scripts/generateLevels.ts"
+    "levels": "tsx scripts/generateLevels.ts",
+    "icons": "tsx scripts/makeIcons.ts"
   },
   "dependencies": {
     "@fontsource/quicksand": "^5.1.0",
+    "firebase": "^12.19.0",
     "gsap": "^3.12.5",
     "pixi-filters": "^6.0.4",
     "pixi.js": "^8.5.2",

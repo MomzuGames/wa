@@ -14,6 +14,10 @@ import { SettingsPanel } from './ui/settings';
 import { Hud } from './ui/hud';
 import { Spirit } from './ui/spirit';
 import { GAME_TITLE } from './config/game';
+import { AccountOverlay } from './ui/accountOverlay';
+import { completeSignInFromUrl, watchAuth } from './cloud/auth';
+import { installSyncTriggers, setSyncUser } from './cloud/sync';
+import { events } from './core/events';
 
 async function main() {
   await document.fonts.load("300 64px 'Quicksand'", GAME_TITLE);
@@ -30,7 +34,8 @@ async function main() {
   const settings = new SettingsPanel(audio, () => game.restartJourney());
   const hud = new Hud(settings);
   const spirit = new Spirit(particles);
-  const game = new Game({ app, scenes, audio, particles, hud, settings });
+  const account = new AccountOverlay();
+  const game = new Game({ app, scenes, audio, particles, hud, settings, openAccount: () => account.open() });
 
   app.stage.addChild(background.container, scenes.root, particles.container, spirit, hud, settings);
 
@@ -54,6 +59,15 @@ async function main() {
   exposeDevHandles(app, scenes, audio, game);
 
   game.start();
+
+  // Cloud sign-in is optional: the game plays from the local save either way.
+  installSyncTriggers();
+  watchAuth((user) => {
+    setSyncUser(user);
+    events.emit('auth:changed', { email: user?.email ?? null });
+  });
+  const signedIn = await completeSignInFromUrl();
+  if (signedIn) account.open();
 }
 
 void main();
