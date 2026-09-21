@@ -1,7 +1,11 @@
 import type { Settings } from './save';
 
+export type SpiritReaction = 'move' | 'attempt' | 'solved' | 'hide' | 'show';
+
 export interface GameEvents {
   'settings:changed': Settings;
+  'spirit:glide': { x: number; y: number; duration?: number; hop?: boolean };
+  'spirit:react': SpiritReaction;
   'audio:started': void;
   'input:back': void;
   'input:mute': void;

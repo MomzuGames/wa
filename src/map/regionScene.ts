@@ -4,11 +4,14 @@ import type { Scene } from '../core/sceneManager';
 import type { RegionId } from '../regions/types';
 import { REGION_ACCENT } from '../regions/catalog';
 import { alphas, palette } from '../design/palette';
-import { breathe, durations, easings, scaled } from '../design/motion';
+import { breathe, durations, easings, reducedMotion, scaled } from '../design/motion';
 import { layout } from '../design/layout';
 import { createGlow } from '../fx/glow';
 import { getRegion } from '../core/save';
-import { levelUnlocked, progression } from '../core/progress';
+import { earliestUnsolved, levelUnlocked, progression } from '../core/progress';
+import { events } from '../core/events';
+import { Atmosphere } from '../fx/atmosphere';
+import { createRng } from '../core/rng';
 
 const trailStyle = {
   nodeRadius: 15,
@@ -17,6 +20,8 @@ const trailStyle = {
   widthFraction: 0.66,
   waveAmplitude: 0.35,
   lineAlpha: 0.5,
+  pulseSpeed: 0.05,
+  spiritOffsetY: -34,
 } as const;
 
 type NodeState = 'locked' | 'unlocked' | 'solved';
@@ -36,6 +41,9 @@ export class RegionScene implements Scene {
   private accent: number;
   private tweens: gsap.core.Tween[] = [];
   private points: Array<{ x: number; y: number }> = [];
+  private atmosphere: Atmosphere;
+  private pulse = new Graphics();
+  private time = 0;
 
   constructor(
     private regionId: RegionId,
@@ -43,7 +51,10 @@ export class RegionScene implements Scene {
     private justSolved: number | null = null,
   ) {
     this.accent = palette[REGION_ACCENT[regionId]];
-    this.container.addChild(this.trail);
+    this.atmosphere = new Atmosphere(regionId, createRng(`${regionId}:trail`));
+    this.pulse.eventMode = 'none';
+    this.pulse.filters = [createGlow(this.accent, { distance: 10, strength: 1.2 })];
+    this.container.addChild(this.atmosphere.container, this.trail, this.pulse);
     for (let i = 0; i < progression.levelsPerRegion; i++) {
       const isChapterEnd = (i + 1) % progression.levelsPerChapter === 0;
       const radius = isChapterEnd ? trailStyle.chapterEndRadius : trailStyle.nodeRadius;
@@ -108,7 +119,38 @@ export class RegionScene implements Scene {
     }
   }
 
+  // Where the player "is": the earliest unsolved level, or the one just solved.
+  private currentNode(): number {
+    if (this.justSolved !== null) return Math.min(this.justSolved + 1, progression.levelsPerRegion - 1);
+    return Math.min(earliestUnsolved(getRegion(this.regionId).solved), progression.levelsPerRegion - 1);
+  }
+
+  private spiritSpot(i: number): { x: number; y: number } {
+    const p = this.points[i] ?? { x: 0, y: 0 };
+    return { x: p.x, y: p.y + trailStyle.spiritOffsetY };
+  }
+
+  update(dt: number): void {
+    this.time += dt;
+    this.atmosphere.update(dt);
+    if (reducedMotion()) return;
+    // A soft pulse of light drifts along the solved part of the trail.
+    const solvedUpTo = this.nodes.findIndex((n) => n.state !== 'solved');
+    const reach = solvedUpTo === -1 ? this.points.length - 1 : Math.max(0, solvedUpTo - 1);
+    this.pulse.clear();
+    if (reach <= 0) return;
+    const t = ((this.time * trailStyle.pulseSpeed) % 1 + 1) % 1;
+    const f = t * reach;
+    const i = Math.min(reach - 1, Math.floor(f));
+    const a = this.points[i]!;
+    const b = this.points[i + 1]!;
+    const u = f - i;
+    this.pulse.circle(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, 2.5).fill({ color: this.accent, alpha: 0.7 });
+  }
+
   enter(): void {
+    const spot = this.spiritSpot(this.currentNode());
+    events.emit('spirit:glide', { x: spot.x, y: spot.y });
     this.nodes.forEach((node, i) => {
       if (node.state !== 'unlocked') return;
       this.tweens.push(
@@ -142,10 +184,13 @@ export class RegionScene implements Scene {
 
   private press(i: number): void {
     if (this.nodes[i]!.state === 'locked') return;
+    const spot = this.spiritSpot(i);
+    events.emit('spirit:glide', { x: spot.x, y: spot.y, hop: true });
     this.onSelect(i);
   }
 
   resize(width: number, height: number): void {
+    this.atmosphere.resize(width, height);
     const perRow = progression.levelsPerChapter;
     const rows = progression.chapters;
     const span = width * trailStyle.widthFraction;
@@ -177,6 +222,7 @@ export class RegionScene implements Scene {
 
   destroy(): void {
     this.tweens.forEach((t) => t.kill());
+    this.atmosphere.destroy();
     this.container.destroy({ children: true });
   }
 }

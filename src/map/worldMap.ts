@@ -8,12 +8,21 @@ import { durations, easings, scaled } from '../design/motion';
 import { isRegionComplete, regionUnlocked, solvedCount } from '../core/progress';
 import { createGlow } from '../fx/glow';
 import { RegionNode, type RegionState } from './regionNode';
+import { events } from '../core/events';
+import { reducedMotion } from '../design/motion';
+import { createRng } from '../core/rng';
 
 const mapStyle = {
   spreadX: 0.7,
   spreadY: 0.34,
   pathSegments: 40,
   pathAlpha: 0.5,
+  driftAmount: 9,
+  driftSpeed: 0.12,
+  twinkleCount: 90,
+  twinkleAlpha: 0.3,
+  pulseSpeed: 0.18,
+  spiritOffsetY: -78,
 } as const;
 
 // Region positions as fractions of the screen, forming a gentle winding journey.
@@ -31,11 +40,16 @@ export interface MapReveal {
 
 export class WorldMapScene implements Scene {
   readonly container = new Container();
+  private world = new Container();
+  private twinkles = new Graphics();
+  private pulses = new Graphics();
   private paths = new Graphics();
   private litPaths = new Graphics();
   private nodes = new Map<RegionId, RegionNode>();
   private width = 0;
   private height = 0;
+  private time = 0;
+  private seeds: number[] = [];
   // The region whose completion is still to be shown; its outgoing path stays dark until then.
   private pendingReveal: RegionId | null;
 
@@ -45,11 +59,17 @@ export class WorldMapScene implements Scene {
   ) {
     this.pendingReveal = reveal?.completed ?? null;
     this.litPaths.filters = [createGlow(palette.pearl, { distance: 12, strength: 1 })];
-    this.container.addChild(this.paths, this.litPaths);
+    this.pulses.filters = [createGlow(palette.pearl, { distance: 10, strength: 1.2 })];
+    this.twinkles.eventMode = 'none';
+    this.pulses.eventMode = 'none';
+    const rng = createRng('worldmap');
+    for (let i = 0; i < mapStyle.twinkleCount * 3; i++) this.seeds.push(rng.next());
+    this.container.addChild(this.twinkles, this.world);
+    this.world.addChild(this.paths, this.litPaths, this.pulses);
     for (const id of REGION_ORDER) {
-      const node = new RegionNode(id, () => this.onSelect(id));
+      const node = new RegionNode(id, () => this.select(id));
       this.nodes.set(id, node);
-      this.container.addChild(node);
+      this.world.addChild(node);
     }
     this.applyStates();
   }
@@ -73,8 +93,68 @@ export class WorldMapScene implements Scene {
     return REGION_ORDER[REGION_ORDER.indexOf(completed) + 1] === id;
   }
 
+  // The region the player is "at": the furthest unlocked one that is not finished.
+  private activeRegion(): RegionId {
+    let active = REGION_ORDER[0]!;
+    for (const id of REGION_ORDER) {
+      if (this.reveal && id === this.reveal.completed) continue;
+      if (regionUnlocked(id) && !(this.reveal && this.isNextAfter(this.reveal.completed, id))) active = id;
+      if (!isRegionComplete(solvedCount(id))) break;
+    }
+    return active;
+  }
+
+  private spiritSpot(id: RegionId): { x: number; y: number } {
+    const p = this.position(id);
+    return { x: p.x, y: p.y + mapStyle.spiritOffsetY };
+  }
+
+  private select(id: RegionId): void {
+    const spot = this.spiritSpot(id);
+    events.emit('spirit:glide', { x: spot.x, y: spot.y, hop: true });
+    this.onSelect(id);
+  }
+
   enter(): void {
+    const spot = this.spiritSpot(this.reveal ? this.reveal.completed : this.activeRegion());
+    events.emit('spirit:glide', { x: spot.x, y: spot.y });
     if (this.reveal) void this.playReveal(this.reveal.completed);
+  }
+
+  update(dt: number): void {
+    this.time += dt;
+    for (const node of this.nodes.values()) node.tick(dt);
+    if (reducedMotion()) return;
+    this.world.x = Math.sin(this.time * mapStyle.driftSpeed) * mapStyle.driftAmount;
+    this.world.y = Math.cos(this.time * mapStyle.driftSpeed * 0.7) * mapStyle.driftAmount * 0.6;
+    this.drawTwinkles();
+    this.drawPulses();
+  }
+
+  private drawTwinkles(): void {
+    const g = this.twinkles;
+    g.clear();
+    for (let i = 0; i < mapStyle.twinkleCount; i++) {
+      const x = this.seeds[i * 3]! * this.width;
+      const y = this.seeds[i * 3 + 1]! * this.height;
+      const phase = this.seeds[i * 3 + 2]! * Math.PI * 2;
+      const tw = 0.5 + 0.5 * Math.sin(this.time * (0.5 + phase * 0.08) + phase);
+      g.circle(x, y, 0.7 + tw).fill({ color: palette.pearl, alpha: mapStyle.twinkleAlpha * tw });
+    }
+  }
+
+  // A mote of light travels along every completed trail.
+  private drawPulses(): void {
+    const g = this.pulses;
+    g.clear();
+    for (let i = 0; i < REGION_ORDER.length - 1; i++) {
+      const a = REGION_ORDER[i]!;
+      const b = REGION_ORDER[i + 1]!;
+      if (!isRegionComplete(solvedCount(a)) || a === this.pendingReveal) continue;
+      const t = ((this.time * mapStyle.pulseSpeed + i * 0.37) % 1 + 1) % 1;
+      const p = this.curve(a, b, t);
+      g.circle(p.x, p.y, 3).fill({ color: palette.pearl, alpha: 0.8 });
+    }
   }
 
   private async playReveal(completed: RegionId): Promise<void> {
@@ -88,6 +168,8 @@ export class WorldMapScene implements Scene {
     await this.drawLitPath(completed, next);
     this.pendingReveal = null;
     await this.nodes.get(next)!.setState(this.stateFor(next), false);
+    const spot = this.spiritSpot(next);
+    events.emit('spirit:glide', { x: spot.x, y: spot.y, duration: durations.completion * 0.6 });
   }
 
   private position(id: RegionId): { x: number; y: number } {

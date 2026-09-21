@@ -12,6 +12,7 @@ import { ParticleSystem, createSoftDotTexture } from './fx/particles';
 import { AudioEngine } from './audio/engine';
 import { SettingsPanel } from './ui/settings';
 import { Hud } from './ui/hud';
+import { Spirit } from './ui/spirit';
 import { GAME_TITLE } from './config/game';
 
 async function main() {
@@ -28,9 +29,10 @@ async function main() {
   const scenes = new SceneManager();
   const settings = new SettingsPanel(audio, () => game.restartJourney());
   const hud = new Hud(settings);
+  const spirit = new Spirit(particles);
   const game = new Game({ app, scenes, audio, particles, hud, settings });
 
-  app.stage.addChild(background.container, scenes.root, particles.container, hud, settings);
+  app.stage.addChild(background.container, scenes.root, particles.container, spirit, hud, settings);
 
   onResize(app, (w, h) => {
     background.resize(w, h);
@@ -43,6 +45,7 @@ async function main() {
     const dt = ticker.deltaMS / 1000;
     background.update(dt);
     scenes.update(dt);
+    spirit.update(dt);
     particles.update(dt);
   });
 

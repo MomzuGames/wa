@@ -73,6 +73,8 @@ export class RegionNode extends Container {
   private outline = new Graphics();
   private fill = new Graphics();
   private hit = new Graphics();
+  private life = new Graphics();
+  private time = 0;
   private breatheTween: gsap.core.Tween | null = null;
   private _state: RegionState = 'locked';
   readonly accent: number;
@@ -82,7 +84,8 @@ export class RegionNode extends Container {
     this.accent = palette[REGION_ACCENT[id]];
     const half = regionNodeStyle.size / 2;
     this.hit.circle(0, 0, Math.max(layout.minHitSize, half * 0.9)).fill({ color: palette.pearl, alpha: 0.001 });
-    this.addChild(this.hit, this.fill, this.outline);
+    this.life.eventMode = 'none';
+    this.addChild(this.hit, this.fill, this.outline, this.life);
     this.eventMode = 'static';
     this.on('pointertap', () => {
       if (this._state !== 'locked') onPress();
@@ -137,6 +140,54 @@ export class RegionNode extends Container {
       }
     }
     return Promise.resolve();
+  }
+
+  // Idle life for each figure; only unlocked and complete regions stir.
+  tick(dt: number): void {
+    this.time += dt;
+    const g = this.life;
+    g.clear();
+    if (this._state === 'locked') return;
+    const s = regionNodeStyle.size / 2;
+    const strength = this._state === 'complete' ? 1 : 0.6;
+    switch (this.id) {
+      case 'tidepools': {
+        const p = (this.time / 5) % 1;
+        g.circle(0, s * 0.1, s * (0.22 + p * 0.7)).stroke({ color: this.accent, width: 1, alpha: 0.35 * (1 - p) * strength });
+        break;
+      }
+      case 'nightsky': {
+        const pts = [[-0.7, 0.3], [-0.3, -0.5], [0.1, -0.1], [0.5, -0.6], [0.75, 0.2], [0.2, 0.55]];
+        pts.forEach(([x, y], i) => {
+          const tw = 0.5 + 0.5 * Math.sin(this.time * 1.4 + i * 1.7);
+          g.circle(x! * s, y! * s, s * 0.05 + tw * 3).fill({ color: palette.pearl, alpha: 0.35 * tw * strength });
+        });
+        break;
+      }
+      case 'stonegarden': {
+        for (let i = 0; i < 3; i++) {
+          const p = ((this.time / 6 + i / 3) % 1);
+          g.circle(-s * 0.5 + i * s * 0.5, s * 0.75 - p * s * 1.3, 1.5).fill({ color: this.accent, alpha: 0.35 * (1 - p) * strength });
+        }
+        break;
+      }
+      case 'crystalcaves': {
+        const tips = [[-0.55, -0.2], [0, -0.75], [0.5, -0.1]];
+        tips.forEach(([x, y], i) => {
+          const tw = Math.max(0, Math.sin(this.time * 0.9 + i * 2.1));
+          g.circle(x! * s, y! * s, 1.5 + tw * 3).fill({ color: palette.pearl, alpha: 0.5 * tw * strength });
+        });
+        break;
+      }
+      case 'moonlake': {
+        const w = Math.sin(this.time * 0.8) * s * 0.05;
+        g.moveTo(-s * 0.8, s * 0.62 + w);
+        g.quadraticCurveTo(-s * 0.4, s * 0.45 - w, 0, s * 0.62 + w);
+        g.quadraticCurveTo(s * 0.4, s * 0.8 - w, s * 0.8, s * 0.62 + w);
+        g.stroke({ color: this.accent, width: 1, alpha: 0.25 * strength });
+        break;
+      }
+    }
   }
 
   private hover(over: boolean): void {

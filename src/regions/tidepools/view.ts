@@ -482,6 +482,44 @@ export class LoopLevelScene implements LevelScene {
     this.container.destroy({ children: true });
   }
 
+  // Intro card: a tile that keeps being tapped and turned; locked tiles appear from chapter 3.
+  introGlyph(): Container {
+    const root = new Container();
+    const cell = 56;
+    const showLock = this.level.chapter >= 2;
+    const makeTile = (mask: number, x: number, locked: boolean) => {
+      const tile = new Container();
+      const base = new Graphics()
+        .roundRect(-cell / 2 + 4, -cell / 2 + 4, cell - 8, cell - 8, cell * loopStyle.cornerFraction)
+        .fill({ color: palette.ink })
+        .stroke({ color: palette.dim, width: 1 });
+      const pipes = new Graphics();
+      const savedCell = this.cell;
+      this.cell = cell;
+      this.drawPipes(pipes, mask, locked ? this.accent : palette.dim, locked ? 0.8 : 1);
+      this.cell = savedCell;
+      tile.addChild(base, pipes);
+      if (locked) tile.addChild(new Graphics().circle(cell / 2 - 9, -cell / 2 + 9, 2).fill({ color: this.accent, alpha: 0.6 }));
+      tile.x = x;
+      root.addChild(tile);
+      return pipes;
+    };
+    const pipes = makeTile(3, showLock ? -cell * 0.6 : 0, false);
+    if (showLock) makeTile(6, cell * 0.6, true);
+    const tap = new Graphics().circle(0, 0, 9).fill({ color: palette.pearl, alpha: 0.6 });
+    tap.x = showLock ? -cell * 0.6 : 0;
+    tap.alpha = 0;
+    root.addChild(tap);
+    const tl = gsap
+      .timeline({ repeat: -1, repeatDelay: 0.6 })
+      .to(tap, { alpha: 1, duration: 0.2 })
+      .to(tap.scale, { x: 0.7, y: 0.7, duration: 0.15, yoyo: true, repeat: 1 })
+      .to(pipes, { rotation: `+=${Math.PI / 2}`, duration: loopStyle.rotateSeconds, ease: easings.tileSnap }, '<')
+      .to(tap, { alpha: 0, duration: 0.3 });
+    root.on('destroyed', () => tl.kill());
+    return root;
+  }
+
   // Dev only: faint correct connectors on every tile. Stripped from production by the caller's DEV guard.
   showSolutionOverlay(): void {
     this.views.forEach((v, i) => {

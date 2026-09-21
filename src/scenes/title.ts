@@ -5,6 +5,7 @@ import { alphas, palette } from '../design/palette';
 import { durations, easings, scaled } from '../design/motion';
 import { BreathingDot } from '../ui/breathingDot';
 import { GAME_TITLE } from '../config/game';
+import { events } from '../core/events';
 
 
 const titleStyle = {
@@ -40,6 +41,7 @@ export class TitleScene implements Scene {
   }
 
   enter(): void {
+    events.emit('spirit:react', 'hide');
     gsap.to(this.logo, {
       alpha: alphas.logo,
       duration: scaled(durations.logoFadeIn),
@@ -48,9 +50,14 @@ export class TitleScene implements Scene {
     });
   }
 
+  // The title dot shrinks away and the travelling spirit takes over from the same spot.
   private press(): void {
     if (this.pressed) return;
     this.pressed = true;
+    const global = this.dot.getGlobalPosition();
+    events.emit('spirit:glide', { x: global.x, y: global.y, duration: 0.01 });
+    gsap.to(this.dot.scale, { x: 0.2, y: 0.2, duration: scaled(durations.pieceMove) * 2, ease: easings.response });
+    gsap.to(this.dot, { alpha: 0, duration: scaled(durations.pieceMove) * 2 });
     this.onStart();
   }
 

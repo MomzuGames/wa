@@ -419,6 +419,68 @@ export class SkyLevelScene implements LevelScene {
     this.container.destroy({ children: true });
   }
 
+  // Intro card: a light traces a small triangle of stars; one-way and double lines appear when relevant.
+  introGlyph(): Container {
+    const root = new Container();
+    const r = 34;
+    const pts = [
+      { x: 0, y: -r },
+      { x: r * 0.95, y: r * 0.6 },
+      { x: -r * 0.95, y: r * 0.6 },
+    ];
+    const hasOneWay = this.level.edges.some((e) => e.oneWay);
+    const hasDouble = this.level.edges.some((e) => e.required === 2);
+    const lines = new Graphics();
+    const lit = new Graphics();
+    lit.filters = [createGlow(this.accent, { distance: 10, strength: 1.2, quality: 0.3 })];
+    const stars = new Graphics();
+    pts.forEach((p) => stars.circle(p.x, p.y, 4).fill({ color: palette.pearl }));
+    const cursor = new Graphics().circle(0, 0, 6).fill({ color: palette.pearl, alpha: 0.8 });
+    root.addChild(lines, lit, stars, cursor);
+    const drawLines = (shimmerT: number) => {
+      lines.clear();
+      for (let i = 0; i < 3; i++) {
+        const a = pts[i]!;
+        const b = pts[(i + 1) % 3]!;
+        lines.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ color: palette.dim, width: 2, alpha: hasDouble && i === 0 ? 0.7 : 0.4 });
+        if (hasDouble && i === 0) {
+          lines.moveTo(a.x + 4, a.y + 2).lineTo(b.x + 4, b.y + 2).stroke({ color: palette.dim, width: 1, alpha: 0.5 });
+        }
+        if (hasOneWay && i === 1) {
+          lines.circle(a.x + (b.x - a.x) * shimmerT, a.y + (b.y - a.y) * shimmerT, 1.8).fill({ color: this.accent, alpha: 0.7 });
+        }
+      }
+    };
+    const state = { t: 0, shimmer: 0 };
+    const tl = gsap.timeline({ repeat: -1, repeatDelay: 0.8 });
+    tl.to(state, {
+      t: 3,
+      duration: 2.1,
+      ease: 'none',
+      onUpdate: () => {
+        const seg = Math.min(2, Math.floor(state.t));
+        const f = state.t - seg;
+        const a = pts[seg]!;
+        const b = pts[(seg + 1) % 3]!;
+        cursor.position.set(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f);
+        lit.clear();
+        for (let i = 0; i < seg; i++) {
+          const p = pts[i]!;
+          const q = pts[(i + 1) % 3]!;
+          lit.moveTo(p.x, p.y).lineTo(q.x, q.y).stroke({ color: this.accent, width: 3, cap: 'round' });
+        }
+        lit.moveTo(a.x, a.y).lineTo(cursor.x, cursor.y).stroke({ color: this.accent, width: 3, cap: 'round' });
+      },
+    }).to(lit, { alpha: 0, duration: 0.4 }).set(lit, { alpha: 1 }).set(state, { t: 0 });
+    const shimmer = gsap.to(state, { shimmer: 1, duration: 2.4, ease: 'none', repeat: -1, onUpdate: () => drawLines(state.shimmer) });
+    root.on('destroyed', () => {
+      tl.kill();
+      shimmer.kill();
+    });
+    drawLines(0);
+    return root;
+  }
+
   // Dev only: the stored solution as a faint path.
   showSolutionOverlay(): void {
     const g = new Graphics();

@@ -25,6 +25,8 @@ export interface LevelScene {
   showClue(tier: ClueTier): void;
   playCompletion(): Promise<void>;
   resize?(width: number, height: number): void;
+  // A small looping demonstration of the mechanic for the level intro card.
+  introGlyph?(): Container;
   destroy(): void;
 }
 
