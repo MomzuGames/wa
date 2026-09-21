@@ -1,6 +1,6 @@
 import './style.css';
 import '@fontsource/quicksand/300.css';
-import { createApp, onResize } from './core/app';
+import { createApp, installTweenSafety, onResize } from './core/app';
 import { SceneManager } from './core/sceneManager';
 import { installKeyboard } from './core/input';
 import { createRng } from './core/rng';
@@ -20,6 +20,7 @@ async function main() {
   await document.fonts.load("300 64px 'Quicksand'", GAME_TITLE);
   load();
 
+  installTweenSafety();
   const app = await createApp(document.querySelector<HTMLDivElement>('#app')!);
   const rng = createRng('chowa');
   const audio = new AudioEngine();

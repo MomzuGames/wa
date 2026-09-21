@@ -36,6 +36,7 @@ export class Face extends Container {
 
   // Glance toward a direction (-1..1 each axis); eases back to centre when called with zeros.
   lookAt(dx: number, dy: number): void {
+    if (this.destroyed) return;
     gsap.to(this.look, {
       x: dx * faceStyle.lookRange,
       y: dy * faceStyle.lookRange,
@@ -47,17 +48,20 @@ export class Face extends Container {
   }
 
   blink(): void {
+    if (this.destroyed) return;
     gsap.to([this.left.scale, this.right.scale], { y: 0.1, duration: 0.07, yoyo: true, repeat: 1, ease: 'sine.inOut' });
   }
 
   // Happy: eyes squeeze into little arcs by squashing.
   squint(seconds: number): void {
+    if (this.destroyed) return;
     gsap.to([this.left.scale, this.right.scale], { y: 0.35, x: 1.3, duration: 0.15, yoyo: true, repeat: 1, repeatDelay: seconds });
   }
 
   private scheduleBlink(): void {
     const [min, max] = faceStyle.blinkEvery;
     this.blinkTimer = gsap.delayedCall(min + Math.random() * (max - min), () => {
+      if (this.destroyed) return;
       this.blink();
       if (Math.random() < 0.25) gsap.delayedCall(0.25, () => this.blink());
       this.scheduleBlink();

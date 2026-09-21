@@ -25,7 +25,6 @@ import { createTidepoolsVoice, type TidepoolsVoice } from './sound';
 
 const loopStyle = {
   maxCell: 92,
-  minCell: 40,
   gapFraction: 0.07,
   cornerFraction: 0.22,
   pipeFraction: 0.16,
@@ -145,10 +144,8 @@ export class LoopLevelScene implements LevelScene {
 
   layout(width: number, height: number): void {
     const area = puzzleArea(width, height);
-    const cell = Math.max(
-      loopStyle.minCell,
-      Math.min(loopStyle.maxCell, Math.min(area.width / this.board.width, area.height / this.board.height)),
-    );
+    const fit = Math.min(area.width / this.board.width, area.height / this.board.height);
+    const cell = Math.min(loopStyle.maxCell, fit);
     this.cell = cell;
     this.origin = {
       x: width / 2 - (this.board.width * cell) / 2 + cell / 2,

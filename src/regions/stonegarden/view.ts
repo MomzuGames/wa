@@ -21,7 +21,6 @@ import { createStoneVoice, type StoneVoice } from './sound';
 
 const stoneStyle = {
   maxCell: 68,
-  minCell: 30,
   boardFraction: 0.62,
   trayFraction: 0.2,
   trayScale: 0.62,
@@ -222,8 +221,8 @@ export class StoneLevelScene implements LevelScene {
 
   layout(width: number, height: number): void {
     const area = puzzleArea(width, height);
-    const boardHeight = height * (isCompact(width) && this.views.length > 5 ? stoneStyle.boardFraction - 0.1 : stoneStyle.boardFraction);
-    this.cell = Math.max(stoneStyle.minCell, Math.min(stoneStyle.maxCell, area.width / this.level.width, boardHeight / this.level.height));
+    const boardHeight = height * (isCompact(width) && this.views.length > 5 ? stoneStyle.boardFraction - 0.14 : stoneStyle.boardFraction);
+    this.cell = Math.min(stoneStyle.maxCell, area.width / this.level.width, boardHeight / this.level.height);
     this.origin = {
       x: width / 2 - (this.level.width * this.cell) / 2,
       y: height * 0.09 + boardHeight / 2 - (this.level.height * this.cell) / 2,
@@ -235,9 +234,10 @@ export class StoneLevelScene implements LevelScene {
     this.compact = isCompact(width);
     const rows = this.compact && count > 5 ? 2 : 1;
     const perRow = Math.ceil(count / rows);
-    const trayY = height - height * stoneStyle.trayFraction * (rows === 2 ? 0.8 : 0.55);
-    const rowGap = height * stoneStyle.trayFraction * 0.5;
-    const span = Math.min(width * stoneStyle.trayWidthFraction, perRow * this.cell * 3.2);
+    const trayY = height - height * stoneStyle.trayFraction * (rows === 2 ? 1.25 : 0.55);
+    const rowGap = height * stoneStyle.trayFraction * 0.55;
+    const clearOfIcons = rows === 1 ? width - 260 : width;
+    const span = Math.min(width * stoneStyle.trayWidthFraction, perRow * this.cell * 3.2, clearOfIcons);
     const left = width / 2 - span / 2;
     // Shrink tray pieces further when the widest one would not fit its slot.
     const widest = Math.max(...this.views.map((_, i) => Math.max(this.bbox(this.shapeOf(i, this.views[i]!.rot, this.views[i]!.flip)).w, 1)));

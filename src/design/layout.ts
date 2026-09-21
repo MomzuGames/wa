@@ -7,6 +7,7 @@ export const layout = {
   puzzleMaxFraction: 0.72,
   portraitFraction: 0.88,
   compactWidth: 700,
+  hudBand: 72,
 } as const;
 
 export interface Rect {
@@ -26,7 +27,11 @@ export function isCompact(screenWidth: number): boolean {
 
 export function puzzleArea(screenWidth: number, screenHeight: number): Rect {
   const portrait = screenHeight > screenWidth;
-  const size = portrait ? screenWidth * layout.portraitFraction : Math.min(screenWidth, screenHeight) * layout.puzzleMaxFraction;
+  // Keep clear of the HUD rows at the top and bottom on short screens.
+  const safeHeight = screenHeight - layout.hudBand * 2;
+  const size = portrait
+    ? Math.min(screenWidth * layout.portraitFraction, safeHeight)
+    : Math.min(Math.min(screenWidth, screenHeight) * layout.puzzleMaxFraction, safeHeight);
   return {
     x: (screenWidth - size) / 2,
     y: (screenHeight - size) / 2,

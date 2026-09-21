@@ -40,6 +40,7 @@ export class LevelIntro extends Container {
   private unsubscribe: () => void = () => {};
   private buttonTween: gsap.core.Tween | null = null;
   private compactScale = 1;
+  private captions: Text[] = [];
 
   constructor(levelIndex: number, accent: number, content: IntroContent) {
     super();
@@ -83,13 +84,14 @@ export class LevelIntro extends Container {
           fill: palette.pearl,
           align: 'center',
           wordWrap: true,
-          wordWrapWidth: Math.min(introStyle.captionMaxWidth, window.innerWidth * 1.15),
+          wordWrapWidth: introStyle.captionMaxWidth,
         },
         resolution: window.devicePixelRatio || 1,
       });
       text.anchor.set(0.5);
       text.y = introStyle.captionOffsetY + i * introStyle.captionLineHeight;
       text.alpha = i === 0 ? alphas.logo : alphas.hudHover * 0.75;
+      this.captions.push(text);
       this.card.addChild(text);
     });
 
@@ -98,7 +100,6 @@ export class LevelIntro extends Container {
     icon.x = 2;
     const hit = new Graphics().circle(0, 0, Math.max(layout.minHitSize, introStyle.buttonRadius + 8)).fill({ color: palette.pearl, alpha: 0.001 });
     this.button.addChild(hit, ring, icon);
-    this.button.y = introStyle.captionOffsetY + Math.max(1, content.lines.length) * introStyle.captionLineHeight + introStyle.buttonGap;
     this.button.eventMode = 'static';
     this.button.cursor = 'pointer';
     this.button.alpha = alphas.hudHover;
@@ -139,6 +140,15 @@ export class LevelIntro extends Container {
   resize(width: number, height: number): void {
     this.backdrop.clear().rect(0, 0, width, height).fill({ color: palette.shadow, alpha: introStyle.backdropAlpha });
     this.card.position.set(width / 2, height / 2);
+    // Captions wrap to the screen; wrapped lines push everything below them down.
+    const wrap = Math.min(introStyle.captionMaxWidth, (width - 32) / this.compactScale);
+    let y = introStyle.captionOffsetY;
+    for (const t of this.captions) {
+      t.style.wordWrapWidth = wrap;
+      t.y = y;
+      y += Math.max(introStyle.captionLineHeight, t.height + 8);
+    }
+    this.button.y = y + introStyle.buttonGap - 10;
   }
 
   private dismiss(): void {

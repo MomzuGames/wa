@@ -1,5 +1,5 @@
 import { Container } from 'pixi.js';
-import { layout } from '../design/layout';
+import { isCompact, layout } from '../design/layout';
 import { events } from '../core/events';
 import { IconButton } from './iconButton';
 import type { SettingsPanel } from './settings';
@@ -48,7 +48,7 @@ export class Hud extends Container {
   resize(width: number): void {
     this.screenWidth = width;
     const inset = layout.hudInset + layout.hudIconSize / 2;
-    const gap = layout.hudIconSize + 16;
+    const gap = layout.hudIconSize + (isCompact(width) ? 8 : 16);
     this.settingsButton.position.set(this.screenWidth - inset, inset);
     this.helpButton.position.set(this.screenWidth - inset - gap, inset);
     this.hintButton.position.set(this.screenWidth - inset - gap * 2, inset);

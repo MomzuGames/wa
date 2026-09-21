@@ -3,7 +3,7 @@ import type { Scene } from '../core/sceneManager';
 import type { ClueTier, LevelScene, PuzzleModule, RegionId, ShellContext } from '../regions/types';
 import { alphas, palette, rgba } from '../design/palette';
 import { durations, easings } from '../design/motion';
-import { layout } from '../design/layout';
+import { isCompact, layout } from '../design/layout';
 import { createRng } from '../core/rng';
 import { events } from '../core/events';
 import { getRegion, markIntroSeen } from '../core/save';
@@ -140,7 +140,7 @@ export class LevelShellScene implements Scene {
 
   enter(): void {
     const inset = layout.hudInset + layout.hudIconSize / 2;
-    events.emit('spirit:glide', { x: this.width / 2 + 52, y: inset });
+    events.emit('spirit:glide', { x: isCompact(this.width) ? this.width / 2 - 56 : this.width / 2 + 52, y: inset });
     // The card appears on its own only when a level introduces something new for this region.
     const lines = this.level.introLines?.() ?? [];
     if (markIntroSeen(this.module.id, lines)) this.showInstructions(true);

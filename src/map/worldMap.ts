@@ -189,9 +189,9 @@ export class WorldMapScene implements Scene {
     const f = LAYOUT[id];
     if (this.height > this.width) {
       // Portrait: the journey winds down the screen instead of across it.
-      const spanY = this.height * 0.66;
+      const spanY = this.height * 0.6;
       const spanX = this.width * 0.36;
-      return { x: this.width / 2 + f.y * spanX, y: (this.height - spanY) / 2 + f.x * spanY };
+      return { x: this.width / 2 + f.y * spanX, y: (this.height - spanY) / 2 + 50 + f.x * spanY };
     }
     const spanX = this.width * mapStyle.spreadX;
     const spanY = this.height * mapStyle.spreadY;

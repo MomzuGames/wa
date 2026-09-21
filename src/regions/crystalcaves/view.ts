@@ -12,7 +12,6 @@ import { createCrystalVoice, type CrystalVoice } from './sound';
 
 const prismStyle = {
   maxCell: 76,
-  minCell: 40,
   gridAlpha: 0.22,
   beamWidth: 3,
   beamAlpha: 0.75,
@@ -118,7 +117,8 @@ export class PrismLevelScene implements LevelScene {
 
   layout(width: number, height: number): void {
     const area = puzzleArea(width, height);
-    this.cell = Math.max(prismStyle.minCell, Math.min(prismStyle.maxCell, area.width / this.level.width, area.height / this.level.height));
+    const fit = Math.min(area.width / this.level.width, area.height / this.level.height);
+    this.cell = Math.min(prismStyle.maxCell, fit);
     this.origin = { x: width / 2 - (this.level.width * this.cell) / 2, y: height / 2 - (this.level.height * this.cell) / 2 };
     const g = this.grid;
     g.clear();

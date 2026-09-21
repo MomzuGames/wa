@@ -4,6 +4,7 @@ import type { Scene } from '../core/sceneManager';
 import { alphas, palette } from '../design/palette';
 import { durations, easings, scaled } from '../design/motion';
 import { BreathingDot } from '../ui/breathingDot';
+import { isCompact } from '../design/layout';
 import { GAME_TITLE } from '../config/game';
 import { events } from '../core/events';
 
@@ -15,6 +16,8 @@ const titleStyle = {
   dotOffsetY: 40,
   floatAmount: 10,
   anticEvery: 5,
+  compactFontSize: 42,
+  compactLetterSpacing: 12,
 } as const;
 
 export class TitleScene implements Scene {
@@ -69,12 +72,14 @@ export class TitleScene implements Scene {
   private scheduleAntic(): void {
     this.anticTimer?.kill();
     this.anticTimer = gsap.delayedCall(titleStyle.anticEvery, () => {
-      if (this.pressed) return;
+      if (this.pressed || this.container.destroyed || this.logo.destroyed) return;
       const letters = GAME_TITLE.length;
       const k = Math.floor(Math.random() * letters);
       const x = this.logo.x - this.logo.width / 2 + ((k + 0.5) / letters) * this.logo.width;
       const y = this.logo.y - this.logo.height / 2 - 26;
-      void this.dot.visit(x, y).then(() => this.scheduleAntic());
+      void this.dot.visit(x, y).then(() => {
+        if (!this.container.destroyed) this.scheduleAntic();
+      });
     });
   }
 
@@ -93,7 +98,11 @@ export class TitleScene implements Scene {
     const cx = width / 2;
     const cy = height / 2;
     // Nudge the letter-spacing trailing gap so the word looks centred.
-    this.logo.position.set(cx + titleStyle.letterSpacing / 2, cy + titleStyle.logoOffsetY);
+    const compact = isCompact(width);
+    this.logo.style.fontSize = compact ? titleStyle.compactFontSize : titleStyle.fontSize;
+    this.logo.style.letterSpacing = compact ? titleStyle.compactLetterSpacing : titleStyle.letterSpacing;
+    const spacing = compact ? titleStyle.compactLetterSpacing : titleStyle.letterSpacing;
+    this.logo.position.set(cx + spacing / 2, cy + titleStyle.logoOffsetY);
     this.dot.settle(cx, cy + titleStyle.dotOffsetY);
   }
 

@@ -20,6 +20,9 @@ export const spiritStyle = {
   orbitSpeed: 0.45,
   idleEvery: [4, 8] as const,
   squash: 0.78,
+  wanderRadius: 26,
+  wanderEvery: [1.6, 3.2] as const,
+  swayAmount: 4,
 } as const;
 
 // The light that travels with the player: a small breathing creature with a face.
@@ -28,6 +31,7 @@ export class Spirit extends Container {
   private dot = new Graphics();
   private halo = new Graphics();
   private body = new Container();
+  private sway = new Container();
   private face: Face;
   private breatheTween: gsap.core.Tween;
   private moving: gsap.core.Timeline | null = null;
@@ -37,6 +41,10 @@ export class Spirit extends Container {
   private idleTimer: gsap.core.Tween | null = null;
   private busy = false;
   private hue: PaletteToken = 'mint';
+  private anchor: { x: number; y: number } | null = null;
+  private wanderTarget: { x: number; y: number } | null = null;
+  private wanderClock = 0;
+  private clock = 0;
 
   constructor(private particles: ParticleSystem) {
     super();
@@ -45,7 +53,8 @@ export class Spirit extends Container {
     this.setTint('mint');
     this.face = new Face(spiritStyle.radius);
     this.body.addChild(this.halo, this.dot, this.face);
-    this.addChild(this.body);
+    this.sway.addChild(this.body);
+    this.addChild(this.sway);
     this.eventMode = 'none';
     this.alpha = 0;
     this.breatheTween = gsap.to(this.body.scale, {
@@ -95,6 +104,15 @@ export class Spirit extends Container {
     this.moving?.kill();
     this.moving = null;
     this.orbit = null;
+    this.anchor = null;
+    this.wanderTarget = null;
+  }
+
+  // Once it arrives somewhere it keeps drifting gently around that spot.
+  private settleAt(x: number, y: number): void {
+    this.anchor = { x, y };
+    this.wanderTarget = null;
+    this.wanderClock = 0;
   }
 
   glideTo(x: number, y: number, duration: number = spiritStyle.glideSeconds): Promise<void> {
@@ -108,6 +126,7 @@ export class Spirit extends Container {
           onComplete: () => {
             this.moving = null;
             this.face.lookAt(0, 0);
+            this.settleAt(x, y);
             resolve();
           },
         })
@@ -127,6 +146,7 @@ export class Spirit extends Container {
         .timeline({
           onComplete: () => {
             this.moving = null;
+            this.settleAt(x, y);
             resolve();
           },
         })
@@ -228,6 +248,27 @@ export class Spirit extends Container {
   // Leaves a trail of light while it travels, and keeps orbiting when asked to.
   update(dt: number): void {
     if (this.alpha <= 0) return;
+    this.clock += dt;
+    // A constant gentle sway of the body, so it never looks pinned.
+    if (!reducedMotion()) {
+      this.sway.x = Math.sin(this.clock * 1.3) * spiritStyle.swayAmount;
+      this.sway.y = Math.cos(this.clock * 0.9) * spiritStyle.swayAmount * 0.7;
+    }
+    // Wander: pick a new spot near the anchor every couple of seconds and drift to it.
+    if (this.anchor && !this.moving && !this.orbit && !reducedMotion()) {
+      this.wanderClock -= dt;
+      if (this.wanderClock <= 0 || !this.wanderTarget) {
+        const [min, max] = spiritStyle.wanderEvery;
+        this.wanderClock = min + Math.random() * (max - min);
+        const a = Math.random() * Math.PI * 2;
+        const r = Math.random() * spiritStyle.wanderRadius;
+        this.wanderTarget = { x: this.anchor.x + Math.cos(a) * r, y: this.anchor.y + Math.sin(a) * r * 0.6 };
+        this.face.lookAt(Math.sign(this.wanderTarget.x - this.x) * 0.6, 0);
+      }
+      const k = Math.min(1, dt * 1.6);
+      this.x += (this.wanderTarget.x - this.x) * k;
+      this.y += (this.wanderTarget.y - this.y) * k;
+    }
     if (this.orbit && !reducedMotion()) {
       this.orbit.angle += dt * spiritStyle.orbitSpeed;
       const o = this.orbit;

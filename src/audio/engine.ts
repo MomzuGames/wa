@@ -15,6 +15,25 @@ export const audioConfig = {
   minSliderDb: -36,
 } as const;
 
+// iOS mutes Web Audio when the ringer switch is on silent, unless the page has played
+// through a media element. A looping silent clip flips the audio session to "playback".
+let mediaUnlocked = false;
+function unlockMediaSession(): void {
+  if (mediaUnlocked) return;
+  mediaUnlocked = true;
+  try {
+    const el = document.createElement('audio');
+    el.setAttribute('playsinline', '');
+    el.loop = true;
+    el.volume = 0.01;
+    // A tiny silent WAV.
+    el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+    void el.play().catch(() => undefined);
+  } catch {
+    // Not available; the game still works, just subject to the silent switch.
+  }
+}
+
 function sliderToDb(value: number): number {
   if (value <= 0) return -Infinity;
   return audioConfig.minSliderDb * (1 - value);
@@ -56,6 +75,7 @@ export class AudioEngine {
   async start(): Promise<void> {
     if (this.started || this.starting) return;
     this.starting = true;
+    unlockMediaSession();
     await Tone.start();
 
     const limiter = new Tone.Limiter(audioConfig.limiterCeilingDb);
