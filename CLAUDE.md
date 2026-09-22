@@ -8,7 +8,7 @@
 ## 1. Vision
 
 A calm, beautiful, wordless puzzle game played in the browser on a laptop.
-The player journeys across a **world map of 5 regions**. Each region is one visual puzzle type with its own deep difficulty curve. Finishing one region lights it up and opens the path to the next.
+The player journeys across a **world map of 6 regions**, all open from the start. Each region is one visual puzzle type with its own deep difficulty curve. Finishing one region lights it up and opens the path to the next.
 
 The feeling to aim for: **meditative focus**. Think soft glowing light on black, slow breathing motion, gentle generative music, and a steady sense of mastery.
 
@@ -107,7 +107,8 @@ Game/
         ├── nightsky/            # Region 2 — Constellation
         ├── stonegarden/         # Region 3 — Silhouette
         ├── crystalcaves/        # Region 4 — Prism
-        └── moonlake/            # Region 5 — Ripple
+        ├── moonlake/            # Region 5 — Ripple
+        └── shadowterrace/       # Region 6 — Shadows (3D)
 ```
 
 Each region folder contains: `model.ts`, `generator.ts`, `solver.ts`, `view.ts`, `clues.ts`, `sound.ts`, `levels.json`, `*.test.ts`.
@@ -116,7 +117,7 @@ Each region folder contains: `model.ts`, `generator.ts`, `solver.ts`, `view.ts`,
 Every region plugs into the shared shell through one interface. The shell never contains region-specific logic.
 
 ```ts
-export type RegionId = 'tidepools' | 'nightsky' | 'stonegarden' | 'crystalcaves' | 'moonlake';
+export type RegionId = 'tidepools' | 'nightsky' | 'stonegarden' | 'crystalcaves' | 'moonlake' | 'shadowterrace';
 export type ClueTier = 1 | 2 | 3 | 4;
 
 export interface LevelScene {
@@ -125,6 +126,7 @@ export interface LevelScene {
   restart(): void;
   showClue(tier: ClueTier): void;        // must never reveal the complete solution
   playCompletion(): Promise<void>;       // the region's signature solve animation
+  update?(dt: number): void;             // ticked every frame by the shell (ripples, drift, timed clues)
   destroy(): void;
 }
 
@@ -154,6 +156,7 @@ export interface PuzzleModule {
 | `peach` | `#FFD6C2` | Stone Garden accent |
 | `sky` | `#BDE0FE` | Crystal Caves accent |
 | `rose` | `#FFC8DD` | Moon Lake accent |
+| `sage` | `#D0E8BF` | Shadow Terrace accent |
 | `lemon` | `#FFF1B8` | Prism beam colour only |
 | `pearl` | `#F7F4FF` | tiny highlights, "all colours" beam |
 
@@ -203,6 +206,7 @@ Quicksand, light weight, generous letter-spacing. It is used only for the title 
 | Stone Garden | kalimba-like pluck | warm low hum, occasional wooden click |
 | Crystal Caves | singing-bowl sines with long tails | crystalline harmonics |
 | Moon Lake | warm electric-piano pad | deep slow swells |
+| Shadow Terrace | soft wooden blocks climbing with each stone | koto-like plucks over a breathy low pad |
 
 - **Interaction sounds** are always pentatonic notes, so there are no "wrong" notes.
 - **Failure:** a soft descending 3-note breath, very quiet.
@@ -216,14 +220,14 @@ Quicksand, light weight, generous letter-spacing. It is used only for the title 
 ## 6. World Map & Progression
 
 - **Look:** a black canvas with the world drawn in faint pastel line art.
-- **Region order:** Tidepools → Night Sky → Stone Garden → Crystal Caves → Moon Lake.
+- **Region order (on the map):** Tidepools → Night Sky → Stone Garden → Crystal Caves → Moon Lake → Shadow Terrace.
 - **Region states:**
   - Locked: a dim outline, silent.
   - Unlocked: an accent outline, breathing gently.
   - Complete: filled with soft accent light, with its ambient layer audible on the map.
 - **Region size:** 10 levels in 4 short chapters (3, 3, 2, 2). Level nodes sit along a winding trail inside the region scene. The final level of each region is generated with "ultra" parameters and is the hardest; chapter-final figures sit at levels 3, 6 and 8.
 - **Unlocking within a region:** a level unlocks when the previous one is solved. The player may also be up to 2 levels ahead of their earliest unsolved level, so one hard level never blocks progress.
-- **Unlocking the next region:** the next region opens when the current one is **80% solved** (8/10 levels).
+- **Regions are never gated:** every region is open from the first visit; players pick any region and come back to it later (`isRegionUnlocked` always returns true). Finishing a region still lights it and draws the glowing trail to the next one.
 - **Finishing a region:** at 100%, play the region finale, return to the map, animate the region filling with light, then slowly draw a glowing path to the next region.
 - Completed regions and levels can always be replayed.
 - **Optional stretch, "The Summit":** unlocked after all 5 regions. Mixed-mechanic levels. Build it only in Phase 9, if the owner asks.
@@ -392,6 +396,25 @@ For every region:
   3. The number of presses still needed appears as small dots, not digits.
   4. Half the remaining presses shimmer for 3 s.
 - **Solve animation:** the whole lake lights up, concentric ripples spread across it, and a moon reflection rises.
+
+### Region 6 — Shadow Terrace (Shadows, three-dimensional) · accent `sage`
+- **Board:** an n×n terrace drawn in isometric 3D (`view.ts` projects grid points through a view angle; stacks are sorted back to front and drawn as cubes with three shaded faces). Two lanterns stand behind the far edges; every stack throws a shadow on the sand in front, one bar per row along each near edge, whose length is the tallest stone in that row (per-column and per-row maxima of the heightmap).
+- **Input:** tap a tile to add a stone; the stack climbs to its ceiling (the smaller of its two shadows), then clears. Hold, right-click or shift-click takes one stone away. The turn button (bottom left) or `R` rotates the view a quarter turn, with a tween; shadows fade during the turn.
+- **Win condition:** the cast shadows match the moon's on both edges, every moonlit tile carries a stone and dark tiles are empty (from chapter 2), the stone count is exact (from chapter 3), and fixed grey stacks are untouched. Accept **any** heightmap that satisfies this.
+- **Generator:** a random heightmap gives the shadows; a level is rejected when filling every stack to its ceiling already solves it (once the count rule is in play). The ultra level asks for the **minimum** number of stones.
+- **Solver:** backtracking over cells with look-ahead (each row and column must still be able to reach its shadow; the count must stay reachable). `solveShadow(level, prefer)` tries the player's own heights first so hints stay close to what they built; `minimumStones` finds the fewest stones.
+- **Chapters:**
+  1. 3×3, heights to 2, shadows only
+  2. 3×3 to 4×4, heights to 3, moonlit floor plan
+  3. 4×4, exact stone count (the lantern gauge beside the terrace)
+  4. 4×4 to 5×5, heights to 4, fixed grey stacks; the final level asks for the minimum count
+- **Signature twist — the lantern gauge:** a vertical gauge with one tick per stone fills as stones are placed; it must be exactly full. Spilling over shows in pearl above the gauge.
+- **Clues:**
+  1. One stack's correct height appears as a pale outline (a cross on the floor means "take these away").
+  2. Two more outlines.
+  3. For 3 s, tiles in rows and columns whose shadow is still wrong shimmer.
+  4. Outlines for half the stacks, for 3 s.
+- **Solve animation:** the terrace turns slowly once while a moon climbs behind it and sparks rise from the stones.
 
 ---
 
