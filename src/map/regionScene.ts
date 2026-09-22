@@ -2,7 +2,8 @@ import gsap from 'gsap';
 import { Container, FederatedPointerEvent, Graphics, Text } from 'pixi.js';
 import type { Scene } from '../core/sceneManager';
 import type { RegionId } from '../regions/types';
-import { REGION_ACCENT } from '../regions/catalog';
+import { LEVEL_NAMES, REGION_ACCENT } from '../regions/catalog';
+import { spiritStyle } from '../ui/spirit';
 import { alphas, palette } from '../design/palette';
 import { breathe, durations, easings, reducedMotion, scaled } from '../design/motion';
 import { layout } from '../design/layout';
@@ -23,6 +24,11 @@ const trailStyle = {
   pulseSpeed: 0.05,
   spiritOffsetY: -34,
   perRow: 5,
+  nameOffsetY: 30,
+  nameIdleAlpha: 0.35,
+  nameNearAlpha: 0.95,
+  nearRadius: 120,
+  tourPause: 1.2,
 } as const;
 
 type NodeState = 'locked' | 'unlocked' | 'solved';
@@ -33,6 +39,8 @@ interface TrailNode {
   label: Text;
   state: NodeState;
   radius: number;
+  near: number; // 0..1: how close the light is
+  glow: Graphics;
 }
 
 export class RegionScene implements Scene {
@@ -46,6 +54,8 @@ export class RegionScene implements Scene {
   private pulse = new Graphics();
   private time = 0;
   private screen = { x: 1, y: 1 };
+  private unsubscribe: () => void = () => {};
+  private chosen = -1;
 
   constructor(
     private regionId: RegionId,
@@ -65,25 +75,37 @@ export class RegionScene implements Scene {
       const radius = isChapterEnd(i) ? trailStyle.chapterEndRadius : trailStyle.nodeRadius;
       const root = new Container();
       const disc = new Graphics();
+      // Each level carries a name from its region, written beneath its stone.
       const label = new Text({
-        text: String(i + 1),
-        style: { fontFamily: 'Quicksand', fontWeight: '300', fontSize: 13, fill: palette.pearl },
+        text: LEVEL_NAMES[regionId][i] ?? String(i + 1),
+        style: { fontFamily: 'Quicksand', fontWeight: '300', fontSize: 12, letterSpacing: 2, fill: palette.pearl },
         resolution: window.devicePixelRatio || 1,
       });
       label.anchor.set(0.5);
+      label.y = radius + trailStyle.nameOffsetY - 12;
+      const glow = new Graphics();
+      glow.eventMode = 'none';
       const hit = new Graphics()
         .circle(0, 0, Math.max(layout.minHitSize / 2, radius + 6))
         .fill({ color: palette.pearl, alpha: 0.001 });
-      root.addChild(hit, disc, label);
+      root.addChild(glow, hit, disc, label);
       root.eventMode = 'static';
       root.cursor = 'pointer';
       root.on('pointertap', () => this.press(i));
       root.on('pointerover', () => this.hover(i, true));
       root.on('pointerout', () => this.hover(i, false));
-      this.nodes.push({ root, disc, label, state: 'locked', radius });
+      this.nodes.push({ root, disc, label, state: 'locked', radius, near: 0, glow });
       this.container.addChild(root);
     }
     this.refreshStates();
+    // Levels brighten as the light passes over them.
+    this.unsubscribe = events.on('spirit:at', ({ x, y }) => {
+      this.nodes.forEach((node, i) => {
+        const p = this.points[i];
+        if (!p) return;
+        node.near = 1 - Math.min(1, Math.hypot(p.x - x, p.y - y) / trailStyle.nearRadius);
+      });
+    });
   }
 
   private stateOf(i: number): NodeState {
@@ -106,19 +128,19 @@ export class RegionScene implements Scene {
       case 'locked':
         disc.circle(0, 0, radius).fill({ color: palette.void }).stroke({ color: palette.dim, width: 1.5 });
         disc.filters = [];
-        node.label.alpha = alphas.hudIdle * 0.6;
+        node.label.alpha = alphas.hudIdle * 0.5;
         node.root.cursor = 'default';
         break;
       case 'unlocked':
         disc.circle(0, 0, radius).fill({ color: palette.void }).stroke({ color: this.accent, width: 1.5 });
         disc.filters = [];
-        node.label.alpha = alphas.hudHover;
+        node.label.alpha = trailStyle.nameIdleAlpha;
         node.root.cursor = 'pointer';
         break;
       case 'solved':
         disc.circle(0, 0, radius).fill({ color: this.accent, alpha: 0.85 });
         disc.filters = [createGlow(this.accent, { distance: 14, strength: 1 })];
-        node.label.alpha = 0;
+        node.label.alpha = trailStyle.nameIdleAlpha;
         node.root.cursor = 'pointer';
         break;
     }
@@ -138,6 +160,15 @@ export class RegionScene implements Scene {
   update(dt: number): void {
     this.time += dt;
     this.atmosphere.update(dt);
+    // Names and a soft pool of light follow the spirit along the trail.
+    const k = Math.min(1, dt * 5);
+    this.nodes.forEach((node, i) => {
+      if (node.state === 'locked') return;
+      const lift = this.chosen === i ? 1 : node.near;
+      node.label.alpha += (trailStyle.nameIdleAlpha + (trailStyle.nameNearAlpha - trailStyle.nameIdleAlpha) * lift - node.label.alpha) * k;
+      node.glow.clear();
+      if (lift > 0.02) node.glow.circle(0, 0, node.radius * 2.4).fill({ color: this.accent, alpha: 0.18 * lift });
+    });
     if (reducedMotion()) return;
     // A soft pulse of light drifts along the solved part of the trail.
     const solvedUpTo = this.nodes.findIndex((n) => n.state !== 'solved');
@@ -154,8 +185,11 @@ export class RegionScene implements Scene {
   }
 
   enter(): void {
-    const spot = this.spiritSpot(this.currentNode());
-    events.emit('spirit:glide', { x: spot.x, y: spot.y });
+    // The light wanders the open part of the trail, starting from where the player stands.
+    const open = this.nodes.map((n, i) => (n.state === 'locked' ? -1 : i)).filter((i) => i >= 0);
+    const points = open.map((i) => this.spiritSpot(i));
+    const start = Math.max(0, open.indexOf(this.currentNode()));
+    events.emit('spirit:tour', { points, pause: trailStyle.tourPause, start });
     this.nodes.forEach((node, i) => {
       if (node.state !== 'unlocked') return;
       this.tweens.push(
@@ -187,11 +221,13 @@ export class RegionScene implements Scene {
     gsap.to(node.root, { alpha: over ? 1 : 0.85, duration: durations.hudHover });
   }
 
+  // Choosing a level: its name lights fully and the light leaps into its stone.
   private press(i: number): void {
-    if (this.nodes[i]!.state === 'locked') return;
-    const spot = this.spiritSpot(i);
-    events.emit('spirit:glide', { x: spot.x, y: spot.y, hop: true });
-    this.onSelect(i);
+    if (this.nodes[i]!.state === 'locked' || this.chosen >= 0) return;
+    this.chosen = i;
+    const p = this.points[i]!;
+    events.emit('spirit:dive', { x: p.x, y: p.y });
+    gsap.delayedCall(scaled(spiritStyle.diveSeconds) * 1.05, () => this.onSelect(i));
   }
 
   resize(width: number, height: number): void {
@@ -227,6 +263,7 @@ export class RegionScene implements Scene {
   }
 
   destroy(): void {
+    this.unsubscribe();
     this.tweens.forEach((t) => t.kill());
     this.atmosphere.destroy();
     this.container.destroy({ children: true });

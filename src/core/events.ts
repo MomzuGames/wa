@@ -7,6 +7,13 @@ export interface GameEvents {
   'settings:changed': Settings;
   'spirit:glide': { x: number; y: number; duration?: number; hop?: boolean };
   'spirit:orbit': { x: number; y: number; radius: number };
+  // Roam a loop of places, pausing at each; the map and the level trail use this.
+  'spirit:tour': { points: Array<{ x: number; y: number }>; pause?: number; start?: number };
+  // A gleeful burst (the title click) and a leap into a place (choosing a region or level).
+  'spirit:joy': { x: number; y: number };
+  'spirit:dive': { x: number; y: number };
+  // Where the light is, every frame, so scenes can brighten what it passes.
+  'spirit:at': { x: number; y: number };
   'spirit:tint': PaletteToken;
   'spirit:react': SpiritReaction;
   'audio:started': void;

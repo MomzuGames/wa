@@ -83,15 +83,16 @@ export class TitleScene implements Scene {
     });
   }
 
-  // The title dot shrinks away and the travelling spirit takes over from the same spot.
+  // The title dot becomes the travelling spirit on the spot: it bursts with joy, loops
+  // once around, and the map fades in beneath it while it sets off to tour the regions.
   private press(): void {
     if (this.pressed) return;
     this.pressed = true;
     const global = this.dot.getGlobalPosition();
-    events.emit('spirit:glide', { x: global.x, y: global.y, duration: 0.01 });
-    gsap.to(this.dot.scale, { x: 0.2, y: 0.2, duration: scaled(durations.pieceMove) * 2, ease: easings.response });
-    gsap.to(this.dot, { alpha: 0, duration: scaled(durations.pieceMove) * 2 });
-    this.onStart();
+    events.emit('spirit:joy', { x: global.x, y: global.y });
+    gsap.to(this.dot.scale, { x: 0.2, y: 0.2, duration: scaled(durations.pieceMove), ease: easings.response });
+    gsap.to(this.dot, { alpha: 0, duration: scaled(durations.pieceMove) });
+    gsap.delayedCall(scaled(durations.pieceMove) * 1.5, () => this.onStart());
   }
 
   resize(width: number, height: number): void {

@@ -7,6 +7,7 @@ import { isCompact, layout } from '../design/layout';
 import { createRng } from '../core/rng';
 import { events } from '../core/events';
 import { getRegion, markIntroSeen } from '../core/save';
+import { LEVEL_NAMES } from '../regions/catalog';
 import { ConfirmCard } from '../ui/confirm';
 import { Toast } from '../ui/toast';
 import { markSolved, recordAttempts } from '../core/progress';
@@ -93,8 +94,8 @@ export class LevelShellScene implements Scene {
     this.orb = new HintOrb(accent, () => this.revealClue());
     this.restartButton = new IconButton('restart', () => this.restart());
     this.label = new Text({
-      text: String(levelIndex + 1),
-      style: { fontFamily: 'Quicksand', fontWeight: '300', fontSize: 22, letterSpacing: 4, fill: palette.pearl },
+      text: LEVEL_NAMES[module.id][levelIndex] ?? String(levelIndex + 1),
+      style: { fontFamily: 'Quicksand', fontWeight: '300', fontSize: 17, letterSpacing: 4, fill: palette.pearl },
       resolution: window.devicePixelRatio || 1,
     });
     this.label.anchor.set(0.5);
@@ -131,7 +132,7 @@ export class LevelShellScene implements Scene {
       this.atmosphere.setParallax(this.parallax.x, this.parallax.y);
     });
 
-    if (devFlags.enabled) this.installSolutionOverlay();
+    if (devFlags.solution) this.installSolutionOverlay();
   }
 
   get regionId(): RegionId {
@@ -157,7 +158,7 @@ export class LevelShellScene implements Scene {
       if (first) this.level.begin?.();
       return;
     }
-    this.intro = new LevelIntro(this.levelIndex, palette[this.module.accent], pages, startPage);
+    this.intro = new LevelIntro(LEVEL_NAMES[this.module.id][this.levelIndex] ?? String(this.levelIndex + 1), palette[this.module.accent], pages, startPage);
     this.container.addChild(this.intro);
     void this.intro.play(this.width, this.height).then(() => {
       this.intro = null;

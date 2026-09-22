@@ -1,13 +1,14 @@
 import gsap from 'gsap';
-import { Container, Graphics } from 'pixi.js';
+import { Container, type FederatedPointerEvent, Graphics } from 'pixi.js';
 import type { Scene } from '../core/sceneManager';
 import type { RegionId } from '../regions/types';
 import { REGION_ORDER } from '../regions/catalog';
 import { alphas, palette } from '../design/palette';
 import { durations, easings, scaled } from '../design/motion';
+import { spiritStyle } from '../ui/spirit';
 import { isRegionComplete, regionUnlocked, solvedCount } from '../core/progress';
 import { createGlow } from '../fx/glow';
-import { RegionNode, type RegionState } from './regionNode';
+import { RegionNode, type RegionState, regionNodeStyle } from './regionNode';
 import { events } from '../core/events';
 import { reducedMotion } from '../design/motion';
 import { createRng } from '../core/rng';
@@ -23,7 +24,8 @@ const mapStyle = {
   twinkleAlpha: 0.3,
   pulseSpeed: 0.18,
   spiritOffsetY: -78,
-  orbitRadius: 96,
+  parallax: 22, // px the map shifts toward the pointer
+  tourPause: 1.6,
 } as const;
 
 // Region positions as fractions of the screen, forming a gentle winding journey.
@@ -52,6 +54,9 @@ export class WorldMapScene implements Scene {
   private height = 0;
   private time = 0;
   private seeds: number[] = [];
+  private parallax = { x: 0, y: 0 };
+  private chosen: RegionId | null = null;
+  private unsubscribe: () => void = () => {};
   // The region whose completion is still to be shown; its outgoing path stays dark until then.
   private pendingReveal: RegionId | null;
 
@@ -74,6 +79,18 @@ export class WorldMapScene implements Scene {
       this.world.addChild(node);
     }
     this.applyStates();
+    // The map leans toward the pointer, and the regions brighten as the light passes them.
+    this.container.eventMode = 'static';
+    this.container.on('globalpointermove', (e: FederatedPointerEvent) => {
+      this.parallax = { x: e.global.x / Math.max(1, this.width) - 0.5, y: e.global.y / Math.max(1, this.height) - 0.5 };
+    });
+    this.unsubscribe = events.on('spirit:at', ({ x, y }) => {
+      for (const id of REGION_ORDER) {
+        const p = this.position(id);
+        const d = Math.hypot(p.x + this.world.x - x, p.y + this.world.y - y);
+        this.nodes.get(id)!.setNear(1 - Math.min(1, d / regionNodeStyle.nearRadius));
+      }
+    });
   }
 
   private stateFor(id: RegionId): RegionState {
@@ -95,51 +112,53 @@ export class WorldMapScene implements Scene {
     return REGION_ORDER[REGION_ORDER.indexOf(completed) + 1] === id;
   }
 
-  // The region the player is "at": the furthest unlocked one that is not finished.
-  private activeRegion(): RegionId {
-    let active = REGION_ORDER[0]!;
-    for (const id of REGION_ORDER) {
-      if (this.reveal && id === this.reveal.completed) continue;
-      if (regionUnlocked(id) && !(this.reveal && this.isNextAfter(this.reveal.completed, id))) active = id;
-      if (!isRegionComplete(solvedCount(id))) break;
-    }
-    return active;
-  }
-
   private spiritSpot(id: RegionId): { x: number; y: number } {
     const p = this.position(id);
     return { x: p.x, y: p.y + mapStyle.spiritOffsetY };
   }
 
+  // The light roams from region to region, lighting each as it arrives.
+  private roam(startAt: RegionId): void {
+    const points = REGION_ORDER.map((id) => this.spiritSpot(id));
+    events.emit('spirit:tour', { points, pause: mapStyle.tourPause, start: REGION_ORDER.indexOf(startAt) });
+  }
+
+  // Choosing a region: its name lights fully and the light leaps into the figure.
   private select(id: RegionId): void {
-    const spot = this.spiritSpot(id);
-    events.emit('spirit:glide', { x: spot.x, y: spot.y, hop: true });
-    this.onSelect(id);
+    if (this.chosen) return;
+    this.chosen = id;
+    const p = this.position(id);
+    for (const other of REGION_ORDER) this.nodes.get(other)!.setChosen(other === id);
+    events.emit('spirit:dive', { x: p.x + this.world.x, y: p.y + this.world.y - regionNodeStyle.size * 0.1 });
+    gsap.delayedCall(scaled(spiritStyle.diveSeconds) * 1.05, () => this.onSelect(id));
+  }
+
+  // Where the journey stands: the first region that is not finished yet.
+  private firstUnfinished(): RegionId {
+    for (const id of REGION_ORDER) if (!isRegionComplete(solvedCount(id))) return id;
+    return REGION_ORDER[0]!;
   }
 
   enter(): void {
-    const active = this.reveal ? this.reveal.completed : this.activeRegion();
-    const spot = this.spiritSpot(active);
-    this.nodes.get(active)!.setFocused(true);
-    void this.glideThenOrbit(active, spot);
-    if (this.reveal) void this.playReveal(this.reveal.completed);
-  }
-
-  // The light settles at a region and then circles it slowly, like it lives there.
-  private async glideThenOrbit(id: RegionId, spot: { x: number; y: number }): Promise<void> {
-    events.emit('spirit:glide', { x: spot.x, y: spot.y });
-    await new Promise((r) => gsap.delayedCall(scaled(durations.sceneTransition) + 0.2, r));
-    if (this.container.destroyed) return;
-    const p = this.position(id);
-    events.emit('spirit:orbit', { x: p.x + this.world.x, y: p.y + this.world.y, radius: mapStyle.orbitRadius });
+    if (this.reveal) {
+      void this.playReveal(this.reveal.completed);
+      return;
+    }
+    this.roam(this.firstUnfinished());
   }
 
   update(dt: number): void {
     this.time += dt;
     for (const node of this.nodes.values()) node.tick(dt);
     if (reducedMotion()) return;
-    this.world.x = Math.sin(this.time * mapStyle.driftSpeed) * mapStyle.driftAmount;
-    this.world.y = Math.cos(this.time * mapStyle.driftSpeed * 0.7) * mapStyle.driftAmount * 0.6;
+    const k = Math.min(1, dt * 3);
+    const px = -this.parallax.x * mapStyle.parallax;
+    const py = -this.parallax.y * mapStyle.parallax * 0.7;
+    this.world.x += (Math.sin(this.time * mapStyle.driftSpeed) * mapStyle.driftAmount + px - this.world.x) * k;
+    this.world.y += (Math.cos(this.time * mapStyle.driftSpeed * 0.7) * mapStyle.driftAmount * 0.6 + py - this.world.y) * k;
+    // The star field sits further back, so it shifts less than the regions.
+    this.twinkles.x = px * 0.35;
+    this.twinkles.y = py * 0.35;
     this.drawTwinkles();
     this.drawPulses();
   }
@@ -176,14 +195,13 @@ export class WorldMapScene implements Scene {
     const next = REGION_ORDER[REGION_ORDER.indexOf(completed) + 1];
     if (!next) {
       this.pendingReveal = null;
+      this.roam(completed);
       return;
     }
     await this.drawLitPath(completed, next);
     this.pendingReveal = null;
     await this.nodes.get(next)!.setState(this.stateFor(next), false);
-    this.nodes.get(completed)!.setFocused(false);
-    this.nodes.get(next)!.setFocused(true);
-    void this.glideThenOrbit(next, this.spiritSpot(next));
+    this.roam(next);
   }
 
   private position(id: RegionId): { x: number; y: number } {
@@ -264,6 +282,7 @@ export class WorldMapScene implements Scene {
   }
 
   destroy(): void {
+    this.unsubscribe();
     this.container.destroy({ children: true });
   }
 }

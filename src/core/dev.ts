@@ -7,6 +7,8 @@ import type { Game } from './game';
 
 export const devFlags = {
   enabled: import.meta.env.DEV && new URLSearchParams(location.search).get('dev') === '1',
+  // The solution overlay gives every answer away, so even in dev it has to be asked for.
+  solution: import.meta.env.DEV && new URLSearchParams(location.search).get('solution') === '1',
 };
 
 // FPS meter: the one place text appears outside the title and level numbers, dev builds only.

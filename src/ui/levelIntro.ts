@@ -50,7 +50,7 @@ export class LevelIntro extends Container {
   private dragStart: { x: number; y: number } | null = null;
 
   constructor(
-    levelIndex: number,
+    levelName: string,
     private accent: number,
     private pages: IntroPage[],
     startPage = 0,
@@ -61,8 +61,8 @@ export class LevelIntro extends Container {
     this.addChild(this.backdrop, this.card);
 
     const number = new Text({
-      text: String(levelIndex + 1),
-      style: { fontFamily: 'Quicksand', fontWeight: '300', fontSize: introStyle.numberSize, letterSpacing: 6, fill: palette.pearl },
+      text: levelName,
+      style: { fontFamily: 'Quicksand', fontWeight: '300', fontSize: introStyle.numberSize - 4, letterSpacing: 6, fill: palette.pearl },
       resolution: window.devicePixelRatio || 1,
     });
     number.anchor.set(0.5);

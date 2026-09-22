@@ -23,6 +23,10 @@ export const spiritStyle = {
   wanderRadius: 26,
   wanderEvery: [1.6, 3.2] as const,
   swayAmount: 4,
+  tourPause: 1.4,
+  tourGlide: 1.5,
+  joySeconds: 1.6,
+  diveSeconds: 0.75,
 } as const;
 
 // The light that travels with the player: a small breathing creature with a face.
@@ -45,6 +49,8 @@ export class Spirit extends Container {
   private wanderTarget: { x: number; y: number } | null = null;
   private wanderClock = 0;
   private clock = 0;
+  private tourToken = 0;
+  private joyful: Promise<void> | null = null;
 
   constructor(private particles: ParticleSystem) {
     super();
@@ -69,6 +75,9 @@ export class Spirit extends Container {
     events.on('spirit:orbit', ({ x, y, radius }) => this.startOrbit(x, y, radius));
     events.on('spirit:react', (r) => this.react(r));
     events.on('spirit:tint', (t) => this.setTint(t));
+    events.on('spirit:tour', ({ points, pause, start }) => void this.tour(points, pause, start));
+    events.on('spirit:joy', ({ x, y }) => void this.joy(x, y));
+    events.on('spirit:dive', ({ x, y }) => void this.dive(x, y));
     this.scheduleIdle();
   }
 
@@ -106,6 +115,104 @@ export class Spirit extends Container {
     this.orbit = null;
     this.anchor = null;
     this.wanderTarget = null;
+    this.tourToken++;
+  }
+
+  // After a dive the body is tiny; any new journey starts by popping back to full size.
+  private emerge(): void {
+    if (this.body.scale.x < 0.5) {
+      this.body.scale.set(0.2);
+      gsap.to(this.body.scale, { x: 1, y: 1, duration: scaled(durations.pieceMove) * 1.5, ease: easings.tileSnap, overwrite: true });
+    }
+  }
+
+  // Roams a loop of places: glides to each in turn, lingers a moment, moves on. Forever,
+  // until another journey interrupts it. Waits for a joy burst to finish first.
+  private async tour(points: Array<{ x: number; y: number }>, pause: number = spiritStyle.tourPause, start = 0): Promise<void> {
+    if (points.length === 0) return;
+    if (this.joyful) await this.joyful;
+    this.stopMoving();
+    const token = this.tourToken;
+    this.emerge();
+    if (this.alpha === 0) this.show();
+    let i = start % points.length;
+    for (;;) {
+      const p = points[i]!;
+      await this.glideTo(p.x, p.y, spiritStyle.tourGlide);
+      if (token !== this.tourToken || this.destroyed) return;
+      await new Promise((r) => gsap.delayedCall(scaled(pause) * (0.7 + Math.random() * 0.6), r));
+      if (token !== this.tourToken || this.destroyed) return;
+      i = (i + 1) % points.length;
+    }
+  }
+
+  // The title click: a gleeful pulse, then a quick loop-the-loop that leaves a ring of light.
+  private joy(x: number, y: number): Promise<void> {
+    this.stopMoving();
+    this.position.set(x, y);
+    this.show();
+    this.face.squint(spiritStyle.joySeconds);
+    const d = scaled(spiritStyle.joySeconds);
+    const r = spiritStyle.arcLift * 2.2;
+    const loop = { a: 0 };
+    this.joyful = new Promise((resolve) => {
+      this.moving = gsap
+        .timeline({
+          onComplete: () => {
+            this.moving = null;
+            this.joyful = null;
+            this.body.rotation = 0;
+            this.settleAt(x, y);
+            resolve();
+          },
+        })
+        .to(this.body.scale, { x: 1.35, y: 0.75, duration: d * 0.08, ease: 'sine.in' })
+        .to(this.body.scale, { x: 0.85, y: 1.3, duration: d * 0.1, ease: 'sine.out' })
+        .to(this.body.scale, { x: 1.25, y: 0.8, duration: d * 0.08, ease: 'sine.in' })
+        .to(this.body.scale, { x: 1, y: 1, duration: d * 0.12, ease: easings.tileSnap })
+        .to(loop, {
+          a: Math.PI * 2,
+          duration: d * 0.55,
+          ease: 'power1.inOut',
+          onUpdate: () => {
+            this.x = x + Math.sin(loop.a) * r;
+            this.y = y - (1 - Math.cos(loop.a)) * r * 0.8;
+            this.body.rotation = loop.a * 0.5;
+          },
+        })
+        .to(this.body.scale, { x: 1.2, y: 0.85, duration: d * 0.05 })
+        .to(this.body.scale, { x: 1, y: 1, duration: d * 0.12, ease: easings.tileSnap });
+    });
+    return this.joyful;
+  }
+
+  // Leaps to a place and disappears into it with a burst of its own colour.
+  private dive(x: number, y: number): Promise<void> {
+    this.stopMoving();
+    const d = scaled(spiritStyle.diveSeconds);
+    this.face.lookAt(0, 1);
+    return new Promise((resolve) => {
+      this.moving = gsap
+        .timeline({
+          onComplete: () => {
+            this.moving = null;
+            for (let i = 0; i < 16; i++) {
+              const a = Math.random() * Math.PI * 2;
+              this.particles.emit({ x, y, color: palette[this.hue], vx: Math.cos(a) * 40, vy: Math.sin(a) * 40, life: 0.9, alphaFrom: 0.8, scaleFrom: 0.3, scaleTo: 0.05 });
+            }
+            this.face.lookAt(0, 0);
+            resolve();
+          },
+        })
+        .to(this.body.scale, { x: 1.2, y: 0.8, duration: d * 0.15, ease: 'sine.in' })
+        .to(this.body.scale, { x: 0.9, y: 1.15, duration: d * 0.15, ease: 'sine.out' })
+        .to(this, { x, duration: d * 0.6, ease: 'sine.inOut' }, d * 0.15)
+        .to(this, { y: Math.min(this.y, y) - spiritStyle.arcLift * 1.3, duration: d * 0.3, ease: 'sine.out' }, d * 0.15)
+        .to(this, { y, duration: d * 0.3, ease: 'sine.in' }, d * 0.45)
+        .to(this.body.scale, { x: 0.15, y: 0.15, duration: d * 0.3, ease: 'power2.in' }, d * 0.5)
+        .to(this.body, { rotation: Math.PI, duration: d * 0.45, ease: 'sine.in' }, d * 0.3)
+        .set(this.body, { rotation: 0 });
+    });
   }
 
   // Once it arrives somewhere it keeps drifting gently around that spot.
@@ -116,7 +223,10 @@ export class Spirit extends Container {
   }
 
   glideTo(x: number, y: number, duration: number = spiritStyle.glideSeconds): Promise<void> {
+    const token = this.tourToken;
     this.stopMoving();
+    this.tourToken = token; // a glide inside a tour must not cancel the tour
+    this.emerge();
     if (this.alpha === 0) this.show();
     this.face.lookAt(Math.sign(x - this.x), 0);
     const d = scaled(duration);
@@ -140,6 +250,7 @@ export class Spirit extends Container {
 
   hop(x: number, y: number): Promise<void> {
     this.stopMoving();
+    this.emerge();
     const d = scaled(spiritStyle.hopSeconds);
     return new Promise((resolve) => {
       this.moving = gsap
@@ -278,6 +389,7 @@ export class Spirit extends Container {
       this.y += (ty - this.y) * Math.min(1, dt * 3);
       this.face.lookAt(Math.cos(o.angle + Math.PI / 2), 0);
     }
+    events.emit('spirit:at', { x: this.x, y: this.y });
     const moved = Math.hypot(this.x - this.lastPos.x, this.y - this.lastPos.y);
     const from = this.lastPos;
     this.lastPos = { x: this.x, y: this.y };
