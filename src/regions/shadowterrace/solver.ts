@@ -14,7 +14,7 @@ export function solveShadow(level: ShadowLevel, prefer?: number[], maxNodes = 20
   const heights = new Array<number>(total).fill(0);
   const caps = new Array<number>(total);
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) caps[cellIndex(n, x, y)] = ceiling(level, x, y);
-  const floor = (i: number) => (level.fixed[i]! >= 0 ? level.fixed[i]! : level.footprint && level.footprint[i] ? 1 : 0);
+  const floor = (i: number) => (level.fixed[i]! >= 0 ? level.fixed[i]! : 0);
   const cap = (i: number) => (level.fixed[i]! >= 0 ? level.fixed[i]! : caps[i]!);
   // Suffix sums of floors and caps, for the count look-ahead.
   const minAfter = new Array<number>(total + 1).fill(0);
@@ -88,7 +88,7 @@ export function solveShadow(level: ShadowLevel, prefer?: number[], maxNodes = 20
   return { heights: ok ? heights : null, nodes };
 }
 
-// The fewest stones that can cast these shadows (footprint and fixed stones respected).
+// The fewest stones that can cast these shadows (fixed stones respected).
 export function minimumStones(level: ShadowLevel, maxNodes = 200_000): number | null {
   const upper = level.solution.length ? level.solution.reduce((a, b) => a + b, 0) : level.size * level.size * level.maxHeight;
   for (let c = 0; c <= upper; c++) {

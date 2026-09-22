@@ -1,14 +1,15 @@
 import gsap from 'gsap';
 import { Container, type FederatedPointerEvent, Graphics } from 'pixi.js';
-import type { ClueTier, LevelScene, ShellContext } from '../types';
+import type { ClueTier, IntroPage, LevelScene, ShellContext } from '../types';
 import { alphas, palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
-import { layout, puzzleArea } from '../../design/layout';
+import { isTouch, layout, puzzleArea } from '../../design/layout';
 import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
+import { holdAt, liftFinger, makeFinger, miniButton, refuse, tapAt } from '../../ui/introGlyphs';
 import { events } from '../../core/events';
 import { IconButton } from '../../ui/iconButton';
-import { type ShadowLevel, ceiling, cellIndex, frontProfile, isSolved, sideProfile, startHeights, stoneCount } from './model';
+import { type ShadowLevel, frontProfile, isSolved, sideProfile, startHeights, stoneCount } from './model';
 import { halfClue, stackClue } from './clues';
 import { createShadowVoice, type ShadowVoice } from './sound';
 
@@ -317,11 +318,9 @@ export class ShadowLevelScene implements LevelScene {
     const castSide = sideProfile(n, this.heights);
     for (let y = 0; y < n; y++) {
       for (let x = 0; x < n; x++) {
-        const i = cellIndex(n, x, y);
         const corners = [this.project(x, y, 0), this.project(x + 1, y, 0), this.project(x + 1, y + 1, 0), this.project(x, y + 1, 0)];
-        const lit = this.level.footprint ? this.level.footprint[i] : false;
-        this.poly(g, corners).fill({ color: lit ? this.accent : palette.ink, alpha: lit ? terraceStyle.litFloorAlpha : terraceStyle.floorAlpha * 0.5 });
-        this.poly(g, corners).stroke({ color: palette.dim, width: 1, alpha: terraceStyle.floorAlpha + (lit ? 0.2 : 0) });
+        this.poly(g, corners).fill({ color: palette.ink, alpha: terraceStyle.floorAlpha * 0.5 });
+        this.poly(g, corners).stroke({ color: palette.dim, width: 1, alpha: terraceStyle.floorAlpha });
         if (glow && (castFront[x] !== this.level.front[x] || castSide[y] !== this.level.side[y])) {
           const pulse = 0.25 + 0.2 * Math.sin(this.time * 4 + x + y);
           this.poly(g, corners).fill({ color: palette.pearl, alpha: pulse });
@@ -508,13 +507,11 @@ export class ShadowLevelScene implements LevelScene {
     this.pressTimer = null;
   }
 
+  // Stacks may climb to the level's full height: too tall is a mistake the shadows show.
   private change(i: number, direction: 1 | -1): void {
     this.stopTutorial();
-    const n = this.n;
-    const x = i % n;
-    const y = Math.floor(i / n);
-    const cap = ceiling(this.level, x, y);
-    if (this.level.fixed[i]! >= 0 || cap === 0) {
+    const cap = this.level.maxHeight;
+    if (this.level.fixed[i]! >= 0) {
       this.nudge(i);
       return;
     }
@@ -650,45 +647,40 @@ export class ShadowLevelScene implements LevelScene {
     return new Promise((resolve) => gsap.delayedCall(total, resolve));
   }
 
-  introLines(): string[] {
-    const lines = [
-      'Two lanterns stand behind the terrace. Stack stones until the shadows they throw on the sand match the shaded ones.',
-      'Tap a tile to add a stone. Keep tapping and the stack climbs, then clears. Hold a stack (or right-click) to take one stone away.',
-      'The pale outline in front of each row is the shadow your stones throw right now. Only the tallest stone in a row sets how long its shadow is.',
-      'The button at the bottom left turns the terrace so you can see it from every side.',
-    ];
-    if (this.level.footprint) lines.push('Every moonlit tile must carry at least one stone. Dark tiles stay empty.');
-    if (this.level.count !== null) lines.push('The lantern beside the terrace fills as you place stones. It must be exactly full: no stone more, no stone fewer.');
-    if (this.level.fixed.some((f) => f >= 0)) lines.push('Grey stacks are set already and cannot be changed.');
-    return lines;
-  }
+  // ----- instruction pages -----
 
-  introGlyph(): Container {
-    const root = new Container();
-    const cell = 26;
+  // A miniature terrace for the instruction card: draws stacks, lanterns and ground shadows
+  // for any heights and view angle, so each page can show exactly one idea.
+  private miniTerrace(n: number, opts: { want?: { front: number[]; side: number[] }; fixed?: number[]; gauge?: number } = {}): {
+    root: Container;
+    g: Graphics;
+    draw: (heights: number[], angle?: number) => void;
+    floorAt: (x: number, y: number, angle?: number) => Point;
+  } {
+    const cell = n >= 3 ? 24 : 32;
     const cubeH = cell * terraceStyle.cubeHeight;
     const len = terraceStyle.shadowLength;
-    const n = 2;
     const half = n / 2;
-    const pr = (u: number, v: number, z: number): Point => ({ x: ((u - v) * cell) / 2, y: ((u + v) * cell) / 4 - z * cubeH - 4 });
-    const project = (gx: number, gy: number, z: number): Point => pr(gx - half, gy - half, z);
+    const yShift = 8;
+    const rot = (gx: number, gy: number, angle: number) => {
+      const th = (angle * Math.PI) / 2;
+      const u0 = gx - half;
+      const v0 = gy - half;
+      return { u: u0 * Math.cos(th) - v0 * Math.sin(th), v: u0 * Math.sin(th) + v0 * Math.cos(th) };
+    };
+    const pr = (u: number, v: number, z: number): Point => ({ x: ((u - v) * cell) / 2, y: ((u + v) * cell) / 4 - z * cubeH + yShift });
+    const project = (gx: number, gy: number, z: number, angle: number): Point => {
+      const r = rot(gx, gy, angle);
+      return pr(r.u, r.v, z);
+    };
+    const root = new Container();
     const g = new Graphics();
-    const tap = new Graphics().circle(0, 0, 7).fill({ color: palette.pearl, alpha: 0.6 });
-    tap.alpha = 0;
-    root.addChild(g, tap);
-    const footprint = !!this.level.footprint;
-    const counted = this.level.count !== null;
-    const fixed = this.level.fixed.some((f) => f >= 0);
-    const target = [2, 0, fixed ? 1 : 0, 1]; // cell (0,0) climbs to two; (1,1) to one
-    const state = { h: 0, h2: 0 };
-    const draw = () => {
+    root.addChild(g);
+    const draw = (heights: number[], angle = 0) => {
       g.clear();
-      const heights = [state.h, 0, target[2]!, state.h2];
-      const front = [Math.max(heights[0]!, heights[2]!), Math.max(heights[1]!, heights[3]!)];
-      const side = [Math.max(heights[0]!, heights[1]!), Math.max(heights[2]!, heights[3]!)];
-      const wantFront = [2, 1];
-      const wantSide = [2, 1];
-      // Lanterns behind the far edges.
+      const k = ((Math.round(angle) % 4) + 4) % 4;
+      const fade = Math.max(0, 1 - Math.abs(angle - Math.round(angle)) * 3);
+      // Lanterns.
       for (const [u, v] of [
         [-half - 0.8, 0],
         [0, -half - 0.8],
@@ -700,73 +692,236 @@ export class ShadowLevelScene implements LevelScene {
       // Floor.
       for (let y = 0; y < n; y++) {
         for (let x = 0; x < n; x++) {
-          const i = y * n + x;
-          const corners = [project(x, y, 0), project(x + 1, y, 0), project(x + 1, y + 1, 0), project(x, y + 1, 0)];
-          const lit = footprint && target[i]! > 0;
-          this.poly(g, corners).fill({ color: lit ? this.accent : palette.ink, alpha: lit ? terraceStyle.litFloorAlpha : 0.2 }).stroke({ color: palette.dim, width: 1 });
+          const corners = [project(x, y, 0, angle), project(x + 1, y, 0, angle), project(x + 1, y + 1, 0, angle), project(x, y + 1, 0, angle)];
+          this.poly(g, corners).fill({ color: palette.ink, alpha: 0.2 }).stroke({ color: palette.dim, width: 1 });
         }
       }
-      // Ground shadows: 'v' bars (per x) stretch away in +v; 'u' bars (per y) in +u.
-      const bar = (family: 'u' | 'v', j: number, want: number, cast: number) => {
-        const at = (sv: number, reach: number) => (family === 'v' ? pr(sv, half + reach, 0) : pr(half + reach, sv, 0));
-        const s0 = j - half + 0.06;
-        const s1 = j + 1 - half - 0.06;
-        if (want > 0) this.poly(g, [at(s0, 0), at(s1, 0), at(s1, want * len), at(s0, want * len)]).fill({ color: this.accent, alpha: want === cast ? terraceStyle.shadowMatchedAlpha : terraceStyle.shadowAlpha });
-        if (cast > 0.05) this.poly(g, [at(s0, 0), at(s1, 0), at(s1, cast * len), at(s0, cast * len)]).stroke({ color: palette.pearl, width: 1, alpha: 0.65 });
-      };
-      for (let j = 0; j < n; j++) {
-        bar('v', j, wantFront[j]!, front[j]!);
-        bar('u', j, wantSide[j]!, side[j]!);
+      // Ground shadows for the nearest resting view, from the wanted and the cast profiles.
+      if (fade > 0) {
+        const castFront = frontProfile(n, heights.map((h) => Math.round(h)));
+        const castSide = sideProfile(n, heights.map((h) => Math.round(h)));
+        const th = (k * Math.PI) / 2;
+        const world = (i: number, j: number) => {
+          const u = i + 0.5 - half;
+          const v = j + 0.5 - half;
+          const u0 = u * Math.cos(th) + v * Math.sin(th);
+          const v0 = -u * Math.sin(th) + v * Math.cos(th);
+          return { x: Math.round(u0 - 0.5 + half), y: Math.round(v0 - 0.5 + half) };
+        };
+        const bar = (family: 'u' | 'v', j: number, want: number, cast: number) => {
+          const at = (sv: number, reach: number) => (family === 'v' ? pr(sv, half + reach, 0) : pr(half + reach, sv, 0));
+          const s0 = j - half + 0.06;
+          const s1 = j + 1 - half - 0.06;
+          if (want > 0) this.poly(g, [at(s0, 0), at(s1, 0), at(s1, want * len), at(s0, want * len)]).fill({ color: this.accent, alpha: (want === cast ? terraceStyle.shadowMatchedAlpha : terraceStyle.shadowAlpha) * fade });
+          if (cast > 0) this.poly(g, [at(s0, 0), at(s1, 0), at(s1, cast * len), at(s0, cast * len)]).stroke({ color: palette.pearl, width: 1, alpha: 0.65 * fade });
+        };
+        for (let j = 0; j < n; j++) {
+          // 'v' bars index the rotated u axis (slot i = j), 'u' bars the rotated v axis.
+          const a = world(j, 0);
+          const b = world(j, 1);
+          const vWant = a.x === b.x ? opts.want?.front[a.x] : opts.want?.side[a.y];
+          const vCast = a.x === b.x ? castFront[a.x]! : castSide[a.y]!;
+          bar('v', j, vWant ?? vCast, vCast);
+          const c = world(0, j);
+          const d = world(1, j);
+          const uWant = c.x === d.x ? opts.want?.front[c.x] : opts.want?.side[c.y];
+          const uCast = c.x === d.x ? castFront[c.x]! : castSide[c.y]!;
+          bar('u', j, uWant ?? uCast, uCast);
+        }
       }
-      // Stones, back to front.
-      for (const i of [0, 1, 2, 3]) {
+      // Stacks, back to front.
+      const order = heights.map((_, i) => i).sort((p, q) => {
+        const rp = rot((p % n) + 0.5, Math.floor(p / n) + 0.5, angle);
+        const rq = rot((q % n) + 0.5, Math.floor(q / n) + 0.5, angle);
+        return rp.u + rp.v - (rq.u + rq.v);
+      });
+      for (const i of order) {
         const h = heights[i]!;
         if (h <= 0.01) continue;
         const x = i % n;
         const y = Math.floor(i / n);
-        const isFixed = fixed && i === 2;
+        const isFixed = (opts.fixed?.[i] ?? -1) >= 0;
         const color = isFixed ? palette.dim : this.accent;
-        const right = [project(x + 1, y, 0), project(x + 1, y + 1, 0), project(x + 1, y + 1, h), project(x + 1, y, h)];
-        const left = [project(x, y + 1, 0), project(x + 1, y + 1, 0), project(x + 1, y + 1, h), project(x, y + 1, h)];
-        this.poly(g, left).fill({ color, alpha: terraceStyle.leftAlpha * (isFixed ? 1.4 : 1) });
-        this.poly(g, right).fill({ color, alpha: terraceStyle.rightAlpha * (isFixed ? 1.4 : 1) });
-        const top = [project(x, y, h), project(x + 1, y, h), project(x + 1, y + 1, h), project(x, y + 1, h)];
+        const corners = [
+          [x, y],
+          [x + 1, y],
+          [x + 1, y + 1],
+          [x, y + 1],
+        ] as const;
+        const cc = rot(x + 0.5, y + 0.5, angle);
+        for (let e = 0; e < 4; e++) {
+          const p0 = corners[e]!;
+          const p1 = corners[(e + 1) % 4]!;
+          const mid = rot((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, angle);
+          const nu = mid.u - cc.u;
+          const nv = mid.v - cc.v;
+          if (nu + nv <= 0) continue;
+          const left = nu - nv < 0;
+          const pts = [project(p0[0], p0[1], 0, angle), project(p1[0], p1[1], 0, angle), project(p1[0], p1[1], h, angle), project(p0[0], p0[1], h, angle)];
+          this.poly(g, pts).fill({ color, alpha: (left ? terraceStyle.leftAlpha : terraceStyle.rightAlpha) * (isFixed ? 1.4 : 1) });
+          for (let z = 1; z < h; z++) {
+            const q0 = project(p0[0], p0[1], z, angle);
+            const q1 = project(p1[0], p1[1], z, angle);
+            g.moveTo(q0.x, q0.y).lineTo(q1.x, q1.y).stroke({ color: palette.void, width: 1, alpha: 0.5 });
+          }
+        }
+        const top = corners.map(([px, py]) => project(px, py, h, angle));
         this.poly(g, top).fill({ color, alpha: terraceStyle.topAlpha }).stroke({ color: isFixed ? palette.pearl : this.accent, width: 1, alpha: 0.6 });
+        if (isFixed) {
+          const c0 = project(x + 0.25, y + 0.35, h, angle);
+          const c1 = project(x + 0.5, y + 0.55, h, angle);
+          const c2 = project(x + 0.75, y + 0.4, h, angle);
+          g.moveTo(c0.x, c0.y).lineTo(c1.x, c1.y).lineTo(c2.x, c2.y).stroke({ color: palette.void, width: 1, alpha: 0.7 });
+        }
       }
-      if (counted) {
-        const x = cell * 2.1;
-        const bottom = 14;
-        const placed = Math.round(heights.reduce((a, b) => a + b, 0));
-        const want = 3 + (fixed ? 1 : 0);
+      // The lantern gauge.
+      if (opts.gauge) {
+        const want = opts.gauge;
+        const placed = Math.round(heights.reduce((p, q) => p + q, 0));
+        const gx = cell * (half + 1.6);
+        const bottom = yShift + cell * 0.6;
         const unit = 7;
-        g.roundRect(x - 3, bottom - unit * want, 6, unit * want, 3).fill({ color: palette.ink, alpha: 0.8 }).stroke({ color: palette.dim, width: 1 });
+        g.roundRect(gx - 3, bottom - unit * want, 6, unit * want, 3).fill({ color: palette.ink, alpha: 0.8 }).stroke({ color: palette.dim, width: 1 });
         const fill = Math.min(placed, want) * unit;
-        if (fill > 0) g.roundRect(x - 3, bottom - fill, 6, fill, 3).fill({ color: placed === want ? palette.pearl : this.accent, alpha: 0.7 });
+        if (fill > 0) g.roundRect(gx - 3, bottom - fill, 6, fill, 3).fill({ color: placed === want ? palette.pearl : this.accent, alpha: 0.75 });
+        if (placed > want) g.roundRect(gx - 3, bottom - unit * want - (placed - want) * unit, 6, (placed - want) * unit, 3).fill({ color: palette.pearl, alpha: 0.35 });
+        for (let t = 1; t < want; t++) g.moveTo(gx - 3, bottom - t * unit).lineTo(gx + 3, bottom - t * unit).stroke({ color: palette.void, width: 1, alpha: 0.6 });
       }
     };
-    draw();
-    const p0 = project(0.5, 0.5, 0);
-    const p3 = project(1.5, 1.5, 0);
-    const tl = gsap
-      .timeline({ repeat: -1, repeatDelay: 1.2 })
-      .set(tap, { x: p0.x, y: p0.y })
-      .to(tap, { alpha: 1, duration: 0.2, delay: 0.5 })
-      .to(tap.scale, { x: 0.7, y: 0.7, duration: 0.15, yoyo: true, repeat: 1 })
-      .to(state, { h: 1, duration: 0.3, ease: easings.tileSnap, onUpdate: draw })
-      .to(tap.scale, { x: 0.7, y: 0.7, duration: 0.15, yoyo: true, repeat: 1, delay: 0.5 })
-      .to(state, { h: 2, duration: 0.3, ease: easings.tileSnap, onUpdate: draw })
-      .to(tap, { x: p3.x, y: p3.y, duration: 0.6, ease: easings.ambient, delay: 0.3 })
-      .to(tap.scale, { x: 0.7, y: 0.7, duration: 0.15, yoyo: true, repeat: 1 })
-      .to(state, { h2: 1, duration: 0.3, ease: easings.tileSnap, onUpdate: draw })
-      .to(tap, { alpha: 0, duration: 0.3, delay: 0.8 })
-      .call(() => {
-        state.h = 0;
-        state.h2 = 0;
-        draw();
-      }, undefined, '+=0.6');
-    root.on('destroyed', () => tl.kill());
-    return root;
+    const floorAt = (x: number, y: number, angle = 0) => project(x + 0.5, y + 0.5, 0, angle);
+    return { root, g, draw, floorAt };
   }
+
+  introPages(): IntroPage[] {
+    const pages: IntroPage[] = [];
+    // 1. Shadows: two stacks rise and their shadows grow to meet the shaded ones.
+    pages.push({
+      caption: 'Two lanterns stand behind the terrace. Stack stones until the shadows they throw on the sand match the shaded ones. Only the tallest stone in a row sets how long its shadow is.',
+      glyph: () => {
+        const t = this.miniTerrace(2, { want: { front: [2, 1], side: [2, 1] } });
+        const finger = makeFinger();
+        t.root.addChild(finger);
+        const state = { h0: 0, h3: 0 };
+        const redraw = () => t.draw([state.h0, 0, 0, state.h3]);
+        redraw();
+        const p0 = t.floorAt(0, 0);
+        const p3 = t.floorAt(1, 1);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.4 });
+        tapAt(tl, finger, p0.x, p0.y, 0.5).to(state, { h0: 1, duration: 0.3, ease: easings.tileSnap, onUpdate: redraw });
+        tl.to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14, yoyo: true, repeat: 1, delay: 0.5 }).to(state, { h0: 2, duration: 0.3, ease: easings.tileSnap, onUpdate: redraw });
+        tl.to(finger, { x: p3.x, y: p3.y, duration: 0.6, ease: easings.ambient, delay: 0.3 });
+        tl.to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14, yoyo: true, repeat: 1 }).to(state, { h3: 1, duration: 0.3, ease: easings.tileSnap, onUpdate: redraw });
+        liftFinger(tl, finger, 0.8);
+        tl.call(() => { state.h0 = 0; state.h3 = 0; redraw(); }, undefined, '+=0.6');
+        t.root.on('destroyed', () => tl.kill());
+        return t.root;
+      },
+    });
+    // 2. Controls: climb, wrap to nothing, hold to take one away; too tall shows in the shadow.
+    pages.push({
+      caption: isTouch()
+        ? 'Tap a tile to add a stone. Keep tapping and the stack climbs, then clears. Hold a stack to take one stone away. A stack that is too tall throws a shadow past the shaded one.'
+        : 'Click a tile to add a stone. Keep clicking and the stack climbs, then clears. Right-click a stack to take one stone away. A stack that is too tall throws a shadow past the shaded one.',
+      glyph: () => {
+        const t = this.miniTerrace(1, { want: { front: [2], side: [2] } });
+        const finger = makeFinger();
+        const ring = new Graphics();
+        t.root.addChild(ring, finger);
+        const state = { h: 0 };
+        const redraw = () => t.draw([state.h]);
+        redraw();
+        const p = t.floorAt(0, 0);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
+        tapAt(tl, finger, p.x, p.y, 0.5).to(state, { h: 1, duration: 0.25, ease: easings.tileSnap, onUpdate: redraw });
+        for (const h of [2, 3]) tl.to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14, yoyo: true, repeat: 1, delay: 0.5 }).to(state, { h, duration: 0.25, ease: easings.tileSnap, onUpdate: redraw });
+        tl.to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14, yoyo: true, repeat: 1, delay: 0.8 }).to(state, { h: 0, duration: 0.25, ease: easings.tileSnap, onUpdate: redraw });
+        tl.to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14, yoyo: true, repeat: 1, delay: 0.6 }).to(state, { h: 1, duration: 0.25, ease: easings.tileSnap, onUpdate: redraw });
+        tl.to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14, yoyo: true, repeat: 1, delay: 0.4 }).to(state, { h: 2, duration: 0.25, ease: easings.tileSnap, onUpdate: redraw });
+        tl.to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14, yoyo: true, repeat: 1, delay: 0.4 }).to(state, { h: 3, duration: 0.25, ease: easings.tileSnap, onUpdate: redraw });
+        if (isTouch()) holdAt(tl, finger, ring, p.x, p.y, 0.7, 0.6);
+        else tapAt(tl, finger, p.x, p.y, 0.6);
+        tl.to(state, { h: 2, duration: 0.25, ease: easings.tileSnap, onUpdate: redraw });
+        liftFinger(tl, finger, 0.8);
+        tl.call(() => { state.h = 0; redraw(); }, undefined, '+=0.4');
+        t.root.on('destroyed', () => tl.kill());
+        return t.root;
+      },
+    });
+    // 3. Turning the view.
+    pages.push({
+      caption: 'The button at the bottom left turns the terrace, so you can look at it from every side. Stacks in front can hide the ones behind.',
+      glyph: () => {
+        const t = this.miniTerrace(2);
+        const button = miniButton('turn', this.accent);
+        button.position.set(-60, 30);
+        const finger = makeFinger();
+        t.root.addChild(button, finger);
+        const state = { a: 0 };
+        const heights = [2, 0, 0, 1];
+        t.draw(heights, 0);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
+        tapAt(tl, finger, button.x, button.y, 0.6).to(state, { a: 1, duration: 0.7, ease: easings.response, onUpdate: () => t.draw(heights, state.a) });
+        liftFinger(tl, finger);
+        tapAt(tl, finger, button.x, button.y, 0.8).to(state, { a: 2, duration: 0.7, ease: easings.response, onUpdate: () => t.draw(heights, state.a) });
+        liftFinger(tl, finger);
+        tl.call(() => { state.a = 0; t.draw(heights, 0); }, undefined, '+=0.8');
+        t.root.on('destroyed', () => tl.kill());
+        return t.root;
+      },
+    });
+    // 4. The lantern gauge.
+    if (this.level.count !== null) {
+      pages.push({
+        caption: 'The lantern beside the terrace fills as you place stones. It must be exactly full: not one stone more, not one fewer.',
+        glyph: () => {
+          const t = this.miniTerrace(2, { want: { front: [2, 1], side: [2, 1] }, gauge: 3 });
+          const finger = makeFinger();
+          t.root.addChild(finger);
+          const state = { h0: 0, h3: 0, h1: 0 };
+          const redraw = () => t.draw([state.h0, state.h1, 0, state.h3]);
+          redraw();
+          const p0 = t.floorAt(0, 0);
+          const p1 = t.floorAt(1, 0);
+          const p3 = t.floorAt(1, 1);
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.4 });
+          tapAt(tl, finger, p0.x, p0.y, 0.5).to(state, { h0: 1, duration: 0.25, ease: easings.tileSnap, onUpdate: redraw });
+          tl.to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14, yoyo: true, repeat: 1, delay: 0.4 }).to(state, { h0: 2, duration: 0.25, ease: easings.tileSnap, onUpdate: redraw });
+          tl.to(finger, { x: p3.x, y: p3.y, duration: 0.5, ease: easings.ambient, delay: 0.3 });
+          tl.to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14, yoyo: true, repeat: 1 }).to(state, { h3: 1, duration: 0.25, ease: easings.tileSnap, onUpdate: redraw });
+          // One stone too many: the lantern spills over.
+          tl.to(finger, { x: p1.x, y: p1.y, duration: 0.5, ease: easings.ambient, delay: 0.8 });
+          tl.to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14, yoyo: true, repeat: 1 }).to(state, { h1: 1, duration: 0.25, ease: easings.tileSnap, onUpdate: redraw });
+          liftFinger(tl, finger, 0.9);
+          tl.call(() => { state.h0 = 0; state.h1 = 0; state.h3 = 0; redraw(); }, undefined, '+=0.4');
+          t.root.on('destroyed', () => tl.kill());
+          return t.root;
+        },
+      });
+    }
+    // 5. Fixed stacks.
+    if (this.level.fixed.some((f) => f >= 0)) {
+      pages.push({
+        caption: 'A grey stack is set already and cannot be changed. Build the rest around it.',
+        glyph: () => {
+          const t = this.miniTerrace(2, { fixed: [-1, -1, 2, -1] });
+          const finger = makeFinger();
+          t.root.addChild(finger);
+          const heights = [0, 0, 2, 0];
+          t.draw(heights);
+          const p = t.floorAt(0, 1);
+          const top = { x: p.x, y: p.y - 26 * terraceStyle.cubeHeight * 2 };
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
+          tapAt(tl, finger, top.x, top.y, 0.6);
+          refuse(tl, t.g);
+          liftFinger(tl, finger);
+          t.root.on('destroyed', () => tl.kill());
+          return t.root;
+        },
+      });
+    }
+    return pages;
+  }
+
 
   // Dev only: faint outlines of the stored solution's stacks.
   showSolutionOverlay(): void {

@@ -1,11 +1,12 @@
 import gsap from 'gsap';
 import { Container, Graphics } from 'pixi.js';
-import type { ClueTier, LevelScene, ShellContext } from '../types';
+import type { ClueTier, IntroPage, LevelScene, ShellContext } from '../types';
 import { alphas, palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
 import { layout, puzzleArea } from '../../design/layout';
 import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
+import { liftFinger, makeFinger, refuse, tapAt } from '../../ui/introGlyphs';
 import { type RippleLevel, affectLists, isLit, press } from './model';
 import { countClue, halfClue, nodeClue } from './clues';
 import { createMoonVoice, type MoonVoice } from './sound';
@@ -336,73 +337,147 @@ export class RippleLevelScene implements LevelScene {
     return new Promise((resolve) => gsap.delayedCall(total, resolve));
   }
 
-  introLines(): string[] {
-    const lines = [
-      'Light every lily pad.',
-      'Pressing a pad flips it and every pad joined to it by a line: dark pads light up, lit pads go dark.',
-      'Pressing the same pad twice undoes it. The order of presses does not matter.',
-    ];
-    if (this.level.states === 3) lines.push('Here pads have three states: dark, half-lit, then lit. A press moves each one a step.');
-    if (this.level.nodes.some((n) => n.wide)) lines.push('A pad with an outer ring sends its ripple two pads away.');
-    if (this.level.nodes.some((n) => n.frozen)) lines.push('A grey stone pad cannot be pressed. Only its neighbours can change it.');
-    return lines;
-  }
+  // ----- instruction pages -----
 
-  introGlyph(): Container {
+  // A row of pads joined by lines, with a redraw that takes each pad's state.
+  private miniPond(count: number, opts: { wide?: number; frozen?: number; states?: 2 | 3; gap?: number } = {}): { root: Container; pads: Graphics[]; ripple: Graphics; draw: (state: number[]) => void; pos: (i: number) => { x: number; y: number } } {
     const root = new Container();
     const r = 14;
-    const pts = [
-      { x: -50, y: 0 },
-      { x: 0, y: 0 },
-      { x: 50, y: 0 },
-    ];
-    const lines = new Graphics().moveTo(-50, 0).lineTo(50, 0).stroke({ color: palette.dim, width: 1, alpha: lakeStyle.edgeAlpha });
-    const pads = pts.map((p) => {
+    const gap = opts.gap ?? 50;
+    const states = opts.states ?? 2;
+    const pos = (i: number) => ({ x: (i - (count - 1) / 2) * gap, y: 0 });
+    const lines = new Graphics();
+    if (count > 1) lines.moveTo(pos(0).x, 0).lineTo(pos(count - 1).x, 0).stroke({ color: palette.dim, width: 1, alpha: lakeStyle.edgeAlpha });
+    const ripple = new Graphics();
+    const pads = Array.from({ length: count }, (_, i) => {
       const g = new Graphics();
-      g.position.set(p.x, p.y);
+      g.position.copyFrom(pos(i));
       return g;
     });
-    const ripple = new Graphics();
-    const tap = new Graphics().circle(0, 0, 8).fill({ color: palette.pearl, alpha: 0.6 });
-    tap.alpha = 0;
-    root.addChild(lines, ripple, ...pads, tap);
-    const frozen = this.level.nodes.some((n) => n.frozen) ? 2 : -1;
-    const wide = this.level.nodes.some((n) => n.wide);
-    const three = this.level.states === 3;
-    const draw = (lit: boolean[]) => {
+    root.addChild(lines, ripple, ...pads);
+    const draw = (state: number[]) => {
       pads.forEach((g, i) => {
         g.clear();
-        if (i === frozen) {
-          g.circle(0, 0, r).fill({ color: lit[i] ? this.accent : palette.dim, alpha: lit[i] ? 0.7 : 0.5 }).stroke({ color: palette.dim, width: 1.5 });
+        const st = state[i]!;
+        const lit = st === states - 1;
+        if (opts.frozen === i) {
+          g.circle(0, 0, r).fill({ color: lit ? this.accent : palette.dim, alpha: lit ? 0.7 : 0.5 }).stroke({ color: palette.dim, width: 1.5 });
           g.moveTo(-r * 0.5, -r * 0.2).lineTo(-r * 0.1, r * 0.1).lineTo(r * 0.2, -r * 0.15).lineTo(r * 0.5, r * 0.3).stroke({ color: palette.void, width: 1.2, alpha: 0.7 });
           return;
         }
-        // With three states the demo shows the middle, half-lit step.
-        const alpha = lit[i] ? lakeStyle.litAlpha : three && i === 1 ? lakeStyle.halfAlpha : lakeStyle.darkAlpha;
-        g.circle(0, 0, r).fill({ color: this.accent, alpha }).stroke({ color: lit[i] ? this.accent : palette.dim, width: 1.2 });
-        if (wide && i === 1) g.circle(0, 0, r * 1.35).stroke({ color: this.accent, width: 1, alpha: 0.35 });
+        const alpha = lit ? lakeStyle.litAlpha : st === 0 ? lakeStyle.darkAlpha : lakeStyle.halfAlpha;
+        g.circle(0, 0, r).fill({ color: this.accent, alpha }).stroke({ color: lit ? this.accent : palette.dim, width: 1.2 });
+        if (opts.wide === i) g.circle(0, 0, r * 1.35).stroke({ color: this.accent, width: 1, alpha: 0.35 });
       });
     };
-    draw([false, false, false]);
-    const state = { p: 0 };
-    const tl = gsap
-      .timeline({ repeat: -1, repeatDelay: 1 })
-      .to(tap, { alpha: 1, duration: 0.2, delay: 0.6 })
-      .to(tap.scale, { x: 0.7, y: 0.7, duration: 0.15, yoyo: true, repeat: 1, onComplete: () => draw([true, true, true]) })
-      .to(state, {
-        p: 1,
-        duration: 0.8,
-        ease: easings.response,
-        onUpdate: () => {
-          ripple.clear().circle(0, 0, r + state.p * 60).stroke({ color: this.accent, width: 1.5, alpha: 0.5 * (1 - state.p) });
-        },
-      }, '<')
-      .to(tap, { alpha: 0, duration: 0.3 })
-      .call(() => draw([false, false, false]), undefined, '+=0.8')
-      .set(state, { p: 0 });
-    root.on('destroyed', () => tl.kill());
-    return root;
+    return { root, pads, ripple, draw, pos };
   }
+
+  private rippleAt(tl: gsap.core.Timeline, ripple: Graphics, x: number, y: number, reach: number): gsap.core.Timeline {
+    const state = { p: 0 };
+    return tl.set(state, { p: 0 }).to(state, {
+      p: 1,
+      duration: 0.8,
+      ease: easings.response,
+      onUpdate: () => ripple.clear().circle(x, y, 14 + state.p * reach).stroke({ color: this.accent, width: 1.5, alpha: 0.5 * (1 - state.p) }),
+    }, '<');
+  }
+
+  introPages(): IntroPage[] {
+    const pages: IntroPage[] = [];
+    pages.push({
+      caption: 'Press a lily pad: it flips, and so does every pad joined to it by a line. Dark pads light up, lit pads go dark. Light every pad.',
+      glyph: () => {
+        const pond = this.miniPond(3);
+        const finger = makeFinger();
+        pond.root.addChild(finger);
+        pond.draw([0, 0, 0]);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
+        tapAt(tl, finger, 0, 0, 0.6).call(() => pond.draw([1, 1, 1]));
+        this.rippleAt(tl, pond.ripple, 0, 0, 60);
+        liftFinger(tl, finger);
+        tl.call(() => pond.draw([0, 0, 0]), undefined, '+=1');
+        pond.root.on('destroyed', () => tl.kill());
+        return pond.root;
+      },
+    });
+    pages.push({
+      caption: 'Pressing the same pad again undoes it. The order of your presses does not matter, only which pads you press.',
+      glyph: () => {
+        const pond = this.miniPond(3);
+        const finger = makeFinger();
+        pond.root.addChild(finger);
+        pond.draw([1, 0, 0]);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
+        tapAt(tl, finger, 0, 0, 0.6).call(() => pond.draw([0, 1, 1]));
+        this.rippleAt(tl, pond.ripple, 0, 0, 60);
+        tl.to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14, yoyo: true, repeat: 1, delay: 0.9 }).call(() => pond.draw([1, 0, 0]));
+        this.rippleAt(tl, pond.ripple, 0, 0, 60);
+        liftFinger(tl, finger);
+        pond.root.on('destroyed', () => tl.kill());
+        return pond.root;
+      },
+    });
+    if (this.level.states === 3) {
+      pages.push({
+        caption: 'Here pads have three states: dark, half-lit, then lit. Each press moves every affected pad one step, and a lit pad goes dark again.',
+        glyph: () => {
+          const pond = this.miniPond(1, { states: 3 });
+          const finger = makeFinger();
+          pond.root.addChild(finger);
+          pond.draw([0]);
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
+          tapAt(tl, finger, 0, 0, 0.6).call(() => pond.draw([1]));
+          tl.to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14, yoyo: true, repeat: 1, delay: 0.8 }).call(() => pond.draw([2]));
+          tl.to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14, yoyo: true, repeat: 1, delay: 0.8 }).call(() => pond.draw([0]));
+          liftFinger(tl, finger);
+          pond.root.on('destroyed', () => tl.kill());
+          return pond.root;
+        },
+      });
+    }
+    if (this.level.nodes.some((n) => n.wide)) {
+      pages.push({
+        caption: 'A pad with an outer ring sends its ripple two pads away, not just one.',
+        glyph: () => {
+          const pond = this.miniPond(5, { wide: 2, gap: 40 });
+          const finger = makeFinger();
+          pond.root.addChild(finger);
+          pond.draw([0, 0, 0, 0, 0]);
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
+          tapAt(tl, finger, 0, 0, 0.6).call(() => pond.draw([1, 1, 1, 1, 1]));
+          this.rippleAt(tl, pond.ripple, 0, 0, 90);
+          liftFinger(tl, finger);
+          tl.call(() => pond.draw([0, 0, 0, 0, 0]), undefined, '+=1');
+          pond.root.on('destroyed', () => tl.kill());
+          return pond.root;
+        },
+      });
+    }
+    if (this.level.nodes.some((n) => n.frozen)) {
+      pages.push({
+        caption: 'A grey stone pad cannot be pressed. Only the pads beside it can change it, and it still has to end up lit.',
+        glyph: () => {
+          const pond = this.miniPond(3, { frozen: 1 });
+          const finger = makeFinger();
+          pond.root.addChild(finger);
+          pond.draw([0, 0, 0]);
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
+          tapAt(tl, finger, 0, 0, 0.6);
+          refuse(tl, pond.pads[1]!);
+          liftFinger(tl, finger);
+          tapAt(tl, finger, pond.pos(0).x, 0, 0.5).call(() => pond.draw([1, 1, 0]));
+          this.rippleAt(tl, pond.ripple, pond.pos(0).x, 0, 60);
+          liftFinger(tl, finger);
+          tl.call(() => pond.draw([0, 0, 0]), undefined, '+=1');
+          pond.root.on('destroyed', () => tl.kill());
+          return pond.root;
+        },
+      });
+    }
+    return pages;
+  }
+
 
   // Dev only: faint rings on the pads of the stored solution.
   showSolutionOverlay(): void {

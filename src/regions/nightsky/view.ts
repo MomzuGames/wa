@@ -1,6 +1,6 @@
 import gsap from 'gsap';
 import { Container, FederatedPointerEvent, Graphics } from 'pixi.js';
-import type { ClueTier, LevelScene, ShellContext } from '../types';
+import type { ClueTier, IntroPage, LevelScene, ShellContext } from '../types';
 import { alphas, palette } from '../../design/palette';
 import { durations, easings, reducedMotion, scaled } from '../../design/motion';
 import { isTouch, layout, puzzleArea } from '../../design/layout';
@@ -442,86 +442,244 @@ export class SkyLevelScene implements LevelScene {
     this.container.destroy({ children: true });
   }
 
-  introLines(): string[] {
-    const lines = [
-      isTouch() ? 'Touch a star and slide through every line without lifting your finger.' : 'Press on a star and drag through every line without letting go.',
-      'A line lights only when you drag along it to the star at its other end.',
-      'Each line can be used once. Drag back to the previous star to undo.',
-      'Let go before every line is lit and the stroke fades: try again.',
-    ];
-    if (this.level.chapter === 1) lines.push('When two stars have an odd number of lines, the stroke must start at one and end at the other.');
-    if (this.level.edges.some((e) => e.oneWay)) lines.push('Shimmering lines can only be crossed the way the shimmer travels.');
-    if (this.level.edges.some((e) => e.required === 2)) lines.push('Brighter double lines must be traced twice.');
-    if (this.level.order?.length) lines.push('Stars with dots beneath them must be reached in order: one dot first, then two, then three.');
-    return lines;
-  }
+  // ----- instruction pages -----
 
-  // Intro card: a light traces a small triangle of stars; one-way and double lines appear when relevant.
-  introGlyph(): Container {
+  // A miniature constellation for the instruction card, with a cursor that can trace it.
+  private miniSky(
+    pts: Array<{ x: number; y: number }>,
+    edges: Array<{ a: number; b: number; oneWay?: boolean; double?: boolean }>,
+    opts: { odd?: number[]; order?: number[] } = {},
+  ): {
+    root: Container;
+    cursor: Graphics;
+    stars: Graphics;
+    traced: Map<string, number>;
+    redraw: (shimmer: number) => void;
+    trace: (tl: gsap.core.Timeline, from: number, to: number, seconds?: number) => gsap.core.Timeline;
+    untrace: (tl: gsap.core.Timeline, from: number, to: number, seconds?: number) => gsap.core.Timeline;
+    fade: (tl: gsap.core.Timeline) => gsap.core.Timeline;
+  } {
     const root = new Container();
-    const r = 34;
-    const pts = [
-      { x: 0, y: -r },
-      { x: r * 0.95, y: r * 0.6 },
-      { x: -r * 0.95, y: r * 0.6 },
-    ];
-    const hasOneWay = this.level.edges.some((e) => e.oneWay);
-    const hasDouble = this.level.edges.some((e) => e.required === 2);
-    const hasOrder = (this.level.order?.length ?? 0) > 0;
     const lines = new Graphics();
     const lit = new Graphics();
     lit.filters = [createGlow(this.accent, { distance: 10, strength: 1.2, quality: 0.3 })];
     const stars = new Graphics();
-    pts.forEach((p, i) => {
-      stars.circle(p.x, p.y, 4).fill({ color: palette.pearl });
-      // The demo traces 0 -> 1 -> 2, so dots mark stars 1 and 2 as "first" and "second".
-      if (hasOrder && i > 0) for (let k = 0; k < i; k++) stars.circle(p.x + (k - (i - 1) / 2) * 6, p.y + 12, 1.8).fill({ color: palette.pearl, alpha: 0.7 });
-    });
     const cursor = new Graphics().circle(0, 0, 6).fill({ color: palette.pearl, alpha: 0.8 });
+    cursor.alpha = 0;
     root.addChild(lines, lit, stars, cursor);
-    const drawLines = (shimmerT: number) => {
-      lines.clear();
-      for (let i = 0; i < 3; i++) {
-        const a = pts[i]!;
-        const b = pts[(i + 1) % 3]!;
-        lines.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ color: palette.dim, width: 2, alpha: hasDouble && i === 0 ? 0.7 : 0.4 });
-        if (hasDouble && i === 0) {
-          lines.moveTo(a.x + 4, a.y + 2).lineTo(b.x + 4, b.y + 2).stroke({ color: palette.dim, width: 1, alpha: 0.5 });
-        }
-        if (hasOneWay && i === 1) {
-          lines.circle(a.x + (b.x - a.x) * shimmerT, a.y + (b.y - a.y) * shimmerT, 1.8).fill({ color: this.accent, alpha: 0.7 });
-        }
-      }
+    const key = (a: number, b: number) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+    const traced = new Map<string, number>();
+    const partial = { from: -1, to: -1, f: 0 };
+    let odd = 0;
+    const drawStars = () => {
+      stars.clear();
+      pts.forEach((p, i) => {
+        stars.circle(p.x, p.y, 4).fill({ color: palette.pearl });
+        if (opts.odd?.includes(i)) stars.circle(p.x, p.y, 9 + Math.sin(odd) * 1.5).stroke({ color: this.accent, width: 1, alpha: 0.5 + 0.3 * Math.sin(odd) });
+        const dots = opts.order ? opts.order.indexOf(i) : -1;
+        if (dots >= 0) for (let k = 0; k <= dots; k++) stars.circle(p.x + (k - dots / 2) * 6, p.y + 12, 1.8).fill({ color: palette.pearl, alpha: 0.7 });
+      });
     };
-    const state = { t: 0, shimmer: 0 };
-    const tl = gsap.timeline({ repeat: -1, repeatDelay: 0.8 });
-    tl.to(state, {
-      t: 3,
-      duration: 2.1,
-      ease: 'none',
-      onUpdate: () => {
-        const seg = Math.min(2, Math.floor(state.t));
-        const f = state.t - seg;
-        const a = pts[seg]!;
-        const b = pts[(seg + 1) % 3]!;
-        cursor.position.set(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f);
-        lit.clear();
-        for (let i = 0; i < seg; i++) {
-          const p = pts[i]!;
-          const q = pts[(i + 1) % 3]!;
-          lit.moveTo(p.x, p.y).lineTo(q.x, q.y).stroke({ color: this.accent, width: 3, cap: 'round' });
-        }
-        lit.moveTo(a.x, a.y).lineTo(cursor.x, cursor.y).stroke({ color: this.accent, width: 3, cap: 'round' });
-      },
-    }).to(lit, { alpha: 0, duration: 0.4 }).set(lit, { alpha: 1 }).set(state, { t: 0 });
-    const shimmer = gsap.to(state, { shimmer: 1, duration: 2.4, ease: 'none', repeat: -1, onUpdate: () => drawLines(state.shimmer) });
-    root.on('destroyed', () => {
-      tl.kill();
-      shimmer.kill();
-    });
-    drawLines(0);
-    return root;
+    const redraw = (shimmer: number) => {
+      lines.clear();
+      lit.clear();
+      for (const e of edges) {
+        const a = pts[e.a]!;
+        const b = pts[e.b]!;
+        const done = traced.get(key(e.a, e.b)) ?? 0;
+        const need = e.double ? 2 : 1;
+        const alpha = e.double ? (done === 0 ? skyStyle.doubleEdgeAlpha : done === 1 ? skyStyle.halfTracedAlpha : 0.32) : 0.4;
+        lines.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ color: palette.dim, width: 2, alpha });
+        if (e.double && done < 2) lines.moveTo(a.x + 4, a.y + 3).lineTo(b.x + 4, b.y + 3).stroke({ color: palette.dim, width: 1, alpha: 0.5 });
+        if (e.oneWay && done < need) lines.circle(a.x + (b.x - a.x) * shimmer, a.y + (b.y - a.y) * shimmer, 1.8).fill({ color: this.accent, alpha: 0.7 });
+        if (done >= need) lit.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ color: this.accent, width: 3, cap: 'round' });
+        else if (done === 1 && e.double) lit.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ color: this.accent, width: 3, cap: 'round', alpha: 0.45 });
+      }
+      if (partial.from >= 0) {
+        const a = pts[partial.from]!;
+        const b = pts[partial.to]!;
+        lit.moveTo(a.x, a.y).lineTo(a.x + (b.x - a.x) * partial.f, a.y + (b.y - a.y) * partial.f).stroke({ color: this.accent, width: 3, cap: 'round' });
+      }
+      drawStars();
+    };
+    const shimmer = { t: 0 };
+    const shimmerTween = gsap.to(shimmer, { t: 1, duration: 2.4, ease: 'none', repeat: -1, onUpdate: () => { odd += 0.06; redraw(shimmer.t); } });
+    const trace = (tl: gsap.core.Timeline, from: number, to: number, seconds = 0.7) =>
+      tl
+        .set(cursor, { x: pts[from]!.x, y: pts[from]!.y })
+        .to(cursor, { alpha: 1, duration: 0.15 })
+        .set(partial, { from, to, f: 0 })
+        .to(partial, { f: 1, duration: seconds, ease: 'none', onUpdate: () => { cursor.position.set(pts[from]!.x + (pts[to]!.x - pts[from]!.x) * partial.f, pts[from]!.y + (pts[to]!.y - pts[from]!.y) * partial.f); } })
+        .call(() => { traced.set(key(from, to), (traced.get(key(from, to)) ?? 0) + 1); partial.from = -1; redraw(shimmer.t); });
+    const untrace = (tl: gsap.core.Timeline, from: number, to: number, seconds = 0.7) =>
+      tl
+        .call(() => { traced.set(key(from, to), Math.max(0, (traced.get(key(from, to)) ?? 0) - 1)); partial.from = to; partial.to = from; partial.f = 1; redraw(shimmer.t); })
+        .to(partial, { f: 0, duration: seconds, ease: 'none', onUpdate: () => { cursor.position.set(pts[to]!.x + (pts[from]!.x - pts[to]!.x) * partial.f, pts[to]!.y + (pts[from]!.y - pts[to]!.y) * partial.f); } })
+        .call(() => { partial.from = -1; redraw(shimmer.t); });
+    const fade = (tl: gsap.core.Timeline) =>
+      tl
+        .to(cursor, { alpha: 0, duration: 0.2 })
+        .to(lit, { alpha: 0, duration: 0.5, delay: 0.3 })
+        .call(() => { traced.clear(); partial.from = -1; redraw(shimmer.t); lit.alpha = 1; });
+    root.on('destroyed', () => shimmerTween.kill());
+    redraw(0);
+    return { root, cursor, stars, traced, redraw, trace, untrace, fade };
   }
+
+  introPages(): IntroPage[] {
+    const r = 34;
+    const tri = [
+      { x: 0, y: -r },
+      { x: r * 0.95, y: r * 0.6 },
+      { x: -r * 0.95, y: r * 0.6 },
+    ];
+    const pages: IntroPage[] = [];
+    pages.push({
+      caption: isTouch()
+        ? 'Touch a star and slide through every line without lifting your finger. A line lights only when you reach the star at its other end.'
+        : 'Press on a star and drag through every line without letting go. A line lights only when you reach the star at its other end.',
+      glyph: () => {
+        const sky = this.miniSky(tri, [{ a: 0, b: 1 }, { a: 1, b: 2 }, { a: 2, b: 0 }]);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 0.8, delay: 0.5 });
+        sky.trace(tl, 0, 1);
+        sky.trace(tl, 1, 2);
+        sky.trace(tl, 2, 0);
+        tl.to(sky.cursor, { alpha: 0, duration: 0.3, delay: 0.8 });
+        sky.fade(tl);
+        sky.root.on('destroyed', () => tl.kill());
+        return sky.root;
+      },
+    });
+    pages.push({
+      caption: 'Each line can be used once. Slide back to the previous star to undo a line. Let go before every line is lit and the whole stroke fades: try again.',
+      glyph: () => {
+        const sky = this.miniSky(tri, [{ a: 0, b: 1 }, { a: 1, b: 2 }, { a: 2, b: 0 }]);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 0.8, delay: 0.5 });
+        sky.trace(tl, 0, 1);
+        sky.trace(tl, 1, 2);
+        sky.untrace(tl, 1, 2);
+        tl.to(sky.cursor, { alpha: 0, duration: 0.2, delay: 0.5 });
+        sky.fade(tl);
+        sky.root.on('destroyed', () => tl.kill());
+        return sky.root;
+      },
+    });
+    if (this.level.chapter === 1) {
+      pages.push({
+        caption: 'When two stars have an odd number of lines, the stroke must start at one of them and end at the other.',
+        glyph: () => {
+          const s = 30;
+          const pts = [
+            { x: -s, y: -s * 0.8 },
+            { x: s, y: -s * 0.8 },
+            { x: s, y: s * 0.8 },
+            { x: -s, y: s * 0.8 },
+          ];
+          const sky = this.miniSky(pts, [{ a: 0, b: 1 }, { a: 1, b: 2 }, { a: 2, b: 3 }, { a: 3, b: 0 }, { a: 0, b: 2 }], { odd: [0, 2] });
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1, delay: 0.6 });
+          sky.trace(tl, 0, 1, 0.5);
+          sky.trace(tl, 1, 2, 0.5);
+          sky.trace(tl, 2, 3, 0.5);
+          sky.trace(tl, 3, 0, 0.5);
+          sky.trace(tl, 0, 2, 0.6);
+          tl.to(sky.cursor, { alpha: 0, duration: 0.3, delay: 1 });
+          sky.fade(tl);
+          sky.root.on('destroyed', () => tl.kill());
+          return sky.root;
+        },
+      });
+    }
+    if (this.level.edges.some((e) => e.oneWay)) {
+      pages.push({
+        caption: 'A shimmering line can only be crossed the way the shimmer travels. Against it, nothing lights.',
+        glyph: () => {
+          const pts = [
+            { x: -r, y: 0 },
+            { x: r, y: 0 },
+          ];
+          const sky = this.miniSky(pts, [{ a: 0, b: 1, oneWay: true }]);
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1, delay: 0.5 });
+          // The wrong way: the cursor slides but the line stays dark and the star blinks.
+          tl.set(sky.cursor, { x: pts[1]!.x, y: pts[1]!.y })
+            .to(sky.cursor, { alpha: 1, duration: 0.15 })
+            .to(sky.cursor, { x: pts[0]!.x, duration: 0.7, ease: 'none' })
+            .to(sky.stars, { alpha: 0.3, duration: 0.12, yoyo: true, repeat: 3 })
+            .to(sky.cursor, { alpha: 0, duration: 0.2 });
+          sky.trace(tl, 0, 1, 0.7);
+          tl.to(sky.cursor, { alpha: 0, duration: 0.3, delay: 0.8 });
+          sky.fade(tl);
+          sky.root.on('destroyed', () => tl.kill());
+          return sky.root;
+        },
+      });
+    }
+    if (this.level.edges.some((e) => e.required === 2)) {
+      pages.push({
+        caption: 'A brighter double line must be traced twice: across, and back again.',
+        glyph: () => {
+          const pts = [
+            { x: -r, y: 0 },
+            { x: r, y: 0 },
+          ];
+          const sky = this.miniSky(pts, [{ a: 0, b: 1, double: true }]);
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1, delay: 0.5 });
+          sky.trace(tl, 0, 1, 0.7);
+          sky.trace(tl, 1, 0, 0.7);
+          tl.to(sky.cursor, { alpha: 0, duration: 0.3, delay: 0.8 });
+          sky.fade(tl);
+          sky.root.on('destroyed', () => tl.kill());
+          return sky.root;
+        },
+      });
+    }
+    if (this.level.order?.length) {
+      pages.push({
+        caption: 'Stars with dots beneath them must be reached in order: one dot first, then two, then three.',
+        glyph: () => {
+          const pts = [
+            { x: -r * 1.3, y: 0 },
+            { x: 0, y: -r * 0.5 },
+            { x: r * 1.3, y: 0 },
+          ];
+          const sky = this.miniSky(pts, [{ a: 0, b: 1 }, { a: 1, b: 2 }, { a: 0, b: 2 }], { order: [1, 2] });
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1, delay: 0.5 });
+          sky.trace(tl, 0, 1, 0.6);
+          sky.trace(tl, 1, 2, 0.6);
+          sky.trace(tl, 2, 0, 0.8);
+          tl.to(sky.cursor, { alpha: 0, duration: 0.3, delay: 0.8 });
+          sky.fade(tl);
+          sky.root.on('destroyed', () => tl.kill());
+          return sky.root;
+        },
+      });
+    }
+    if (this.level.drift) {
+      pages.push({
+        caption: 'The stars drift slowly here. A line still joins the same two stars wherever they wander.',
+        glyph: () => {
+          const pts = tri.map((p) => ({ ...p }));
+          const sky = this.miniSky(pts, [{ a: 0, b: 1 }, { a: 1, b: 2 }, { a: 2, b: 0 }]);
+          const state = { t: 0 };
+          const drift = gsap.to(state, {
+            t: Math.PI * 2,
+            duration: 6,
+            ease: 'none',
+            repeat: -1,
+            onUpdate: () => {
+              pts.forEach((p, i) => {
+                p.x = tri[i]!.x + Math.sin(state.t + i * 2.1) * 7;
+                p.y = tri[i]!.y + Math.cos(state.t * 0.8 + i * 1.3) * 7;
+              });
+            },
+          });
+          sky.root.on('destroyed', () => drift.kill());
+          return sky.root;
+        },
+      });
+    }
+    return pages;
+  }
+
 
   // Dev only: the stored solution as a faint path.
   showSolutionOverlay(): void {

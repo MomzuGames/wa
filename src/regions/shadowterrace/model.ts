@@ -1,5 +1,5 @@
-// Shadow puzzle: stack stones on a square terrace until the two wall shadows (one
-// per side) match, every moonlit floor tile carries a stone, and the count is right.
+// Shadow puzzle: stack stones on a square terrace until the two shadows they throw
+// (one per side) match, and, when asked, the number of stones is right.
 //
 // The terrace is an n×n heightmap. The "front" shadow gives, for each column x, the
 // tallest stack in that column; the "side" shadow gives the same for each row y.
@@ -12,7 +12,6 @@ export interface ShadowLevel {
   maxHeight: number;
   front: number[]; // per x: max over y of height
   side: number[]; // per y: max over x of height
-  footprint: boolean[] | null; // per cell (y * n + x): must carry a stone; others must stay empty
   count: number | null; // exact number of stones, when the level asks for it
   fixed: number[]; // per cell: -1 free, otherwise a height that cannot be changed
   solution: number[]; // one valid heightmap
@@ -41,7 +40,6 @@ export function stoneCount(heights: number[]): number {
 
 // The tallest a stack may ever be: it can never rise above either shadow.
 export function ceiling(level: ShadowLevel, x: number, y: number): number {
-  if (level.footprint && !level.footprint[cellIndex(level.size, x, y)]) return 0;
   return Math.min(level.front[x]!, level.side[y]!);
 }
 
@@ -51,7 +49,6 @@ export function isSolved(level: ShadowLevel, heights: number[]): boolean {
   for (let i = 0; i < n * n; i++) {
     const h = heights[i]!;
     if (h < 0 || h > level.maxHeight) return false;
-    if (level.footprint && (h > 0) !== level.footprint[i]) return false;
     if (level.fixed[i]! >= 0 && level.fixed[i] !== h) return false;
   }
   const front = frontProfile(n, heights);

@@ -1,10 +1,11 @@
 import gsap from 'gsap';
 import { Container, FederatedPointerEvent, Graphics } from 'pixi.js';
-import type { ClueTier, LevelScene, ShellContext } from '../types';
+import type { ClueTier, IntroPage, LevelScene, ShellContext } from '../types';
 import { alphas, palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
 import { isCompact, isTouch, puzzleArea } from '../../design/layout';
 import { GhostHand } from '../../ui/ghostHand';
+import { glyphStyle, holdAt, liftFinger, makeFinger, miniButton, refuse, tapAt } from '../../ui/introGlyphs';
 import { IconButton } from '../../ui/iconButton';
 import { layout } from '../../design/layout';
 import { events } from '../../core/events';
@@ -778,21 +779,7 @@ export class StoneLevelScene implements LevelScene {
     return new Promise((resolve) => gsap.delayedCall(total, resolve));
   }
 
-  introLines(): string[] {
-    const lines = [
-      'Drag the stones from below into the outline until it is filled exactly.',
-      'A stone settles wherever you drop it on the board, as long as it is not on another stone.',
-      'The outline glows when a stone fits it exactly. Fill the outline with nothing left over.',
-      isTouch() ? 'Tap a stone to turn it.' : 'Click a stone to turn it. Scroll over it or press R to turn it too.',
-    ];
-    if (this.level.allowFlip) lines.push(isTouch() ? 'Hold a stone still to flip it over. Some stones only fit flipped.' : 'Double-click a stone, or press F, to flip it over. Some stones only fit flipped.');
-    if (this.level.chapter >= 3) lines.push('Some stones look alike but differ by one corner. Look closely.');
-    if (this.level.pieces.some((p) => p.fixed)) lines.push('A grey stone is already set and cannot move. Build around it.');
-    if (this.hasHole()) lines.push('The outline has a gap in it. The gap must stay empty.');
-    lines.push('The buttons at the bottom left turn or flip the stone you touched last.');
-    return lines;
-  }
-
+  // Whether the silhouette encloses an empty cell (a gap that must stay empty).
   private hasHole(): boolean {
     const set = new Set(this.level.silhouette);
     for (let y = 1; y < this.level.height - 1; y++) {
@@ -806,47 +793,179 @@ export class StoneLevelScene implements LevelScene {
     return false;
   }
 
-  introGlyph(): Container {
-    const root = new Container();
-    const cell = 22;
-    const outline = new Graphics();
-    const target: Tri[] = [];
-    const showHole = this.hasHole();
-    const showFixed = this.level.pieces.some((p) => p.fixed);
-    const cols = 3;
-    const rows = showHole ? 3 : 2;
-    // The demo stone lands in a column that is free of the fixed stone and the gap.
-    const targetCol = showHole ? 2 : showFixed ? 1 : 0;
-    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) for (let t = 0; t < 4; t++) if (!(showHole && x === 1 && y === 1)) target.push([x, y, t]);
-    this.drawShape(outline, target, palette.ink, 0.9, cell, false);
-    this.strokeOutline(outline, target, cell, -1.5 * cell, (-rows / 2) * cell, palette.dim, 0.9);
-    outline.y = -12;
-    if (showFixed) {
-      const fixedTris: Tri[] = [];
-      for (let t = 0; t < 4; t++) fixedTris.push([0, 0, t]);
-      const fixedStone = new Graphics();
-      this.drawShape(fixedStone, fixedTris, palette.dim, 0.9, cell, true);
-      fixedStone.position.set(-1.5 * cell + cell / 2, -12 - (rows / 2) * cell + cell / 2);
-      root.addChild(fixedStone);
-    }
-    const pieceTris: Tri[] = [];
-    for (let t = 0; t < 4; t++) pieceTris.push([0, 0, t], [1, 0, t]);
-    const piece = new Graphics();
-    this.drawShape(piece, pieceTris, this.accent, stoneStyle.pieceAlpha, cell, true);
-    piece.position.set(-1.5 * cell + cell, 44 + (rows - 2) * cell * 0.5);
-    piece.scale.set(stoneStyle.trayScale);
-    root.addChild(outline, piece);
-    const tl = gsap
-      .timeline({ repeat: -1, repeatDelay: 0.8 })
-      .to(piece.scale, { x: 1, y: 1, duration: 0.3 })
-      .to(piece, { rotation: Math.PI / 2, duration: stoneStyle.turnSeconds, ease: easings.tileSnap })
-      .to(piece, { x: -1.5 * cell + (targetCol + 0.5) * cell, y: -12 - (rows / 2) * cell + cell / 2, duration: 0.9, ease: easings.ambient })
-      .to(piece, { alpha: 0, duration: 0.4, delay: 0.5 })
-      .set(piece, { x: -1.5 * cell + cell, y: 44 + (rows - 2) * cell * 0.5, rotation: 0, alpha: 1 })
-      .set(piece.scale, { x: stoneStyle.trayScale, y: stoneStyle.trayScale });
-    root.on('destroyed', () => tl.kill());
-    return root;
+  // ----- instruction pages -----
+
+  private cellTris(cells: Array<[number, number]>, skip: Array<[number, number, number]> = []): Tri[] {
+    const out: Tri[] = [];
+    for (const [x, y] of cells) for (let t = 0; t < 4; t++) if (!skip.some(([sx, sy, st]) => sx === x && sy === y && st === t)) out.push([x, y, t]);
+    return out;
   }
+
+  // An outline of `cells` (minus any gap), drawn at the card's centre, plus its top-left in card space.
+  private miniOutline(cell: number, cells: Array<[number, number]>, gap: Array<[number, number]> = []): { root: Graphics; ox: number; oy: number } {
+    const tris = this.cellTris(cells.filter(([x, y]) => !gap.some(([gx, gy]) => gx === x && gy === y)));
+    const maxX = Math.max(...cells.map(([x]) => x)) + 1;
+    const maxY = Math.max(...cells.map(([, y]) => y)) + 1;
+    const ox = (-maxX / 2) * cell;
+    const oy = (-maxY / 2) * cell;
+    const g = new Graphics();
+    for (const tri of tris) {
+      const c = triCorners(tri);
+      g.moveTo(ox + c[0]![0] * cell, oy + c[0]![1] * cell);
+      for (const [px, py] of c.slice(1)) g.lineTo(ox + px * cell, oy + py * cell);
+      g.closePath();
+    }
+    g.fill({ color: palette.ink, alpha: stoneStyle.silhouetteAlpha });
+    this.strokeOutline(g, tris, cell, ox, oy, palette.dim, 0.9);
+    return { root: g, ox, oy };
+  }
+
+  private miniStone(cell: number, tris: Tri[], color: number = this.accent, alpha: number = stoneStyle.pieceAlpha): Graphics {
+    const g = new Graphics();
+    this.drawShape(g, tris, color, alpha, cell, true);
+    return g;
+  }
+
+  introPages(): IntroPage[] {
+    const cell = 24;
+    const pages: IntroPage[] = [];
+    // 1. Drag a stone into the outline.
+    pages.push({
+      caption: 'Drag the stones from below into the outline until it is filled exactly. A stone settles wherever you drop it, as long as it is not on top of another stone.',
+      glyph: () => {
+        const root = new Container();
+        const outline = this.miniOutline(cell, [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1]]);
+        outline.root.y = -14;
+        const stone = this.miniStone(cell, this.cellTris([[0, 0], [1, 0]]));
+        const home = { x: 0, y: 40 };
+        stone.position.set(home.x, home.y);
+        stone.scale.set(stoneStyle.trayScale);
+        const finger = makeFinger();
+        root.addChild(outline.root, stone, finger);
+        const target = { x: outline.ox + cell, y: -14 + outline.oy + cell / 2 };
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
+        tapAt(tl, finger, home.x, home.y, 0.5)
+          .to(stone.scale, { x: 1, y: 1, duration: 0.25 }, '<')
+          .to([stone, finger], { x: target.x, y: target.y, duration: 0.9, ease: easings.ambient })
+          .to(finger, { alpha: 0, duration: 0.2 })
+          .to(stone, { alpha: stoneStyle.placedAlpha, duration: 0.3 })
+          .to(stone, { alpha: 0, duration: 0.4, delay: 1 })
+          .set(stone, { x: home.x, y: home.y, alpha: 1 })
+          .set(stone.scale, { x: stoneStyle.trayScale, y: stoneStyle.trayScale });
+        root.on('destroyed', () => tl.kill());
+        return root;
+      },
+    });
+    // 2. Turning.
+    pages.push({
+      caption: isTouch()
+        ? 'Tap a stone to turn it. The turn button at the bottom left turns the stone you touched last.'
+        : 'Click a stone to turn it (or scroll over it, or press R). The turn button at the bottom left turns the stone you touched last.',
+      glyph: () => {
+        const root = new Container();
+        const stone = this.miniStone(cell, this.cellTris([[0, 0], [1, 0], [1, 1]]));
+        const button = miniButton('turn', this.accent);
+        button.position.set(cell * 2.6, cell * 0.8);
+        const finger = makeFinger();
+        root.addChild(stone, button, finger);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
+        tapAt(tl, finger, 0, 0, 0.5).to(stone, { rotation: `+=${Math.PI / 2}`, duration: stoneStyle.turnSeconds, ease: easings.tileSnap }, '<');
+        liftFinger(tl, finger);
+        tapAt(tl, finger, button.x, button.y, 0.4).to(stone, { rotation: `+=${Math.PI / 2}`, duration: stoneStyle.turnSeconds, ease: easings.tileSnap }, '<');
+        liftFinger(tl, finger);
+        root.on('destroyed', () => tl.kill());
+        return root;
+      },
+    });
+    // 3. Flipping.
+    if (this.level.allowFlip) {
+      pages.push({
+        caption: isTouch()
+          ? 'Hold a stone still to flip it over, or use the flip button. Some stones only fit flipped.'
+          : 'Double-click a stone (or press F) to flip it over, or use the flip button. Some stones only fit flipped.',
+        glyph: () => {
+          const root = new Container();
+          const stone = this.miniStone(cell, this.cellTris([[0, 0], [1, 0], [1, 1]]));
+          const button = miniButton('flip', this.accent);
+          button.position.set(cell * 2.6, cell * 0.8);
+          const finger = makeFinger();
+          const ring = new Graphics();
+          root.addChild(stone, button, ring, finger);
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
+          if (isTouch()) holdAt(tl, finger, ring, 0, 0, 0.7, 0.5);
+          else tapAt(tl, finger, 0, 0, 0.5).to(finger.scale, { x: glyphStyle.tapScale, y: glyphStyle.tapScale, duration: 0.12, yoyo: true, repeat: 1 });
+          tl.to(stone.scale, { x: -1, duration: stoneStyle.turnSeconds, ease: easings.tileSnap });
+          liftFinger(tl, finger);
+          tapAt(tl, finger, button.x, button.y, 0.4).to(stone.scale, { x: 1, duration: stoneStyle.turnSeconds, ease: easings.tileSnap }, '<');
+          liftFinger(tl, finger);
+          root.on('destroyed', () => tl.kill());
+          return root;
+        },
+      });
+    }
+    // 4. Look-alikes.
+    if (this.level.chapter >= 3) {
+      pages.push({
+        caption: 'Some stones look alike but differ by a single corner. Look closely before you place them.',
+        glyph: () => {
+          const root = new Container();
+          const a = this.miniStone(cell, this.cellTris([[0, 0], [1, 0]]));
+          const b = this.miniStone(cell, this.cellTris([[0, 0], [1, 0]], [[1, 0, 0]]));
+          a.x = -cell * 1.5;
+          b.x = cell * 1.5;
+          const mark = new Graphics();
+          mark.position.set(cell * 1.5 + cell * 0.5, -cell * 0.3);
+          root.addChild(a, b, mark);
+          const state = { p: 0 };
+          const tw = gsap.to(state, { p: 1, duration: 1.4, yoyo: true, repeat: -1, ease: easings.ambient, onUpdate: () => mark.clear().circle(0, 0, 5 + state.p * 4).stroke({ color: palette.pearl, width: 1, alpha: 0.7 - state.p * 0.5 }) });
+          root.on('destroyed', () => tw.kill());
+          return root;
+        },
+      });
+    }
+    // 5. A fixed stone.
+    if (this.level.pieces.some((p) => p.fixed)) {
+      pages.push({
+        caption: 'A grey stone is already set in place and cannot move. Build around it.',
+        glyph: () => {
+          const root = new Container();
+          const outline = this.miniOutline(cell, [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1]]);
+          const fixed = this.miniStone(cell, this.cellTris([[0, 0]]), palette.dim, 0.9);
+          fixed.position.set(outline.ox + cell / 2, outline.oy + cell / 2);
+          const finger = makeFinger();
+          root.addChild(outline.root, fixed, finger);
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
+          tapAt(tl, finger, fixed.x, fixed.y, 0.6);
+          refuse(tl, fixed);
+          liftFinger(tl, finger);
+          root.on('destroyed', () => tl.kill());
+          return root;
+        },
+      });
+    }
+    // 6. A gap in the outline.
+    if (this.hasHole()) {
+      pages.push({
+        caption: 'This outline has a gap in it. The gap must stay empty: no stone may cover it.',
+        glyph: () => {
+          const root = new Container();
+          const cells: Array<[number, number]> = [];
+          for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) cells.push([x, y]);
+          const outline = this.miniOutline(cell, cells, [[1, 1]]);
+          const mark = new Graphics();
+          root.addChild(outline.root, mark);
+          const state = { p: 0 };
+          const cx = outline.ox + 1.5 * cell;
+          const cy = outline.oy + 1.5 * cell;
+          const tw = gsap.to(state, { p: 1, duration: 1.2, yoyo: true, repeat: -1, ease: easings.ambient, onUpdate: () => mark.clear().rect(cx - cell / 2 + 3, cy - cell / 2 + 3, cell - 6, cell - 6).stroke({ color: palette.pearl, width: 1, alpha: 0.2 + state.p * 0.5 }) });
+          root.on('destroyed', () => tw.kill());
+          return root;
+        },
+      });
+    }
+    return pages;
+  }
+
 
   // Dev only: faint outlines of every piece in its solved place.
   showSolutionOverlay(): void {

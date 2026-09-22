@@ -1,14 +1,19 @@
 import gsap from 'gsap';
 import { Container, FederatedPointerEvent, Graphics } from 'pixi.js';
-import type { ClueTier, LevelScene, ShellContext } from '../types';
+import type { ClueTier, IntroPage, LevelScene, ShellContext } from '../types';
 import { palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
 import { isTouch, puzzleArea } from '../../design/layout';
 import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
+import { holdAt, liftFinger, makeFinger, refuse, tapAt } from '../../ui/introGlyphs';
 import {
   DELTA,
   DIRS,
+  E,
+  N,
+  S,
+  W,
   type Board,
   type LoopLevel,
   boardFromLevel,
@@ -543,63 +548,141 @@ export class LoopLevelScene implements LevelScene {
     this.container.destroy({ children: true });
   }
 
-  introLines(): string[] {
-    const lines = [
-      'Turn the tiles until every line meets a line on the next tile.',
-      'A line pointing at the edge, or at an empty tile, is not connected.',
-      'Connected tiles light up. The level is done when nothing is left dark.',
-      isTouch() ? 'Tap a tile to turn it. Hold a tile to turn it the other way.' : 'Click a tile to turn it. Right-click to turn it the other way.',
-    ];
-    if (this.level.chapter >= 2) lines.push('Tiles with a small dot are already correct and cannot turn.');
-    if (this.level.links?.length) lines.push('Two tiles marked with the same dots are linked: turning one turns the other.');
-    if (this.level.chapter >= 3) lines.push('Larger boards may hold more than one separate loop.');
-    return lines;
+  // ----- instruction pages -----
+
+  // A miniature tile for the instruction card: base, pipes (turnable) and an optional lit copy.
+  private miniTile(cell: number, mask: number, opts: { locked?: boolean; links?: number } = {}): { root: Container; pipes: Graphics; lit: Graphics } {
+    const root = new Container();
+    const base = new Graphics()
+      .roundRect(-cell / 2 + 4, -cell / 2 + 4, cell - 8, cell - 8, cell * loopStyle.cornerFraction)
+      .fill({ color: palette.ink })
+      .stroke({ color: palette.dim, width: 1 });
+    const pipes = new Graphics();
+    const lit = new Graphics();
+    const savedCell = this.cell;
+    this.cell = cell;
+    this.drawPipes(pipes, mask, opts.locked ? this.accent : palette.dim, opts.locked ? 0.8 : 1);
+    this.drawPipes(lit, mask, this.accent, 1);
+    this.cell = savedCell;
+    lit.alpha = 0;
+    root.addChild(base, pipes, lit);
+    if (opts.locked) root.addChild(new Graphics().circle(cell / 2 - 9, -cell / 2 + 9, 2).fill({ color: this.accent, alpha: 0.6 }));
+    if (opts.links) for (let k = 0; k < opts.links; k++) root.addChild(new Graphics().circle(-cell / 2 + 10 + k * 6, -cell / 2 + 9, 1.8).fill({ color: palette.pearl, alpha: 0.7 }));
+    return { root, pipes, lit };
   }
 
-  // Intro card: shows exactly the ideas this level uses. A tile is tapped and turned;
-  // a linked pair turns together; a locked tile with a dot stays put.
-  introGlyph(): Container {
-    const root = new Container();
+  introPages(): IntroPage[] {
     const cell = 56;
-    const hasLinks = (this.level.links?.length ?? 0) > 0;
-    const hasLocked = this.level.chapter >= 2 && this.level.cells.some((c) => c?.locked);
-    const kinds: Array<{ mask: number; locked: boolean; linked: boolean }> = [{ mask: 3, locked: false, linked: hasLinks }];
-    if (hasLinks) kinds.push({ mask: 6, locked: false, linked: true });
-    if (hasLocked) kinds.push({ mask: 12, locked: true, linked: false });
-    const spacing = cell * 1.2;
-    const startX = (-(kinds.length - 1) * spacing) / 2;
-    const spinners: Graphics[] = [];
-    kinds.forEach((k, n) => {
-      const tile = new Container();
-      const base = new Graphics()
-        .roundRect(-cell / 2 + 4, -cell / 2 + 4, cell - 8, cell - 8, cell * loopStyle.cornerFraction)
-        .fill({ color: palette.ink })
-        .stroke({ color: palette.dim, width: 1 });
-      const pipes = new Graphics();
-      const savedCell = this.cell;
-      this.cell = cell;
-      this.drawPipes(pipes, k.mask, k.locked ? this.accent : palette.dim, k.locked ? 0.8 : 1);
-      this.cell = savedCell;
-      tile.addChild(base, pipes);
-      if (k.locked) tile.addChild(new Graphics().circle(cell / 2 - 9, -cell / 2 + 9, 2).fill({ color: this.accent, alpha: 0.6 }));
-      if (k.linked) tile.addChild(new Graphics().circle(-cell / 2 + 10, -cell / 2 + 9, 1.8).fill({ color: palette.pearl, alpha: 0.7 }));
-      tile.x = startX + n * spacing;
-      root.addChild(tile);
-      if (!k.locked) spinners.push(pipes);
+    const pages: IntroPage[] = [];
+    // 1. Lines must meet: the left tile turns until its line meets the right tile's line.
+    pages.push({
+      caption: 'Turn the tiles until every line meets a line on the next tile. A line pointing at the edge, or at nothing, is not connected.',
+      glyph: () => {
+        const root = new Container();
+        const left = this.miniTile(cell, N);
+        const right = this.miniTile(cell, W);
+        left.root.x = -cell * 0.6;
+        right.root.x = cell * 0.6;
+        const finger = makeFinger();
+        root.addChild(left.root, right.root, finger);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
+        tapAt(tl, finger, -cell * 0.6, 0, 0.6)
+          .to(left.pipes, { rotation: Math.PI / 2, duration: loopStyle.rotateSeconds, ease: easings.tileSnap }, '<')
+          .set(left.lit, { rotation: Math.PI / 2 })
+          .to([left.lit, right.lit], { alpha: 1, duration: 0.5 })
+          .call(() => liftFinger(gsap.timeline(), finger, 0))
+          .to([left.lit, right.lit], { alpha: 0, duration: 0.4, delay: 1.2 })
+          .set(left.pipes, { rotation: 0 });
+        root.on('destroyed', () => tl.kill());
+        return root;
+      },
     });
-    const tap = new Graphics().circle(0, 0, 9).fill({ color: palette.pearl, alpha: 0.6 });
-    tap.x = startX;
-    tap.alpha = 0;
-    root.addChild(tap);
-    const tl = gsap
-      .timeline({ repeat: -1, repeatDelay: 0.6 })
-      .to(tap, { alpha: 1, duration: 0.2 })
-      .to(tap.scale, { x: 0.7, y: 0.7, duration: 0.15, yoyo: true, repeat: 1 })
-      .to(spinners, { rotation: `+=${Math.PI / 2}`, duration: loopStyle.rotateSeconds, ease: easings.tileSnap }, '<')
-      .to(tap, { alpha: 0, duration: 0.3 });
-    root.on('destroyed', () => tl.kill());
-    return root;
+    // 2. Controls.
+    pages.push({
+      caption: isTouch() ? 'Tap a tile to turn it. Hold a tile to turn it the other way.' : 'Click a tile to turn it. Right-click (or shift-click) to turn it the other way.',
+      glyph: () => {
+        const root = new Container();
+        const tile = this.miniTile(cell, N | E);
+        const finger = makeFinger();
+        const ring = new Graphics();
+        root.addChild(tile.root, ring, finger);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
+        tapAt(tl, finger, 0, 0, 0.5).to(tile.pipes, { rotation: `+=${Math.PI / 2}`, duration: loopStyle.rotateSeconds, ease: easings.tileSnap }, '<');
+        liftFinger(tl, finger);
+        if (isTouch()) holdAt(tl, finger, ring, 0, 0, 0.7, 0.6);
+        else tapAt(tl, finger, 0, 0, 0.6).set(finger, { tint: this.accent });
+        tl.to(tile.pipes, { rotation: `-=${Math.PI / 2}`, duration: loopStyle.rotateSeconds, ease: easings.tileSnap });
+        liftFinger(tl, finger).set(finger, { tint: 0xffffff });
+        root.on('destroyed', () => tl.kill());
+        return root;
+      },
+    });
+    // 3. Locked tiles.
+    if (this.level.chapter >= 2 && this.level.cells.some((c) => c?.locked)) {
+      pages.push({
+        caption: 'A tile with a small dot is already correct and cannot turn.',
+        glyph: () => {
+          const root = new Container();
+          const tile = this.miniTile(cell, N | S, { locked: true });
+          const finger = makeFinger();
+          root.addChild(tile.root, finger);
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
+          tapAt(tl, finger, 0, 0, 0.6);
+          refuse(tl, tile.root);
+          liftFinger(tl, finger);
+          root.on('destroyed', () => tl.kill());
+          return root;
+        },
+      });
+    }
+    // 4. Linked tiles.
+    if (this.level.links?.length) {
+      pages.push({
+        caption: 'Two tiles marked with the same dots are linked: turning one turns the other as well.',
+        glyph: () => {
+          const root = new Container();
+          const a = this.miniTile(cell, N | E, { links: 1 });
+          const b = this.miniTile(cell, S | W, { links: 1 });
+          a.root.x = -cell * 0.6;
+          b.root.x = cell * 0.6;
+          const finger = makeFinger();
+          root.addChild(a.root, b.root, finger);
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
+          tapAt(tl, finger, -cell * 0.6, 0, 0.6).to([a.pipes, b.pipes], { rotation: `+=${Math.PI / 2}`, duration: loopStyle.rotateSeconds, ease: easings.tileSnap }, '<');
+          liftFinger(tl, finger);
+          root.on('destroyed', () => tl.kill());
+          return root;
+        },
+      });
+    }
+    // 5. Several loops.
+    if (this.level.chapter >= 3) {
+      pages.push({
+        caption: 'A larger board may hold more than one separate loop. Every line still has to meet another.',
+        glyph: () => {
+          const root = new Container();
+          const small = 30;
+          const loops = [
+            { x: -small * 1.6, masks: [E | S, S | W, N | E, N | W] },
+            { x: small * 1.6, masks: [E | S, S | W, N | E, N | W] },
+          ];
+          loops.forEach((loop, n) => {
+            loop.masks.forEach((mask, k) => {
+              const t = this.miniTile(small, mask);
+              t.root.position.set(loop.x + ((k % 2) - 0.5) * small, (Math.floor(k / 2) - 0.5) * small);
+              t.lit.alpha = 1;
+              root.addChild(t.root);
+              gsap.to(t.lit, { alpha: 0.5, duration: 1.6 + n * 0.4, yoyo: true, repeat: -1, ease: easings.ambient });
+            });
+          });
+          root.on('destroyed', () => gsap.killTweensOf(root.children));
+          return root;
+        },
+      });
+    }
+    return pages;
   }
+
 
   // Dev only: faint correct connectors on every tile. Stripped from production by the caller's DEV guard.
   showSolutionOverlay(): void {

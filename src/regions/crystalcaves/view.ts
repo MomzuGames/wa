@@ -1,12 +1,13 @@
 import gsap from 'gsap';
 import { Container, Graphics } from 'pixi.js';
-import type { ClueTier, LevelScene, ShellContext } from '../types';
+import type { ClueTier, IntroPage, LevelScene, ShellContext } from '../types';
 import { alphas, palette } from '../../design/palette';
 import { durations, easings, reducedMotion, scaled } from '../../design/motion';
 import { isTouch, layout, puzzleArea } from '../../design/layout';
 import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
-import { COLOR_NAMES, DIR_DELTA, LEMON, ORIENTATIONS, type PrismLevel, ROSE, SKY, type Segment, isSolved, trace } from './model';
+import { liftFinger, makeFinger, tapAt } from '../../ui/introGlyphs';
+import { COLOR_NAMES, DIR_DELTA, LEMON, ORIENTATIONS, type PieceKind, type PrismLevel, ROSE, SKY, type Segment, isSolved, trace } from './model';
 import { ghostClue, lockClue, routeClue } from './clues';
 import { createCrystalVoice, type CrystalVoice } from './sound';
 
@@ -142,6 +143,70 @@ export class PrismLevelScene implements LevelScene {
     this.layout(width, height);
   }
 
+  // Draws a piece's body and colour marks: shared by the board and the instruction pages.
+  private paintPiece(body: Graphics, glyph: Graphics, kind: PieceKind, color: number, orient: number, s: number): void {
+    const half = s / 2;
+    switch (kind) {
+      case 'emitter': {
+        const [dx, dy] = DIR_DELTA[orient]!;
+        const tint = colorOf(color);
+        // A shard pointing along its beam.
+        body.moveTo(dx * half * 0.7, dy * half * 0.7);
+        body.lineTo(-dy * half * 0.35 - dx * half * 0.4, dx * half * 0.35 - dy * half * 0.4);
+        body.lineTo(dy * half * 0.35 - dx * half * 0.4, -dx * half * 0.35 - dy * half * 0.4);
+        body.closePath().fill({ color: tint, alpha: 0.9 });
+        body.filters = [createGlow(tint, { distance: 12, strength: 1.2, quality: 0.3 })];
+        break;
+      }
+      case 'mirror':
+      case 'splitter':
+      case 'dichroic': {
+        const o = orient;
+        const sign = o === 0 ? -1 : 1; // '/' rises to the right, '\' falls
+        const len = half * 0.7;
+        if (kind === 'dichroic') {
+          // A tinted mirror: its own colour bounces, the rest passes.
+          const tint = colorOf(color);
+          body.moveTo(-len, -sign * len).lineTo(len, sign * len).stroke({ color: tint, width: 4, cap: 'round', alpha: 0.85 });
+          body.moveTo(-len, -sign * len).lineTo(len, sign * len).stroke({ color: palette.pearl, width: 1, cap: 'round', alpha: 0.5 });
+        } else if (kind === 'mirror') {
+          body.moveTo(-len, -sign * len).lineTo(len, sign * len).stroke({ color: palette.pearl, width: 3.5, cap: 'round', alpha: 0.9 });
+        } else {
+          const off = 3;
+          body.moveTo(-len - off * sign, -sign * len + off).lineTo(len - off * sign, sign * len + off).stroke({ color: palette.pearl, width: 2, cap: 'round', alpha: 0.75 });
+          body.moveTo(-len + off * sign, -sign * len - off).lineTo(len + off * sign, sign * len - off).stroke({ color: palette.pearl, width: 2, cap: 'round', alpha: 0.75 });
+        }
+        break;
+      }
+      case 'filter': {
+        const tint = colorOf(color);
+        body.roundRect(-half * 0.42, -half * 0.42, half * 0.84, half * 0.84, 4).fill({ color: tint, alpha: 0.18 }).stroke({ color: tint, width: 1.5, alpha: 0.8 });
+        break;
+      }
+      case 'blocker':
+        body.roundRect(-half * 0.5, -half * 0.5, half, half, half * 0.3).fill({ color: palette.ink }).stroke({ color: palette.dim, width: 1.5 });
+        break;
+      case 'target': {
+        const tint = colorOf(color);
+        body.moveTo(0, -half * 0.6).lineTo(half * 0.45, 0).lineTo(0, half * 0.6).lineTo(-half * 0.45, 0).closePath().stroke({ color: tint, width: 1.5, alpha: 0.9 });
+        // Colour-blind glyphs beneath the crystal: circle = rose, triangle = sky, square = lemon.
+        const glyphs: number[] = [];
+        if (color & ROSE) glyphs.push(ROSE);
+        if (color & SKY) glyphs.push(SKY);
+        if (color & LEMON) glyphs.push(LEMON);
+        const gs = prismStyle.glyphSize;
+        glyphs.forEach((m, k) => {
+          const gx = (k - (glyphs.length - 1) / 2) * gs * 3;
+          const gy = half * 0.82;
+          if (m === ROSE) glyph.circle(gx, gy, gs).fill({ color: palette.rose });
+          else if (m === SKY) glyph.moveTo(gx, gy - gs).lineTo(gx + gs, gy + gs).lineTo(gx - gs, gy + gs).closePath().fill({ color: palette.sky });
+          else glyph.rect(gx - gs, gy - gs, gs * 2, gs * 2).fill({ color: palette.lemon });
+        });
+        break;
+      }
+    }
+  }
+
   private drawPiece(i: number): void {
     const v = this.views[i]!;
     const p = this.level.pieces[i]!;
@@ -156,65 +221,7 @@ export class PrismLevelScene implements LevelScene {
       v.ring.circle(0, 0, hitR).fill({ color: palette.pearl, alpha: 0.001 });
       v.ring.circle(0, 0, half * 0.8).stroke({ color: this.locked.has(i) ? this.accent : palette.dim, width: 1, alpha: this.locked.has(i) ? 0.8 : prismStyle.ringAlpha });
     }
-    switch (p.kind) {
-      case 'emitter': {
-        const [dx, dy] = DIR_DELTA[this.orients[i]!]!;
-        const color = colorOf(p.color);
-        // A shard pointing along its beam.
-        v.body.moveTo(dx * half * 0.7, dy * half * 0.7);
-        v.body.lineTo(-dy * half * 0.35 - dx * half * 0.4, dx * half * 0.35 - dy * half * 0.4);
-        v.body.lineTo(dy * half * 0.35 - dx * half * 0.4, -dx * half * 0.35 - dy * half * 0.4);
-        v.body.closePath().fill({ color, alpha: 0.9 });
-        v.body.filters = [createGlow(color, { distance: 12, strength: 1.2, quality: 0.3 })];
-        break;
-      }
-      case 'mirror':
-      case 'splitter':
-      case 'dichroic': {
-        const o = this.orients[i]!;
-        const sign = o === 0 ? -1 : 1; // '/' rises to the right, '\' falls
-        const len = half * 0.7;
-        if (p.kind === 'dichroic') {
-          // A tinted mirror: its own colour bounces, the rest passes.
-          const color = colorOf(p.color);
-          v.body.moveTo(-len, -sign * len).lineTo(len, sign * len).stroke({ color, width: 4, cap: 'round', alpha: 0.85 });
-          v.body.moveTo(-len, -sign * len).lineTo(len, sign * len).stroke({ color: palette.pearl, width: 1, cap: 'round', alpha: 0.5 });
-        } else if (p.kind === 'mirror') {
-          v.body.moveTo(-len, -sign * len).lineTo(len, sign * len).stroke({ color: palette.pearl, width: 3.5, cap: 'round', alpha: 0.9 });
-        } else {
-          const off = 3;
-          v.body.moveTo(-len - off * sign, -sign * len + off).lineTo(len - off * sign, sign * len + off).stroke({ color: palette.pearl, width: 2, cap: 'round', alpha: 0.75 });
-          v.body.moveTo(-len + off * sign, -sign * len - off).lineTo(len + off * sign, sign * len - off).stroke({ color: palette.pearl, width: 2, cap: 'round', alpha: 0.75 });
-        }
-        break;
-      }
-      case 'filter': {
-        const color = colorOf(p.color);
-        v.body.roundRect(-half * 0.42, -half * 0.42, half * 0.84, half * 0.84, 4).fill({ color, alpha: 0.18 }).stroke({ color, width: 1.5, alpha: 0.8 });
-        break;
-      }
-      case 'blocker':
-        v.body.roundRect(-half * 0.5, -half * 0.5, half, half, half * 0.3).fill({ color: palette.ink }).stroke({ color: palette.dim, width: 1.5 });
-        break;
-      case 'target': {
-        const color = colorOf(p.color);
-        v.body.moveTo(0, -half * 0.6).lineTo(half * 0.45, 0).lineTo(0, half * 0.6).lineTo(-half * 0.45, 0).closePath().stroke({ color, width: 1.5, alpha: 0.9 });
-        // Colour-blind glyphs beneath the crystal: circle = rose, triangle = sky, square = lemon.
-        const glyphs: number[] = [];
-        if (p.color & ROSE) glyphs.push(ROSE);
-        if (p.color & SKY) glyphs.push(SKY);
-        if (p.color & LEMON) glyphs.push(LEMON);
-        const gs = prismStyle.glyphSize;
-        glyphs.forEach((m, k) => {
-          const gx = (k - (glyphs.length - 1) / 2) * gs * 3;
-          const gy = half * 0.82;
-          if (m === ROSE) v.glyph.circle(gx, gy, gs).fill({ color: palette.rose });
-          else if (m === SKY) v.glyph.moveTo(gx, gy - gs).lineTo(gx + gs, gy + gs).lineTo(gx - gs, gy + gs).closePath().fill({ color: palette.sky });
-          else v.glyph.rect(gx - gs, gy - gs, gs * 2, gs * 2).fill({ color: palette.lemon });
-        });
-        break;
-      }
-    }
+    this.paintPiece(v.body, v.glyph, p.kind, p.color, this.orients[i]!, s);
     this.drawTargetFill(i);
   }
 
@@ -428,78 +435,214 @@ export class PrismLevelScene implements LevelScene {
     return new Promise((resolve) => gsap.delayedCall(total, resolve));
   }
 
-  introLines(): string[] {
-    const lines = [
-      'Turn the mirrors so a beam reaches every crystal.',
-      `${isTouch() ? 'Tap' : 'Click'} a piece with a ring around it to turn it. Pieces without a ring are fixed.`,
-      'A beam bounces off a mirror, passes straight through empty cells, and stops at a crystal, a stone or the edge.',
-      'A crystal lights fully only when it receives exactly the colour its marks show.',
-    ];
-    if (this.level.pieces.some((p) => p.kind === 'splitter')) lines.push('A double line lets half the beam through and bounces the other half.');
-    if (this.level.chapter >= 2) lines.push('Two beams meeting at a crystal mix: pink and blue make violet, blue and yellow make green.');
-    if (this.level.pieces.some((p) => p.kind === 'filter')) lines.push('A tinted square lets only its own colour pass.');
-    if (this.level.pieces.some((p) => p.kind === 'dichroic')) lines.push('A coloured mirror bounces only its own colour; every other colour passes straight through it.');
-    return lines;
+  // ----- instruction pages -----
+
+  private miniPiece(kind: PieceKind, color: number, orient: number, s: number, ringed = false): { root: Container; body: Graphics } {
+    const root = new Container();
+    const ring = new Graphics();
+    if (ringed) ring.circle(0, 0, s * 0.4).stroke({ color: palette.dim, width: 1, alpha: prismStyle.ringAlpha });
+    const body = new Graphics();
+    const glyph = new Graphics();
+    this.paintPiece(body, glyph, kind, color, orient, s);
+    root.addChild(ring, body, glyph);
+    return { root, body };
   }
 
-  introGlyph(): Container {
-    const root = new Container();
-    const s = 26;
-    const emitter = new Graphics().moveTo(-s * 2.2 + s * 0.4, 0).lineTo(-s * 2.2 - s * 0.3, -s * 0.3).lineTo(-s * 2.2 - s * 0.3, s * 0.3).closePath().fill({ color: palette.sky });
-    const ring = new Graphics().circle(0, 0, s * 0.8).stroke({ color: palette.dim, width: 1, alpha: prismStyle.ringAlpha });
-    const mirror = new Graphics().moveTo(-s * 0.7, s * 0.7).lineTo(s * 0.7, -s * 0.7).stroke({ color: palette.pearl, width: 3, cap: 'round' });
-    const target = new Graphics().moveTo(0, -s * 0.6).lineTo(s * 0.45, 0).lineTo(0, s * 0.6).lineTo(-s * 0.45, 0).closePath().stroke({ color: palette.sky, width: 1.5 });
-    target.position.set(0, s * 2.2);
-    const beam = new Graphics();
-    const tap = new Graphics().circle(0, 0, 8).fill({ color: palette.pearl, alpha: 0.6 });
-    tap.alpha = 0;
-    root.addChild(beam, emitter, ring, mirror, target, tap);
-    // A small legend of the special pieces this level uses, each with its beams drawn in.
-    const specials = ['splitter', 'filter', 'dichroic'].filter((k) => this.level.pieces.some((p) => p.kind === k));
-    specials.forEach((kind, n) => {
-      const legend = new Graphics();
-      const lx = (n - (specials.length - 1) / 2) * s * 3.2;
-      const ly = s * 3.4;
-      const sample = this.level.pieces.find((p) => p.kind === kind)!;
-      const inColor = kind === 'dichroic' ? palette.pearl : palette.sky;
-      legend.moveTo(lx - s * 1.4, ly).lineTo(lx, ly).stroke({ color: inColor, width: 3, alpha: 0.8, cap: 'round' });
-      if (kind === 'splitter') {
-        legend.moveTo(lx - s * 0.45 - 2, ly + s * 0.45 + 2).lineTo(lx + s * 0.45 - 2, ly - s * 0.45 + 2).stroke({ color: palette.pearl, width: 2, alpha: 0.75 });
-        legend.moveTo(lx - s * 0.45 + 2, ly + s * 0.45 - 2).lineTo(lx + s * 0.45 + 2, ly - s * 0.45 - 2).stroke({ color: palette.pearl, width: 2, alpha: 0.75 });
-        legend.moveTo(lx, ly).lineTo(lx + s * 1.4, ly).stroke({ color: palette.sky, width: 3, alpha: 0.6, cap: 'round' });
-        legend.moveTo(lx, ly).lineTo(lx, ly - s * 1.2).stroke({ color: palette.sky, width: 3, alpha: 0.6, cap: 'round' });
-      } else if (kind === 'filter') {
-        const color = colorOf(sample.color);
-        legend.roundRect(lx - s * 0.35, ly - s * 0.35, s * 0.7, s * 0.7, 3).fill({ color, alpha: 0.2 }).stroke({ color, width: 1.5 });
-        legend.moveTo(lx, ly).lineTo(lx + s * 1.4, ly).stroke({ color, width: 3, alpha: 0.8, cap: 'round' });
-      } else {
-        const color = colorOf(sample.color);
-        legend.moveTo(lx - s * 0.5, ly + s * 0.5).lineTo(lx + s * 0.5, ly - s * 0.5).stroke({ color, width: 4, alpha: 0.85, cap: 'round' });
-        legend.moveTo(lx, ly).lineTo(lx, ly - s * 1.2).stroke({ color, width: 3, alpha: 0.8, cap: 'round' });
-        legend.moveTo(lx, ly).lineTo(lx + s * 1.4, ly).stroke({ color: colorOf(7 & ~sample.color), width: 3, alpha: 0.7, cap: 'round' });
-      }
-      root.addChild(legend);
+  private crystalFill(s: number, got: number, want: number): Graphics {
+    const half = s / 2;
+    const g = new Graphics();
+    if (got === 0) return g;
+    const exact = got === want;
+    g.moveTo(0, -half * 0.6).lineTo(half * 0.45, 0).lineTo(0, half * 0.6).lineTo(-half * 0.45, 0).closePath().fill({ color: colorOf(got), alpha: exact ? 0.85 : 0.35 });
+    if (exact) g.filters = [createGlow(colorOf(got), { distance: 16, strength: 1.4, quality: 0.3 })];
+    return g;
+  }
+
+  private beamLine(g: Graphics, from: { x: number; y: number }, to: { x: number; y: number }, color: number, alpha: number = prismStyle.beamAlpha): void {
+    g.moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ color: colorOf(color), width: prismStyle.beamWidth, alpha, cap: 'round' });
+  }
+
+  introPages(): IntroPage[] {
+    const s = 44;
+    const pages: IntroPage[] = [];
+    const has = (kind: PieceKind) => this.level.pieces.some((p) => p.kind === kind);
+    // 1. Turn a ringed mirror so the beam reaches the crystal.
+    pages.push({
+      caption: `${isTouch() ? 'Tap' : 'Click'} a piece with a ring around it to turn it, and guide the beam to every crystal. Pieces without a ring are fixed.`,
+      glyph: () => {
+        const root = new Container();
+        const beam = new Graphics();
+        const emitter = this.miniPiece('emitter', SKY, 1, s);
+        emitter.root.x = -s * 2;
+        const mirror = this.miniPiece('mirror', 0, 0, s, true);
+        const target = this.miniPiece('target', SKY, 0, s);
+        target.root.y = s * 1.6;
+        const fill = new Container();
+        fill.y = s * 1.6;
+        const finger = makeFinger();
+        root.addChild(beam, emitter.root, mirror.root, target.root, fill, finger);
+        const draw = (turned: boolean) => {
+          beam.clear();
+          this.beamLine(beam, { x: -s * 1.6, y: 0 }, { x: 0, y: 0 }, SKY);
+          if (turned) this.beamLine(beam, { x: 0, y: 0 }, { x: 0, y: s * 1.3 }, SKY);
+          else this.beamLine(beam, { x: 0, y: 0 }, { x: 0, y: -s * 1.6 }, SKY, 0.5);
+          fill.removeChildren().forEach((ch) => ch.destroy());
+          if (turned) fill.addChild(this.crystalFill(s, SKY, SKY));
+        };
+        draw(false);
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
+        tapAt(tl, finger, 0, 0, 0.8)
+          .to(mirror.body, { rotation: Math.PI / 2, duration: prismStyle.turnSeconds, ease: easings.tileSnap, onComplete: () => draw(true) }, '<');
+        liftFinger(tl, finger);
+        tl.call(() => draw(false), undefined, '+=1.4').set(mirror.body, { rotation: 0 });
+        root.on('destroyed', () => tl.kill());
+        return root;
+      },
     });
-    const state = { turned: 0 };
-    const drawBeam = () => {
+    // 2. What a beam does.
+    pages.push({
+      caption: 'A beam travels straight through empty cells, bounces off a mirror, and stops at a crystal, a stone or the edge of the cave.',
+      glyph: () => {
+        const root = new Container();
+        const beam = new Graphics();
+        const emitter = this.miniPiece('emitter', ROSE, 1, s);
+        emitter.root.position.set(-s * 2, -s * 0.7);
+        const stone = this.miniPiece('blocker', 0, 0, s);
+        stone.root.position.set(s * 1.2, -s * 0.7);
+        const emitter2 = this.miniPiece('emitter', SKY, 1, s);
+        emitter2.root.position.set(-s * 2, s * 0.7);
+        const mirror = this.miniPiece('mirror', 0, 1, s);
+        mirror.root.position.set(0, s * 0.7);
+        root.addChild(beam, emitter.root, stone.root, emitter2.root, mirror.root);
+        const state = { p: 0 };
+        const draw = () => {
+          beam.clear();
+          const p = state.p;
+          // The rose beam runs until the stone; the sky beam bounces down off the mirror and leaves.
+          this.beamLine(beam, { x: -s * 1.6, y: -s * 0.7 }, { x: -s * 1.6 + Math.min(p, 1) * (s * 2.4), y: -s * 0.7 }, ROSE);
+          this.beamLine(beam, { x: -s * 1.6, y: s * 0.7 }, { x: -s * 1.6 + Math.min(p, 1) * (s * 1.6), y: s * 0.7 }, SKY);
+          if (p > 1) this.beamLine(beam, { x: 0, y: s * 0.7 }, { x: 0, y: s * 0.7 + (p - 1) * s * 1.2 }, SKY);
+        };
+        const tw = gsap.to(state, { p: 2, duration: 1.6, ease: 'none', repeat: -1, repeatDelay: 1.2, onUpdate: draw });
+        root.on('destroyed', () => tw.kill());
+        return root;
+      },
+    });
+    // 3. Colour marks.
+    pages.push({
+      caption: 'A crystal lights fully only when it receives exactly the colour its marks show. The wrong colour leaves it dull.',
+      glyph: () => {
+        const root = new Container();
+        const beam = new Graphics();
+        const good = this.miniPiece('target', SKY, 0, s);
+        good.root.x = -s * 1.2;
+        const bad = this.miniPiece('target', ROSE, 0, s);
+        bad.root.x = s * 1.2;
+        const fills = new Container();
+        root.addChild(beam, good.root, bad.root, fills);
+        const state = { p: 0 };
+        const draw = () => {
+          beam.clear();
+          const y0 = -s * 1.6;
+          const reach = Math.min(state.p, 1) * (s * 1.6 - s * 0.35);
+          this.beamLine(beam, { x: -s * 1.2, y: y0 }, { x: -s * 1.2, y: y0 + reach }, SKY);
+          this.beamLine(beam, { x: s * 1.2, y: y0 }, { x: s * 1.2, y: y0 + reach }, SKY);
+          fills.removeChildren().forEach((ch) => ch.destroy());
+          if (state.p >= 1) {
+            const a = this.crystalFill(s, SKY, SKY);
+            a.x = -s * 1.2;
+            const b = this.crystalFill(s, SKY, ROSE);
+            b.x = s * 1.2;
+            fills.addChild(a, b);
+          }
+        };
+        const tw = gsap.to(state, { p: 1, duration: 1, ease: 'none', repeat: -1, repeatDelay: 2, onUpdate: draw });
+        root.on('destroyed', () => tw.kill());
+        return root;
+      },
+    });
+    // 4. Splitter.
+    if (has('splitter')) {
+      pages.push({
+        caption: 'A double line is a splitter: half the beam passes straight through, the other half bounces.',
+        glyph: () => this.legendGlyph('splitter', SKY, s),
+      });
+    }
+    // 5. Mixing.
+    if (this.level.chapter >= 2 && this.level.pieces.some((p) => p.kind === 'target' && (p.color & (p.color - 1)) !== 0)) {
+      pages.push({
+        caption: 'Two beams meeting at a crystal mix their colours: pink and blue make violet, blue and yellow make green, pink and yellow make peach.',
+        glyph: () => {
+          const root = new Container();
+          const beam = new Graphics();
+          const target = this.miniPiece('target', ROSE | SKY, 0, s);
+          const fills = new Container();
+          root.addChild(beam, target.root, fills);
+          const state = { p: 0 };
+          const draw = () => {
+            beam.clear();
+            const p = Math.min(state.p, 1);
+            this.beamLine(beam, { x: -s * 2, y: 0 }, { x: -s * 2 + p * (s * 2 - s * 0.35), y: 0 }, ROSE);
+            this.beamLine(beam, { x: 0, y: -s * 1.8 }, { x: 0, y: -s * 1.8 + p * (s * 1.8 - s * 0.5) }, SKY);
+            fills.removeChildren().forEach((ch) => ch.destroy());
+            if (state.p >= 1) fills.addChild(this.crystalFill(s, ROSE | SKY, ROSE | SKY));
+          };
+          const tw = gsap.to(state, { p: 1, duration: 1, ease: 'none', repeat: -1, repeatDelay: 2, onUpdate: draw });
+          root.on('destroyed', () => tw.kill());
+          return root;
+        },
+      });
+    }
+    // 6. Filter.
+    if (has('filter')) {
+      const sample = this.level.pieces.find((p) => p.kind === 'filter')!;
+      pages.push({
+        caption: 'A tinted square is a filter: only its own colour passes through it. Every other colour is stopped.',
+        glyph: () => this.legendGlyph('filter', sample.color, s),
+      });
+    }
+    // 7. Dichroic mirror.
+    if (has('dichroic')) {
+      const sample = this.level.pieces.find((p) => p.kind === 'dichroic')!;
+      pages.push({
+        caption: 'A coloured mirror bounces only its own colour. Every other colour passes straight through it, so one mixed beam can be split by colour.',
+        glyph: () => this.legendGlyph('dichroic', sample.color, s),
+      });
+    }
+    return pages;
+  }
+
+  // A special piece with a beam arriving from the left, animated so its behaviour is clear.
+  private legendGlyph(kind: 'splitter' | 'filter' | 'dichroic', color: number, s: number): Container {
+    const root = new Container();
+    const beam = new Graphics();
+    const piece = this.miniPiece(kind, color, 0, s, kind !== 'filter');
+    root.addChild(beam, piece.root);
+    const inColor = kind === 'dichroic' ? 7 : kind === 'filter' ? 7 : SKY;
+    const state = { p: 0 };
+    const draw = () => {
       beam.clear();
-      beam.moveTo(-s * 2.2, 0).lineTo(0, 0).stroke({ color: palette.sky, width: 3, alpha: 0.8, cap: 'round' });
-      if (state.turned >= 1) beam.moveTo(0, 0).lineTo(0, s * 1.7).stroke({ color: palette.sky, width: 3, alpha: 0.8, cap: 'round' });
-      else beam.moveTo(0, 0).lineTo(0, -s * 2.2).stroke({ color: palette.sky, width: 3, alpha: 0.5, cap: 'round' });
+      const p = state.p;
+      const reach = Math.min(p, 1) * s * 2;
+      this.beamLine(beam, { x: -s * 2, y: 0 }, { x: -s * 2 + reach, y: 0 }, inColor);
+      if (p > 1) {
+        const out = (p - 1) * s * 1.6;
+        if (kind === 'splitter') {
+          this.beamLine(beam, { x: 0, y: 0 }, { x: out, y: 0 }, SKY, 0.55);
+          this.beamLine(beam, { x: 0, y: 0 }, { x: 0, y: -out }, SKY, 0.55);
+        } else if (kind === 'filter') {
+          this.beamLine(beam, { x: 0, y: 0 }, { x: out, y: 0 }, color);
+        } else {
+          this.beamLine(beam, { x: 0, y: 0 }, { x: 0, y: -out }, color);
+          this.beamLine(beam, { x: 0, y: 0 }, { x: out, y: 0 }, 7 & ~color);
+        }
+      }
     };
-    drawBeam();
-    const tl = gsap
-      .timeline({ repeat: -1, repeatDelay: 1 })
-      .to(tap, { alpha: 1, duration: 0.2, delay: 0.8 })
-      .to(tap.scale, { x: 0.7, y: 0.7, duration: 0.15, yoyo: true, repeat: 1 })
-      .to(mirror, { rotation: Math.PI / 2, duration: prismStyle.turnSeconds, ease: easings.tileSnap, onComplete: () => { state.turned = 1; drawBeam(); } }, '<')
-      .to(tap, { alpha: 0, duration: 0.3 })
-      .to(target, { alpha: 0.5, duration: 0.3, yoyo: true, repeat: 3 })
-      .set(mirror, { rotation: 0 })
-      .call(() => { state.turned = 0; drawBeam(); });
-    root.on('destroyed', () => tl.kill());
+    const tw = gsap.to(state, { p: 2, duration: 1.6, ease: 'none', repeat: -1, repeatDelay: 1.4, onUpdate: draw });
+    root.on('destroyed', () => tw.kill());
     return root;
   }
+
 
   // Dev only: faint solved orientation on every rotatable piece.
   showSolutionOverlay(): void {

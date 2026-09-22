@@ -18,7 +18,6 @@ function make(rows: number[][], extra: Partial<ShadowLevel> = {}): ShadowLevel {
     maxHeight: Math.max(...heights),
     front: frontProfile(n, heights),
     side: sideProfile(n, heights),
-    footprint: null,
     count: null,
     fixed: heights.map(() => -1),
     solution: heights,
@@ -50,17 +49,17 @@ describe('shadow model', () => {
     expect(ceiling(stairs, 2, 0)).toBe(3);
   });
 
-  it('respects the floor plan, the count and fixed stones', () => {
-    const planned = make(
+  it('respects the count and fixed stones', () => {
+    const counted = make(
       [
         [2, 0],
         [0, 1],
       ],
-      { footprint: [true, false, false, true], count: 3 },
+      { count: 3 },
     );
-    expect(isSolved(planned, [2, 0, 0, 1])).toBe(true);
-    expect(isSolved(planned, [2, 1, 0, 1])).toBe(false); // stone on a dark tile
-    expect(isSolved(planned, [2, 0, 0, 0])).toBe(false); // lit tile left empty (and wrong shadow)
+    expect(isSolved(counted, [2, 0, 0, 1])).toBe(true);
+    expect(isSolved(counted, [2, 1, 0, 1])).toBe(false); // one stone too many
+    expect(isSolved(counted, [2, 0, 0, 0])).toBe(false); // wrong shadow
     const fixed = make([[1, 2]], { fixed: [1, -1] });
     expect(startHeights(fixed)).toEqual([1, 0]);
   });
@@ -123,7 +122,7 @@ describe('shadow clues', () => {
 
 describe('shadow generator', () => {
   it('is deterministic for a seed and produces solvable, non-trivial counted levels', () => {
-    const params = paramsForChapter(2, 'x', 0);
+    const params = paramsForChapter(1, 'x', 0);
     const a = generateShadowLevel('det', 2, params);
     expect(a).toEqual(generateShadowLevel('det', 2, params));
     expect(a).not.toBeNull();
@@ -148,8 +147,8 @@ describe('baked shadow terrace levels', () => {
     }
   });
 
-  it('introduces the count from chapter 3 and fixed stones in chapter 4', () => {
-    expect(levels.slice(6).every((l) => l.count !== null)).toBe(true);
-    expect(levels.slice(8).some((l) => l.fixed.some((f) => f >= 0))).toBe(true);
+  it('introduces the count from chapter 2 and fixed stones from chapter 3', () => {
+    expect(levels.slice(3).every((l) => l.count !== null)).toBe(true);
+    expect(levels.slice(6).every((l) => l.fixed.some((f) => f >= 0))).toBe(true);
   });
 });

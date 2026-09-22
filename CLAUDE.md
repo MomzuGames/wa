@@ -17,7 +17,7 @@ The feeling to aim for: **meditative focus**. Think soft glowing light on black,
 - **Every hint explains itself.** `showClue` returns a caption shown in a toast (`ui/toast.ts`); hints are one concrete thing at a time and region-specific (a tile turns into place; a start star pulses; a stone outline appears; a mirror locks; one pad glows). After all four tiers, the hint button keeps giving concrete steps.
 - **Depth and scenery:** a spotlight under every puzzle, shadows under tiles, stones and pads, a colour wash and region-specific backdrop (`fx/atmosphere.ts`: caustics, star field, raked sand, crystal facets, waves and fireflies) plus a night landscape per region (`fx/scenery.ts`: headland and shore with rolling waves; mountain ranges with pines and a river; rolling hills with bamboo; a cave with stalactites and a glowing stream; hills over a lake with the moon's reflection), all with pointer parallax, plants swaying in the wind and silhouette birds passing now and then. The map shows each region's name and colour pool on hover/focus.
 - **Nothing is static.** The map drifts slowly, stars twinkle, each region figure has its own idle life, light pulses travel along completed trails, and every region has an atmosphere layer (`fx/atmosphere.ts`) behind its trail and puzzles.
-- **Instruction cards** (`ui/levelIntro.ts`) show level number, chapter dots, a looping animated demo (`LevelScene.introGlyph`), short caption lines (`LevelScene.introLines`) and a continue button. A card appears by itself only when a level's lines contain something the player has not seen in that region (tracked in the save); the `?` button in the HUD reopens it any time. The bulb button asks "Would you like a hint?" and reveals the next clue tier on yes, even before it is earned.
+- **Instruction cards** (`ui/levelIntro.ts`) are paged: one page per mechanic present in that level (`LevelScene.introPages`), each with its own looping animated demonstration and a short caption. Pages turn with the arrows, a swipe or the arrow keys; page dots show where you are; the play button (or Enter) closes the card. Never teach a mechanic the level does not use. A card opens by itself on the first page the player has not seen in that region (tracked in the save); the `?` button reopens it any time. Shared demo pieces (finger taps, holds, mini buttons) live in `ui/introGlyphs.ts`; `src/regions/introPages.test.ts` builds every page of every level headlessly. The bulb button asks "Would you like a hint?" and reveals the next clue tier on yes, even before it is earned.
 - **Music:** the drone plays on the title screen, the map is quiet, and each region has its own generative bed (`audio/beds.ts`) that plays on its trail and in its levels, cross-faded by `AudioEngine.setScene`. Map audio layering is intentionally not implemented.
 
 ### Non-negotiable principles
@@ -127,6 +127,7 @@ export interface LevelScene {
   showClue(tier: ClueTier): void;        // must never reveal the complete solution
   playCompletion(): Promise<void>;       // the region's signature solve animation
   update?(dt: number): void;             // ticked every frame by the shell (ripples, drift, timed clues)
+  introPages?(): IntroPage[];            // { caption, glyph: () => Container } per mechanic in this level
   destroy(): void;
 }
 
@@ -399,15 +400,15 @@ For every region:
 
 ### Region 6 — Shadow Terrace (Shadows, three-dimensional) · accent `sage`
 - **Board:** an n×n terrace drawn in isometric 3D (`view.ts` projects grid points through a view angle; stacks are sorted back to front and drawn as cubes with three shaded faces). Two lanterns stand behind the far edges; every stack throws a shadow on the sand in front, one bar per row along each near edge, whose length is the tallest stone in that row (per-column and per-row maxima of the heightmap).
-- **Input:** tap a tile to add a stone; the stack climbs to its ceiling (the smaller of its two shadows), then clears. Hold, right-click or shift-click takes one stone away. The turn button (bottom left) or `R` rotates the view a quarter turn, with a tween; shadows fade during the turn.
-- **Win condition:** the cast shadows match the moon's on both edges, every moonlit tile carries a stone and dark tiles are empty (from chapter 2), the stone count is exact (from chapter 3), and fixed grey stacks are untouched. Accept **any** heightmap that satisfies this.
+- **Input:** tap a tile to add a stone; the stack climbs to the level's full height, then clears. Hold, right-click or shift-click takes one stone away. Mistakes are allowed: a stack that is too tall throws a shadow past the shaded one, and nothing on the board says where to build. The turn button (bottom left) or `R` rotates the view a quarter turn, with a tween; shadows fade during the turn.
+- **Win condition:** the cast shadows match the shaded ones on both edges, the stone count is exact (from chapter 2), and fixed grey stacks are untouched. Accept **any** heightmap that satisfies this. (An earlier moonlit floor plan was removed: it gave away where to build.)
 - **Generator:** a random heightmap gives the shadows; a level is rejected when filling every stack to its ceiling already solves it (once the count rule is in play). The ultra level asks for the **minimum** number of stones.
 - **Solver:** backtracking over cells with look-ahead (each row and column must still be able to reach its shadow; the count must stay reachable). `solveShadow(level, prefer)` tries the player's own heights first so hints stay close to what they built; `minimumStones` finds the fewest stones.
 - **Chapters:**
   1. 3×3, heights to 2, shadows only
-  2. 3×3 to 4×4, heights to 3, moonlit floor plan
-  3. 4×4, exact stone count (the lantern gauge beside the terrace)
-  4. 4×4 to 5×5, heights to 4, fixed grey stacks; the final level asks for the minimum count
+  2. 3×3 to 4×4, heights to 3, exact stone count (the lantern gauge beside the terrace)
+  3. 4×4, a fixed grey stack
+  4. 4×4, heights to 4, the **minimum** count (kept at 4×4: the search grows fast with size)
 - **Signature twist — the lantern gauge:** a vertical gauge with one tick per stone fills as stones are placed; it must be exactly full. Spilling over shows in pearl above the gauge.
 - **Clues:**
   1. One stack's correct height appears as a pale outline (a cross on the floor means "take these away").

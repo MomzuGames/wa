@@ -6,7 +6,6 @@ export interface ShadowParams {
   size: number;
   maxHeight: number;
   density: [number, number]; // fraction of cells that carry stones
-  footprint: boolean; // show the moonlit floor plan (and require it)
   count: 'none' | 'exact' | 'minimum'; // the signature twist: how many stones the terrace holds
   fixedStones: [number, number]; // stacks already set and immovable
   minStones: number;
@@ -29,7 +28,7 @@ function ceilingFill(level: ShadowLevel): number[] {
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
       const i = cellIndex(n, x, y);
-      out[i] = level.footprint && !level.footprint[i] ? 0 : Math.min(level.front[x]!, level.side[y]!);
+      out[i] = Math.min(level.front[x]!, level.side[y]!);
     }
   }
   return out;
@@ -54,7 +53,6 @@ function build(rng: Rng, params: ShadowParams): ShadowLevel | null {
     maxHeight: params.maxHeight,
     front,
     side,
-    footprint: params.footprint ? heights.map((h) => h > 0) : null,
     count: null,
     fixed,
     solution: heights,
@@ -74,7 +72,7 @@ function build(rng: Rng, params: ShadowParams): ShadowLevel | null {
   if (params.count !== 'none' && trivial) return null;
   const check = solveShadow(level);
   if (!check.heights) return null;
-  level.difficulty = check.nodes + n * n * 3 + (level.count !== null ? 40 : 0) + fixedCount * 6 + (params.footprint ? 0 : 10);
+  level.difficulty = check.nodes + n * n * 3 + (level.count !== null ? 40 : 0) + fixedCount * 6;
   return level;
 }
 

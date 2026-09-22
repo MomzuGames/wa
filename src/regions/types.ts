@@ -8,6 +8,11 @@ import type { Rng } from '../core/rng';
 export type RegionId = 'tidepools' | 'nightsky' | 'stonegarden' | 'crystalcaves' | 'moonlake' | 'shadowterrace';
 export type ClueTier = 1 | 2 | 3 | 4;
 
+export interface IntroPage {
+  caption: string;
+  glyph: () => Container; // built fresh each time the page is shown
+}
+
 export interface ShellContext {
   palette: typeof palette;
   motion: { durations: typeof durations; easings: typeof easings };
@@ -28,9 +33,9 @@ export interface LevelScene {
   resize?(width: number, height: number): void;
   // Called every frame with the elapsed seconds, for ripples, drift, timed clues and the like.
   update?(dt: number): void;
-  // For the instruction card: a small looping demonstration and a few short lines of text.
-  introGlyph?(): Container;
-  introLines?(): string[];
+  // For the instruction card: one page per mechanic present in this level, each with a
+  // looping demonstration and a short caption. Never more than the level actually uses.
+  introPages?(): IntroPage[];
   // Called once the instruction card has been dismissed and play can begin.
   begin?(): void;
   // Regions that use R to rotate: restart is the icon or Backspace instead.

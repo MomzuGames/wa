@@ -142,18 +142,22 @@ export class LevelShellScene implements Scene {
     const inset = layout.hudInset + layout.hudIconSize / 2;
     events.emit('spirit:glide', { x: isCompact(this.width) ? this.width / 2 - 56 : this.width / 2 + 52, y: inset });
     // The card appears on its own only when a level introduces something new for this region.
-    const lines = this.level.introLines?.() ?? [];
-    if (markIntroSeen(this.module.id, lines)) this.showInstructions(true);
+    // It opens on the first page the player has not seen yet; earlier pages stay a swipe away.
+    const pages = this.level.introPages?.() ?? [];
+    const firstNew = markIntroSeen(this.module.id, pages.map((p) => p.caption));
+    if (firstNew >= 0) this.showInstructions(true, firstNew);
     else this.level.begin?.();
   }
 
   // Opens the instruction card; the ? button uses this at any time.
-  showInstructions(first = false): void {
+  showInstructions(first = false, startPage = 0): void {
     if (this.intro || this.finished) return;
-    this.intro = new LevelIntro(this.levelIndex, palette[this.module.accent], {
-      glyph: this.level.introGlyph?.() ?? null,
-      lines: this.level.introLines?.() ?? [],
-    });
+    const pages = this.level.introPages?.() ?? [];
+    if (pages.length === 0) {
+      if (first) this.level.begin?.();
+      return;
+    }
+    this.intro = new LevelIntro(this.levelIndex, palette[this.module.accent], pages, startPage);
     this.container.addChild(this.intro);
     void this.intro.play(this.width, this.height).then(() => {
       this.intro = null;

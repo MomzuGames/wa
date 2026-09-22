@@ -182,17 +182,18 @@ export function resetProgress(): void {
   persist();
 }
 
-// True when any of these lines is new for the region; marks them all as seen.
-export function markIntroSeen(id: RegionId, lines: string[]): boolean {
+// The index of the first line that is new for the region (-1 when all are known);
+// marks them all as seen.
+export function markIntroSeen(id: RegionId, lines: string[]): number {
   const data = load();
   const seen = new Set(data.seenIntros[id] ?? []);
-  const fresh = lines.some((l) => !seen.has(l));
-  if (fresh) {
+  const first = lines.findIndex((l) => !seen.has(l));
+  if (first >= 0) {
     data.seenIntros[id] = [...new Set([...seen, ...lines])];
     persist();
     events.emit('progress:changed');
   }
-  return fresh;
+  return first;
 }
 
 // ----- Backup codes: everything on this device as one pasteable string -----
