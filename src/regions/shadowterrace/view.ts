@@ -6,9 +6,8 @@ import { durations, easings, scaled } from '../../design/motion';
 import { isTouch, layout, puzzleArea } from '../../design/layout';
 import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
-import { holdAt, liftFinger, makeFinger, miniButton, refuse, tapAt } from '../../ui/introGlyphs';
+import { holdAt, liftFinger, makeFinger, refuse, tapAt } from '../../ui/introGlyphs';
 import { events } from '../../core/events';
-import { IconButton } from '../../ui/iconButton';
 import { type ShadowLevel, frontProfile, isSolved, sideProfile, startHeights, stoneCount } from './model';
 import { halfClue, stackClue } from './clues';
 import { createShadowVoice, type ShadowVoice } from './sound';
@@ -28,13 +27,14 @@ const terraceStyle = {
   castAlpha: 0.7,
   ghostAlpha: 0.4,
   turnSeconds: 0.65,
+  swipeStart: 14, // px of sideways travel before a press becomes a swipe
+  swipeQuarter: 220, // px of swipe for a quarter turn
   growSeconds: 0.28,
   longPressSeconds: 0.55,
   clueSeconds: 3,
   tutorialDelay: 1.6,
   gaugeWidth: 6,
   shadowLength: 0.42, // ground shadow per stone, in cells
-  lanternOffset: 0.9,
 } as const;
 
 type Handler = () => void;
@@ -50,8 +50,6 @@ export class ShadowLevelScene implements LevelScene {
   private gauge = new Graphics();
   private moon = new Graphics();
   private hit = new Graphics();
-  private controls = new Container();
-  private turnButton: IconButton;
   private heights: number[];
   private shown: number[]; // tweened heights for the growth animation
   private handlers: Record<'attempt' | 'solved' | 'move', Handler[]> = { attempt: [], solved: [], move: [] };
@@ -68,6 +66,8 @@ export class ShadowLevelScene implements LevelScene {
   private pressTimer: gsap.core.Tween | null = null;
   private pressHandled = false;
   private pressedCell = -1;
+  // Dragging sideways across the terrace turns it; the drag starts as a possible tap.
+  private press: { x: number; y: number; angle: number; swiping: boolean } | null = null;
   private ghostStacks = new Map<number, { height: number; until: number | null }>();
   private glowLines: { until: number } | null = null;
   private brightUntil = 0;
@@ -88,13 +88,14 @@ export class ShadowLevelScene implements LevelScene {
     this.hit.cursor = 'pointer';
     this.hit.on('pointerdown', (e: FederatedPointerEvent) => this.onDown(e));
     this.hit.on('pointerup', (e: FederatedPointerEvent) => this.onUp(e));
-    this.hit.on('pointerupoutside', () => this.cancelPress());
-    this.turnButton = new IconButton('turn', () => this.turnView());
-    this.controls.addChild(this.turnButton);
-    this.container.addChild(this.hit, this.moon, this.walls, this.floor, this.stones, this.ghosts, this.gauge, this.controls);
+    this.hit.on('pointerupoutside', () => this.onRelease(null));
+    this.hit.on('globalpointermove', (e: FederatedPointerEvent) => this.onMove(e));
+    this.container.addChild(this.hit, this.moon, this.walls, this.floor, this.stones, this.ghosts, this.gauge);
     this.layout(ctx.width, ctx.height);
+    // The arrow keys turn the terrace for keyboard players.
     this.unsubscribe = events.on('input:key', (key) => {
-      if (key === 'r') this.turnView();
+      if (key === 'ArrowRight' || key === 'r') this.turnView(1);
+      if (key === 'ArrowLeft') this.turnView(-1);
     });
   }
 
@@ -161,7 +162,6 @@ export class ShadowLevelScene implements LevelScene {
       [half + reach, -half, 0],
       [-half, half + reach, 0],
       [half + reach, half + reach, 0],
-      [-half - terraceStyle.lanternOffset, 0, this.level.maxHeight * 0.8],
     ] as Array<[number, number, number]>) {
       xs.push((u - v) / 2);
       ys.push((u + v) / 4 - z * terraceStyle.cubeHeight);
@@ -172,8 +172,6 @@ export class ShadowLevelScene implements LevelScene {
     const midY = (Math.max(...ys) + Math.min(...ys)) / 2;
     this.centre = { x: width / 2, y: area.y + area.height / 2 - midY * this.cell };
     this.hit.clear().rect(0, 0, width, height).fill({ color: palette.pearl, alpha: 0.001 });
-    const inset = layout.hudInset + layout.hudIconSize / 2;
-    this.turnButton.position.set(inset, height - inset);
     this.dirty = true;
     this.draw();
   }
@@ -268,18 +266,6 @@ export class ShadowLevelScene implements LevelScene {
     const data = this.wallData(k);
     const bright = this.time < this.brightUntil ? 1.6 : 1;
     const len = terraceStyle.shadowLength;
-    // Lanterns: soft lights behind the far edges, the sources of the shadows.
-    for (const [u, v] of [
-      [-half - terraceStyle.lanternOffset, 0],
-      [0, -half - terraceStyle.lanternOffset],
-    ]) {
-      const p = this.projectRotated(u!, v!, this.level.maxHeight * 0.8);
-      const glow = 0.8 + 0.2 * Math.sin(this.time * 1.3 + u!);
-      g.circle(p.x, p.y, this.cell * 0.28).fill({ color: this.accent, alpha: 0.08 * glow * fade });
-      g.roundRect(p.x - this.cell * 0.06, p.y - this.cell * 0.09, this.cell * 0.12, this.cell * 0.18, this.cell * 0.04).fill({ color: this.accent, alpha: 0.55 * glow * fade });
-      const foot = this.projectRotated(u!, v!, 0);
-      g.moveTo(p.x, p.y + this.cell * 0.09).lineTo(foot.x, foot.y).stroke({ color: palette.dim, width: 1, alpha: 0.8 * fade });
-    }
     // Shadows along each near edge: bars indexed by the slot they belong to.
     const edge = (family: 'u' | 'v') => {
       // 'v' bars run along the rotated u axis and stretch away in +v; 'u' bars the other way.
@@ -479,6 +465,8 @@ export class ShadowLevelScene implements LevelScene {
     this.pressedCell = i;
     this.pressHandled = false;
     this.pressTimer?.kill();
+    gsap.killTweensOf(this);
+    this.press = { x: e.global.x, y: e.global.y, angle: this.angle, swiping: false };
     if (i < 0) return;
     if (e.button === 2 || e.shiftKey) {
       this.pressHandled = true;
@@ -492,19 +480,49 @@ export class ShadowLevelScene implements LevelScene {
     });
   }
 
+  private onMove(e: FederatedPointerEvent): void {
+    const press = this.press;
+    if (!press) return;
+    const dx = e.global.x - press.x;
+    const dy = e.global.y - press.y;
+    if (!press.swiping) {
+      if (Math.abs(dx) < terraceStyle.swipeStart || Math.abs(dx) < Math.abs(dy)) return;
+      press.swiping = true;
+      this.pressHandled = true;
+      this.pressTimer?.kill();
+      this.pressTimer = null;
+      this.stopTutorial();
+    }
+    // The terrace follows the finger: a quarter turn per swipe width.
+    this.angle = press.angle + dx / terraceStyle.swipeQuarter;
+    this.dirty = true;
+  }
+
   private onUp(e: FederatedPointerEvent): void {
+    this.onRelease(e);
+  }
+
+  // Ends a press: a swipe settles on the nearest quarter turn, a tap adds a stone.
+  private onRelease(e: FederatedPointerEvent | null): void {
     this.pressTimer?.kill();
     this.pressTimer = null;
-    if (this.solved || this.pressHandled) return;
+    const press = this.press;
+    this.press = null;
+    if (press?.swiping) {
+      this.settleView();
+      return;
+    }
+    if (!e || this.solved || this.pressHandled) return;
     const local = this.container.toLocal(e.global);
     const i = this.cellAt(local);
     if (i < 0 || i !== this.pressedCell) return;
     this.change(i, 1);
   }
 
-  private cancelPress(): void {
-    this.pressTimer?.kill();
-    this.pressTimer = null;
+  private settleView(): void {
+    const target = Math.round(this.angle);
+    if (Math.abs(target - this.angle) > 0.01) this.voice.turn();
+    gsap.to(this, { angle: target, duration: scaled(terraceStyle.turnSeconds) * 0.6, ease: easings.response, overwrite: true, onUpdate: () => (this.dirty = true) });
   }
 
   // Stacks may climb to the level's full height: too tall is a mistake the shadows show.
@@ -539,9 +557,9 @@ export class ShadowLevelScene implements LevelScene {
     this.voice.refuse();
   }
 
-  private turnView(): void {
+  private turnView(direction: 1 | -1): void {
     this.voice.turn();
-    gsap.to(this, { angle: Math.round(this.angle) + 1, duration: scaled(terraceStyle.turnSeconds), ease: easings.response, overwrite: true, onUpdate: () => (this.dirty = true) });
+    gsap.to(this, { angle: Math.round(this.angle) + direction, duration: scaled(terraceStyle.turnSeconds), ease: easings.response, overwrite: true, onUpdate: () => (this.dirty = true) });
   }
 
   update(dt: number): void {
@@ -680,15 +698,6 @@ export class ShadowLevelScene implements LevelScene {
       g.clear();
       const k = ((Math.round(angle) % 4) + 4) % 4;
       const fade = Math.max(0, 1 - Math.abs(angle - Math.round(angle)) * 3);
-      // Lanterns.
-      for (const [u, v] of [
-        [-half - 0.8, 0],
-        [0, -half - 0.8],
-      ]) {
-        const p = pr(u!, v!, 1.6);
-        g.circle(p.x, p.y, 7).fill({ color: this.accent, alpha: 0.1 });
-        g.roundRect(p.x - 2, p.y - 3, 4, 6, 1.5).fill({ color: this.accent, alpha: 0.6 });
-      }
       // Floor.
       for (let y = 0; y < n; y++) {
         for (let x = 0; x < n; x++) {
@@ -796,7 +805,7 @@ export class ShadowLevelScene implements LevelScene {
     const pages: IntroPage[] = [];
     // 1. Shadows: two stacks rise and their shadows grow to meet the shaded ones.
     pages.push({
-      caption: 'Two lanterns stand behind the terrace. Stack stones until the shadows they throw on the sand match the shaded ones. Only the tallest stone in a row sets how long its shadow is.',
+      caption: 'Light falls on the terrace from behind. Stack stones until the shadows they throw on the sand match the shaded ones. Only the tallest stone in a row sets how long its shadow is.',
       glyph: () => {
         const t = this.miniTerrace(2, { want: { front: [2, 1], side: [2, 1] } });
         const finger = makeFinger();
@@ -849,20 +858,31 @@ export class ShadowLevelScene implements LevelScene {
     });
     // 3. Turning the view.
     pages.push({
-      caption: 'The button at the bottom left turns the terrace, so you can look at it from every side. Stacks in front can hide the ones behind.',
+      caption: isTouch()
+        ? 'Swipe sideways across the terrace to turn it and look at it from every side. Stacks in front can hide the ones behind.'
+        : 'Drag sideways across the terrace to turn it and look at it from every side. Stacks in front can hide the ones behind.',
       glyph: () => {
         const t = this.miniTerrace(2);
-        const button = miniButton('turn', this.accent);
-        button.position.set(-60, 30);
         const finger = makeFinger();
-        t.root.addChild(button, finger);
+        t.root.addChild(finger);
         const state = { a: 0 };
         const heights = [2, 0, 0, 1];
         t.draw(heights, 0);
         const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
-        tapAt(tl, finger, button.x, button.y, 0.6).to(state, { a: 1, duration: 0.7, ease: easings.response, onUpdate: () => t.draw(heights, state.a) });
+        // The finger presses beside the stones and pulls across; the terrace follows it.
+        tl.set(finger, { x: -55, y: 40 })
+          .to(finger, { alpha: 1, duration: 0.2, delay: 0.5 })
+          .to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14 })
+          .to(finger, { x: 55, duration: 1.1, ease: easings.ambient })
+          .to(state, { a: 1, duration: 1.1, ease: easings.ambient, onUpdate: () => t.draw(heights, state.a) }, '<')
+          .to(finger.scale, { x: 1, y: 1, duration: 0.14 });
         liftFinger(tl, finger);
-        tapAt(tl, finger, button.x, button.y, 0.8).to(state, { a: 2, duration: 0.7, ease: easings.response, onUpdate: () => t.draw(heights, state.a) });
+        tl.set(finger, { x: -55 })
+          .to(finger, { alpha: 1, duration: 0.2, delay: 0.5 })
+          .to(finger.scale, { x: 0.7, y: 0.7, duration: 0.14 })
+          .to(finger, { x: 55, duration: 1.1, ease: easings.ambient })
+          .to(state, { a: 2, duration: 1.1, ease: easings.ambient, onUpdate: () => t.draw(heights, state.a) }, '<')
+          .to(finger.scale, { x: 1, y: 1, duration: 0.14 });
         liftFinger(tl, finger);
         tl.call(() => { state.a = 0; t.draw(heights, 0); }, undefined, '+=0.8');
         t.root.on('destroyed', () => tl.kill());
