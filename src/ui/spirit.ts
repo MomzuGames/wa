@@ -104,8 +104,9 @@ export class Spirit extends Container {
     gsap.to(this, { alpha: 1, duration: scaled(durations.pieceMove), overwrite: 'auto' });
   }
 
+  // Hiding also ends any journey, or a roaming tour would bring it straight back.
   hide(): void {
-    this.orbit = null;
+    this.stopMoving();
     gsap.to(this, { alpha: 0, duration: scaled(durations.pieceMove), overwrite: 'auto' });
   }
 
