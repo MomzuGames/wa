@@ -38,7 +38,6 @@ The feeling to aim for: **meditative focus**. Think soft glowing light on black,
 | Build | **Vite** + **TypeScript** (strict mode) |
 | Rendering | **PixiJS v8** (WebGL) + **pixi-filters** (bloom/glow) |
 | Animation | **GSAP 3** |
-| Visual quality | one tier dial (`design/quality.ts`): `auto` follows the measured frame rate, or pin `high`/`low` in settings |
 | Audio | **Tone.js** (all sound generated in code; no audio files) |
 | Tests | **Vitest** |
 | Fonts | `@fontsource/quicksand` (bundled locally so it works offline) |
@@ -181,12 +180,6 @@ Quicksand, light weight, generous letter-spacing. It is used only for the title 
 - **Idle "breathing":** interactive elements scale 1.00 → 1.05 over about 4 s, looping, with offset phases so they don't pulse in sync.
 - **Background:** slow-drifting dust motes (20–40 particles, alpha 0.05–0.2).
 - **Reduced motion:** respect `prefers-reduced-motion` and the settings toggle by removing drift and camera motion, shortening sequences, and keeping all feedback.
-
-### Visual quality tiers (`design/quality.ts`)
-Anything expensive asks `isHigh()` first and rebuilds itself on `quality:changed`.
-- **low** — exactly what the game looked like before post-processing: no bloom pass, no grain, no caustics, full per-object glow. This is what a slow phone gets.
-- **high** — the post pass (`fx/postProcess.ts`: bloom, colour grade, film grain) over everything except the HUD, per-object glow pulled back to 55% so the two read as one light, and region shaders such as Tidepools' caustics (`fx/waterFilter.ts`).
-- `auto` watches the frame rate: below 45 fps it drops, and only climbs back after a sustained stretch above 57 fps, so it cannot flap. `?fps=1` shows the frame rate in any build.
 - Target a stable 60fps. Pool particles and graphics, and never allocate per frame in hot paths.
 
 ### Layout

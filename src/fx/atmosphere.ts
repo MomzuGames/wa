@@ -5,9 +5,6 @@ import { palette, rgba } from '../design/palette';
 import { reducedMotion } from '../design/motion';
 import type { Rng } from '../core/rng';
 import { Scenery } from './scenery';
-import { WaterFilter } from './waterFilter';
-import { isHigh } from '../design/quality';
-import { events } from '../core/events';
 
 export const atmosphereStyle = {
   tintAlpha: 0.11,
@@ -29,8 +26,6 @@ export const atmosphereStyle = {
   waveAlpha: 0.1,
   fireflyCount: 18,
   parallax: 14,
-  causticStrength: 1.15,
-  causticHorizon: 0.62, // the waterline, as a fraction of the screen height
 } as const;
 
 // Slow, region-flavoured background life drawn behind trails and puzzles: a colour
@@ -48,10 +43,6 @@ export class Atmosphere {
   private nextShootingStar: number;
   private parallax = { x: 0, y: 0 };
   private scenery: Scenery;
-  // Tidepools only: the moving net of light on the floor of the pool, a real shader.
-  private caustics: WaterFilter | null = null;
-  private causticLayer: Container | null = null;
-  private unsubscribe: () => void;
 
   constructor(
     private id: RegionId,
@@ -63,36 +54,6 @@ export class Atmosphere {
     this.container.eventMode = 'none';
     for (let i = 0; i < 240; i++) this.seeds.push(rng.next());
     this.nextShootingStar = atmosphereStyle.shootingStarEvery * (0.5 + rng.next());
-    this.buildCaustics();
-    this.unsubscribe = events.on('quality:changed', () => this.buildCaustics());
-  }
-
-  // The caustics sit on their own layer between the tint and the drawn atmosphere, so
-  // only the water is affected and the scenery in front stays crisp.
-  private buildCaustics(): void {
-    const want = this.id === 'tidepools' && isHigh() && !reducedMotion();
-    if (want === !!this.causticLayer) return;
-    if (!want) {
-      this.causticLayer?.destroy();
-      this.causticLayer = null;
-      this.caustics?.destroy();
-      this.caustics = null;
-      return;
-    }
-    const tint = palette[REGION_ACCENT[this.id]];
-    this.caustics = new WaterFilter({
-      size: [this.width, this.height],
-      tint: [((tint >> 16) & 255) / 255, ((tint >> 8) & 255) / 255, (tint & 255) / 255],
-      strength: atmosphereStyle.causticStrength,
-      horizon: atmosphereStyle.causticHorizon,
-    });
-    const layer = new Container();
-    layer.eventMode = 'none';
-    // A filter needs something to draw on; a transparent rectangle is enough.
-    layer.addChild(new Graphics().rect(0, 0, Math.max(1, this.width), Math.max(1, this.height)).fill({ color: palette.void, alpha: 0.001 }));
-    layer.filters = [this.caustics];
-    this.causticLayer = layer;
-    this.container.addChildAt(layer, 1);
   }
 
   resize(width: number, height: number): void {
@@ -109,11 +70,6 @@ export class Atmosphere {
       ],
     });
     this.tint.clear().rect(-atmosphereStyle.parallax, -atmosphereStyle.parallax, width + atmosphereStyle.parallax * 2, height + atmosphereStyle.parallax * 2).fill(gradient);
-    if (this.causticLayer) {
-      const plate = this.causticLayer.children[0] as Graphics;
-      plate.clear().rect(0, 0, width, height).fill({ color: palette.void, alpha: 0.001 });
-      this.caustics?.setSize(width, height);
-    }
     this.scenery.resize(width, height);
     this.draw();
   }
@@ -127,7 +83,6 @@ export class Atmosphere {
   update(dt: number): void {
     if (reducedMotion()) return;
     this.time += dt;
-    if (this.caustics) this.caustics.time = this.time;
     this.container.x += (this.parallax.x - this.container.x) * Math.min(1, dt * 4);
     this.container.y += (this.parallax.y - this.container.y) * Math.min(1, dt * 4);
     this.scenery.update(dt);
@@ -282,8 +237,6 @@ export class Atmosphere {
   }
 
   destroy(): void {
-    this.unsubscribe();
-    this.caustics?.destroy();
     this.scenery.destroy();
     this.container.destroy({ children: true });
   }

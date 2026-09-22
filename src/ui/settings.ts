@@ -4,7 +4,6 @@ import { alphas, palette } from '../design/palette';
 import { durations, easings, setReducedMotion } from '../design/motion';
 import { layout } from '../design/layout';
 import { getSettings, resetProgress, updateSettings } from '../core/save';
-import { qualitySetting, setQualitySetting, type QualitySetting } from '../design/quality';
 import { events } from '../core/events';
 import type { AudioEngine } from '../audio/engine';
 import { IconButton } from './iconButton';
@@ -27,7 +26,6 @@ export class SettingsPanel extends Container {
   private open = false;
   private muteButton: IconButton;
   private motionButton: IconButton;
-  private qualityButton: IconButton;
   private screenW = 0;
   private screenH = 0;
 
@@ -83,16 +81,10 @@ export class SettingsPanel extends Container {
     this.syncToggleAlpha(this.muteButton, !settings.muted);
 
     this.motionButton = new IconButton('leaf', () => this.toggleMotion(), panelStyle.iconSize);
-    this.motionButton.position.set(left + panelStyle.iconSize / 2 + 58, y);
+    this.motionButton.position.set(left + panelStyle.iconSize / 2 + 64, y);
     this.card.addChild(this.motionButton);
     this.syncToggleAlpha(this.motionButton, settings.reducedMotion);
     setReducedMotion(settings.reducedMotion);
-
-    // Visual richness: automatic (follows the frame rate), always rich, or always plain.
-    this.qualityButton = new IconButton('quality', () => this.cycleQuality(), panelStyle.iconSize);
-    this.qualityButton.position.set(left + panelStyle.iconSize / 2 + 116, y);
-    this.card.addChild(this.qualityButton);
-    this.syncQualityAlpha();
 
     // Hold to erase progress: the ring around the icon fills over 1.5 s.
     const reset = new HoldButton('restart', panelStyle.iconSize, () => {
@@ -126,22 +118,6 @@ export class SettingsPanel extends Container {
     updateSettings({ muted: next });
     this.muteButton.setIcon(next ? 'speakerOff' : 'speaker');
     this.syncToggleAlpha(this.muteButton, !next);
-  }
-
-  // Auto (half lit) -> high (fully lit) -> low (dim) -> auto.
-  private cycleQuality(): void {
-    const order: QualitySetting[] = ['auto', 'high', 'low'];
-    const next = order[(order.indexOf(qualitySetting()) + 1) % order.length]!;
-    setQualitySetting(next);
-    updateSettings({ quality: next });
-    this.syncQualityAlpha();
-    this.audio.pluck(note(next === 'low' ? 0 : next === 'auto' ? 2 : 4, 4));
-  }
-
-  private syncQualityAlpha(): void {
-    const setting = qualitySetting();
-    const alpha = setting === 'high' ? alphas.hudHover : setting === 'auto' ? (alphas.hudIdle + alphas.hudHover) / 2 : alphas.hudIdle * 0.7;
-    gsap.to(this.qualityButton, { alpha, duration: durations.hudHover });
   }
 
   private toggleMotion(): void {

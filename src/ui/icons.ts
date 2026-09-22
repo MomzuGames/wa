@@ -1,7 +1,7 @@
 import { Graphics } from 'pixi.js';
 
 // All icons are drawn centred on (0,0) inside a box of `size` px, stroked in `color`.
-export type IconName = 'settings' | 'back' | 'speaker' | 'speakerOff' | 'note' | 'sparkle' | 'leaf' | 'restart' | 'play' | 'help' | 'hint' | 'yes' | 'no' | 'account' | 'turn' | 'flip' | 'quality';
+export type IconName = 'settings' | 'back' | 'speaker' | 'speakerOff' | 'note' | 'sparkle' | 'leaf' | 'restart' | 'play' | 'help' | 'hint' | 'yes' | 'no' | 'account' | 'turn' | 'flip';
 
 export function drawIcon(g: Graphics, name: IconName, size: number, color: number): Graphics {
   const s = size / 2;
@@ -49,14 +49,6 @@ export function drawIcon(g: Graphics, name: IconName, size: number, color: numbe
       g.moveTo(-s * 0.8, 0).lineTo(s * 0.8, 0).stroke(stroke);
       g.moveTo(-s * 0.45, -s * 0.45).lineTo(s * 0.45, s * 0.45).stroke(stroke);
       g.moveTo(s * 0.45, -s * 0.45).lineTo(-s * 0.45, s * 0.45).stroke(stroke);
-      break;
-    // Three bars rising: how much visual effort the game is allowed to spend.
-    case 'quality':
-      for (let i = 0; i < 3; i++) {
-        const x = -s * 0.5 + i * s * 0.5;
-        const h = s * (0.25 + i * 0.28);
-        g.moveTo(x, s * 0.6).lineTo(x, s * 0.6 - h * 2).stroke(stroke);
-      }
       break;
     case 'leaf':
       g.moveTo(-s * 0.7, s * 0.7)
