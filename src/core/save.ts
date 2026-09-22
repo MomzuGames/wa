@@ -17,6 +17,7 @@ export interface Settings {
   sfx: number;
   muted: boolean;
   reducedMotion: boolean;
+  quality?: 'auto' | 'low' | 'high';
 }
 
 export interface SaveData {
@@ -38,7 +39,7 @@ export function defaultSave(): SaveData {
   return {
     version: 1,
     regions,
-    settings: { music: 0.7, sfx: 0.8, muted: false, reducedMotion: false },
+    settings: { music: 0.7, sfx: 0.8, muted: false, reducedMotion: false, quality: 'auto' },
     seenIntros: {},
   };
 }

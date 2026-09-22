@@ -1,5 +1,6 @@
 import type { Settings } from './save';
 import type { PaletteToken } from '../design/palette';
+import type { QualityTier } from '../design/quality';
 
 export type SpiritReaction = 'move' | 'attempt' | 'solved' | 'hide' | 'show';
 
@@ -26,6 +27,8 @@ export interface GameEvents {
   'input:key': string;
   // A level explaining something about the current state (shown as a toast by the shell).
   'level:note': string;
+  // The visual tier changed (measured or chosen): effects rebuild themselves.
+  'quality:changed': QualityTier;
 }
 
 type Handler<T> = (payload: T) => void;
