@@ -94,6 +94,9 @@ export class StoneLevelScene implements LevelScene {
   private seamsUntil: number | null = null;
   private seamSolution: Map<number, Placement> | null = null;
   private onWheel = (e: WheelEvent) => this.wheel(e);
+  // Pixi never hears a cancelled touch (iOS sends one when the system takes the gesture),
+  // so the drag would otherwise stay open with the stone floating under nobody's finger.
+  private onCancel = () => this.onUp();
   private pressTimer: gsap.core.Tween | null = null;
   private compact = false;
 
@@ -128,6 +131,8 @@ export class StoneLevelScene implements LevelScene {
       }),
     );
     window.addEventListener('wheel', this.onWheel, { passive: true });
+    window.addEventListener('pointercancel', this.onCancel);
+    window.addEventListener('blur', this.onCancel);
   }
 
   begin(): void {
@@ -152,6 +157,9 @@ export class StoneLevelScene implements LevelScene {
       root.eventMode = piece.fixed ? 'none' : 'static';
       root.cursor = 'grab';
       root.on('pointerdown', (e: FederatedPointerEvent) => this.onDown(i, e));
+      // The stone under the finger is the release target, so it must hear the release itself.
+      root.on('pointerup', () => this.onUp());
+      root.on('pointerupoutside', () => this.onUp());
       root.on('pointerover', () => {
         this.hovered = this.views[i]!;
       });
@@ -368,7 +376,7 @@ export class StoneLevelScene implements LevelScene {
     // Magnetism: near a spot where the stone fits, it is drawn toward it and the spot is outlined.
     v.root.position.set(x, y);
     const i = this.views.indexOf(v);
-    const placement = this.snapPlacement(i, v);
+    const placement = this.overTray(v) ? null : this.snapPlacement(i, v);
     this.magnet.clear();
     if (placement && this.canPlace(i, placement)) {
       const target = this.boardCenterFor(i, placement);
@@ -400,11 +408,12 @@ export class StoneLevelScene implements LevelScene {
       this.turn(1, v);
       return;
     }
-    const placement = this.snapPlacement(i, v);
+    const placement = this.overTray(v) ? null : this.snapPlacement(i, v);
     if (placement && this.canPlace(i, placement)) {
       this.place(i, placement);
     } else {
       if (placement) {
+        // Only a stone dropped on top of another one is refused.
         this.voice.miss();
         this.emit('attempt');
         events.emit('spirit:react', 'attempt');
@@ -433,21 +442,36 @@ export class StoneLevelScene implements LevelScene {
     return { x, y, rot: v.rot, flip: v.flip };
   }
 
+  // Stones may rest on any cell of the sand, not only inside the outline's box, so the
+  // view keys triangles on a padded grid; the model's keys stay for the solve check.
+  private looseKey(x: number, y: number, t: number): number {
+    const pad = Math.max(this.level.width, this.level.height) * 2 + 4;
+    return ((y + pad) * (this.level.width + pad * 2) + (x + pad)) * 4 + t;
+  }
+
+  private looseKeys(i: number, placement: Placement): number[] {
+    return transform(this.level.pieces[i]!.tris, placement.rot, placement.flip).map(([x, y, t]) => this.looseKey(x + placement.x, y + placement.y, t));
+  }
+
   private occupied(): Set<number> {
     const set = new Set<number>();
     this.views.forEach((v, i) => {
       if (!v.placed) return;
-      for (const k of placedKeys(this.level, this.level.pieces[i]!, v.placed) ?? []) set.add(k);
+      for (const k of this.looseKeys(i, v.placed)) set.add(k);
     });
     return set;
   }
 
-  // A stone may rest anywhere on the board grid as long as it does not overlap another stone.
+  // A stone may rest anywhere on the sand as long as it does not overlap another stone.
   private canPlace(i: number, placement: Placement): boolean {
-    const keys = placedKeys(this.level, this.level.pieces[i]!, placement);
-    if (!keys) return false;
     const taken = this.occupied();
-    return keys.every((k) => !taken.has(k));
+    return this.looseKeys(i, placement).every((k) => !taken.has(k));
+  }
+
+  // Dropped back among the tray slots: the stone goes home instead of resting there.
+  private overTray(v: PieceView): boolean {
+    const trayTop = Math.min(...this.views.map((o) => o.slot.y)) - this.cell * 0.9;
+    return v.root.y > trayTop;
   }
 
   // Whether every triangle of the stone lies inside the outline (used for the magnet preview).
@@ -588,17 +612,21 @@ export class StoneLevelScene implements LevelScene {
     switch (tier) {
       case 1: {
         const clue = pieceClue(this.level, placed, `${this.level.seed}:clue1`);
-        if (!clue) return 'Every stone is already on the board.';
+        if (!clue) return 'Every stone is already in its place.';
         this.ghosts = this.ghosts.filter((g) => g.until !== null);
         this.ghosts.push({ ...clue, until: null });
-        caption = 'The outline shows where one of your stones belongs. Match its shape exactly.';
+        this.setLastTouched(this.views[clue.piece]!);
+        caption = placed.has(clue.piece)
+          ? 'The brighter stone is resting in the wrong spot. The outline shows where it belongs.'
+          : 'The outline shows where one of your stones belongs. Match its shape exactly.';
         break;
       }
       case 2: {
         const clue = pieceClue(this.level, placed, `${this.level.seed}:clue2:${this.placedCount}`);
-        if (!clue) return 'Every stone is already on the board.';
+        if (!clue) return 'Every stone is already in its place.';
         const v = this.views[clue.piece]!;
         if (this.dragging === v) this.dragging = null;
+        if (v.placed) this.unplace(clue.piece);
         this.place(clue.piece, clue.placement, true);
         this.voice.settle(this.placedCount);
         caption = 'One stone has settled into its place by itself.';
@@ -836,6 +864,8 @@ export class StoneLevelScene implements LevelScene {
     this.pressTimer?.kill();
     this.unsubscribe.forEach((u) => u());
     window.removeEventListener('wheel', this.onWheel);
+    window.removeEventListener('pointercancel', this.onCancel);
+    window.removeEventListener('blur', this.onCancel);
     this.voice.dispose();
     this.views.forEach((v) => gsap.killTweensOf([v.root, v.root.scale]));
     this.container.destroy({ children: true });

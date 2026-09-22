@@ -18,7 +18,13 @@ function unplacedGhosts(level: StoneLevel, placed: Map<number, Placement>, seed:
   const solution = solutionFor(level, placed);
   if (!solution) return [];
   const rng = createRng(seed);
-  const candidates = level.pieces.map((_, i) => i).filter((i) => !placed.has(i));
+  // Stones still in the tray, plus any resting somewhere the solution does not want them.
+  const wanted = (i: number) => {
+    const here = placed.get(i);
+    const there = solution.get(i)!;
+    return !here || here.x !== there.x || here.y !== there.y || here.rot !== there.rot || here.flip !== there.flip;
+  };
+  const candidates = level.pieces.map((_, i) => i).filter((i) => !level.pieces[i]!.fixed && wanted(i));
   return rng.shuffle(candidates).map((piece) => ({ piece, placement: solution.get(piece)! }));
 }
 
