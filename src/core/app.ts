@@ -8,7 +8,9 @@ export async function createApp(mount: HTMLElement): Promise<Application> {
     resizeTo: window,
     backgroundColor: palette.void,
     antialias: true,
-    resolution: window.devicePixelRatio || 1,
+    // Phones report a 3x pixel ratio; 2x is indistinguishable on this art and needs
+    // less than half the pixels (and every glow filter renders at this scale too).
+    resolution: Math.min(2, window.devicePixelRatio || 1),
     autoDensity: true,
     preference: 'webgl',
   });

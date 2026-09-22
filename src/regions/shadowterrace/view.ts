@@ -73,6 +73,7 @@ export class ShadowLevelScene implements LevelScene {
   private brightUntil = 0;
   private unsubscribe: () => void;
   private screenWidth = 0;
+  private lastNote = '';
 
   constructor(
     private ctx: ShellContext,
@@ -420,13 +421,41 @@ export class ShadowLevelScene implements LevelScene {
     const fill = Math.min(placed, want) * unit;
     const done = placed === want;
     if (fill > 0) g.roundRect(x - w / 2, bottom - fill, w, fill, w / 2).fill({ color: done ? palette.pearl : this.accent, alpha: done ? 0.9 : 0.6 });
-    if (placed > want) {
-      const over = Math.min(placed - want, want) * unit;
-      g.roundRect(x - w / 2, bottom - heightPx - over, w, over, w / 2).fill({ color: palette.pearl, alpha: 0.35 });
-    }
     // Ticks every stone, so the count can be read without numbers.
     for (let k = 1; k < want; k++) g.moveTo(x - w / 2, bottom - k * unit).lineTo(x + w / 2, bottom - k * unit).stroke({ color: palette.void, width: 1, alpha: 0.6 });
-    g.circle(x, bottom - heightPx - 6, 2.2).fill({ color: done ? palette.pearl : this.accent, alpha: done ? 1 : alphas.hudIdle });
+    if (placed > want) {
+      // Too many: the extra stones spill out above the lantern as bright, separate blocks.
+      const extra = Math.min(placed - want, want);
+      for (let k = 0; k < extra; k++) {
+        const y = bottom - heightPx - 6 - (k + 1) * (unit + 2);
+        g.roundRect(x - w / 2 - 1, y, w + 2, unit, 2).fill({ color: palette.pearl, alpha: 0.8 });
+      }
+    } else {
+      // The mark above the lantern: filled when the count is right, hollow while stones are missing.
+      if (done) g.circle(x, bottom - heightPx - 6, 3).fill({ color: palette.pearl });
+      else g.circle(x, bottom - heightPx - 6, 3).stroke({ color: this.accent, width: 1, alpha: alphas.hudHover });
+    }
+  }
+
+  // When every shadow is right but the count is not, say so: the player cannot see stones
+  // hidden behind others, and the lantern alone is easy to misread.
+  private explainCount(): void {
+    if (this.level.count === null) return;
+    const n = this.n;
+    const front = frontProfile(n, this.heights);
+    const side = sideProfile(n, this.heights);
+    const shadowsMatch = front.every((h, i) => h === this.level.front[i]) && side.every((h, i) => h === this.level.side[i]);
+    const placed = stoneCount(this.heights);
+    const key = `${shadowsMatch}:${placed}`;
+    if (!shadowsMatch || placed === this.level.count || key === this.lastNote) return;
+    this.lastNote = key;
+    const diff = placed - this.level.count;
+    events.emit(
+      'level:note',
+      diff > 0
+        ? `Every shadow matches, but the lantern has spilled over: ${diff} stone${diff === 1 ? '' : 's'} too many. Some may be hiding behind others. Turn the terrace and look.`
+        : `Every shadow matches, but the lantern is not full: ${-diff} more stone${diff === -1 ? '' : 's'} can be added without changing any shadow.`,
+    );
   }
 
   // ----- input -----
@@ -547,6 +576,8 @@ export class ShadowLevelScene implements LevelScene {
     if (isSolved(this.level, this.heights)) {
       this.solved = true;
       this.emit('solved');
+    } else {
+      this.explainCount();
     }
   }
 

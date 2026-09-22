@@ -12,7 +12,7 @@ export function createGlow(color: number, options: GlowOptions = {}): GlowFilter
     distance: options.distance ?? 24,
     outerStrength: options.strength ?? 1.5,
     innerStrength: 0,
-    quality: options.quality ?? 0.4,
+    quality: options.quality ?? 0.3,
   });
   // Filters default to 1x resolution, which pixelates edges on Retina screens.
   glow.resolution = 'inherit';

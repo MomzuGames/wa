@@ -7,13 +7,15 @@ import type { Game } from './game';
 
 export const devFlags = {
   enabled: import.meta.env.DEV && new URLSearchParams(location.search).get('dev') === '1',
+  // The frame-rate readout works in any build with ?fps=1, to check how a phone copes.
+  fps: new URLSearchParams(location.search).get('fps') === '1',
   // The solution overlay gives every answer away, so even in dev it has to be asked for.
   solution: import.meta.env.DEV && new URLSearchParams(location.search).get('solution') === '1',
 };
 
 // FPS meter: the one place text appears outside the title and level numbers, dev builds only.
 export function installFpsMeter(app: Application): void {
-  if (!devFlags.enabled) return;
+  if (!devFlags.enabled && !devFlags.fps) return;
   const label = new Text({
     text: '',
     style: { fontFamily: 'Quicksand', fontSize: 12, fill: palette.pearl },

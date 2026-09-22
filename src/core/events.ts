@@ -24,6 +24,8 @@ export interface GameEvents {
   'input:hint': void;
   'input:restart': void;
   'input:key': string;
+  // A level explaining something about the current state (shown as a toast by the shell).
+  'level:note': string;
 }
 
 type Handler<T> = (payload: T) => void;

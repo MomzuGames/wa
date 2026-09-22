@@ -115,6 +115,7 @@ export class LevelShellScene implements Scene {
     this.container.addChild(this.atmosphere.container, this.spotlight, this.stage, this.hud);
 
     this.unsubscribe.push(
+      events.on('level:note', (text) => this.toast.show(text, this.width, this.height)),
       events.on('input:restart', () => {
         if (!this.level.usesRotateKey) this.restart();
       }),
