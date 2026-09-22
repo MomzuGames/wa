@@ -29,10 +29,11 @@ const mapStyle = {
 // Region positions as fractions of the screen, forming a gentle winding journey.
 const LAYOUT: Record<RegionId, { x: number; y: number }> = {
   tidepools: { x: 0.0, y: 0.35 },
-  nightsky: { x: 0.25, y: -0.4 },
-  stonegarden: { x: 0.5, y: 0.3 },
-  crystalcaves: { x: 0.75, y: -0.35 },
-  moonlake: { x: 1.0, y: 0.25 },
+  nightsky: { x: 0.2, y: -0.4 },
+  stonegarden: { x: 0.4, y: 0.3 },
+  crystalcaves: { x: 0.6, y: -0.35 },
+  moonlake: { x: 0.8, y: 0.25 },
+  shadowterrace: { x: 1.0, y: -0.3 },
 };
 
 export interface MapReveal {

@@ -66,6 +66,22 @@ function drawFigure(g: Graphics, id: RegionId, size: number): void {
       g.quadraticCurveTo(s * 0.4, s * 0.75, s * 0.8, s * 0.55);
       break;
     }
+    case 'shadowterrace': {
+      // Three stones stacked in a corner, seen from above at an angle.
+      const w = s * 0.42;
+      const h = s * 0.21;
+      const c = s * 0.34;
+      const cube = (cx: number, cy: number) => {
+        g.moveTo(cx, cy - h).lineTo(cx + w, cy).lineTo(cx, cy + h).lineTo(cx - w, cy).closePath();
+        g.moveTo(cx - w, cy).lineTo(cx - w, cy + c).lineTo(cx, cy + h + c).lineTo(cx + w, cy + c).lineTo(cx + w, cy);
+        g.moveTo(cx, cy + h).lineTo(cx, cy + h + c);
+      };
+      cube(0, s * 0.25);
+      cube(0, s * 0.25 - c);
+      cube(-w, s * 0.25 - h);
+      cube(w, s * 0.25 - h);
+      break;
+    }
   }
 }
 
@@ -206,6 +222,15 @@ export class RegionNode extends Container {
           const tw = Math.max(0, Math.sin(this.time * 0.9 + i * 2.1));
           g.circle(x! * s, y! * s, 1.5 + tw * 3).fill({ color: palette.pearl, alpha: 0.5 * tw * strength });
         });
+        break;
+      }
+      case 'shadowterrace': {
+        // A lantern light drifting over the stones, its shadow band sweeping below.
+        const p = (this.time / 7) % 1;
+        const x = Math.sin(p * Math.PI * 2) * s * 0.5;
+        g.circle(x, -s * 0.55 + Math.cos(p * Math.PI * 2) * s * 0.08, 2).fill({ color: palette.pearl, alpha: 0.5 * strength });
+        g.moveTo(-s * 0.85, s * 0.78).lineTo(s * 0.85, s * 0.78).stroke({ color: this.accent, width: 1, alpha: 0.2 * strength });
+        g.moveTo(x - s * 0.3, s * 0.78).lineTo(x + s * 0.3, s * 0.78).stroke({ color: this.accent, width: 2, alpha: 0.3 * strength });
         break;
       }
       case 'moonlake': {

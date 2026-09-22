@@ -43,10 +43,11 @@ export function isLevelUnlocked(solved: readonly number[], levelIndex: number): 
   return levelIndex <= earliestUnsolved(solved) + progression.lookahead;
 }
 
+// Every region is open from the start: the owner does not want the journey gated.
+// The trail still lights up from region to region as each one is finished.
 export function isRegionUnlocked(solvedCounts: readonly number[], regionIndex: number): boolean {
-  if (regionIndex === 0) return true;
-  const previous = solvedCounts[regionIndex - 1] ?? 0;
-  return previous >= progression.unlockNextAt;
+  void solvedCounts;
+  return regionIndex >= 0;
 }
 
 export function isRegionComplete(solvedCount: number): boolean {

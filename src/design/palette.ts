@@ -8,6 +8,7 @@ export const palette = {
   peach: 0xffd6c2,
   sky: 0xbde0fe,
   rose: 0xffc8dd,
+  sage: 0xd0e8bf,
   lemon: 0xfff1b8,
   pearl: 0xf7f4ff,
   shadow: 0x000000, // only ever used at partial alpha, to darken (vignette, backdrops)

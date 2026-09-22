@@ -29,10 +29,9 @@ describe('region unlocking', () => {
     expect(isRegionUnlocked([0, 0, 0, 0, 0], 0)).toBe(true);
   });
 
-  it('unlocks the next region at 8 of 10', () => {
-    expect(isRegionUnlocked([7, 0, 0, 0, 0], 1)).toBe(false);
-    expect(isRegionUnlocked([8, 0, 0, 0, 0], 1)).toBe(true);
-    expect(isRegionUnlocked([10, 7, 0, 0, 0], 2)).toBe(false);
+  it('keeps every region open regardless of progress', () => {
+    expect(isRegionUnlocked([0, 0, 0, 0, 0, 0], 1)).toBe(true);
+    expect(isRegionUnlocked([0, 0, 0, 0, 0, 0], 5)).toBe(true);
   });
 
   it('completes at 10', () => {

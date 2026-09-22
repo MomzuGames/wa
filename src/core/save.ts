@@ -49,7 +49,7 @@ function isSaveData(value: unknown): value is SaveData {
 
 // ----- Profiles: each player is a named light with its own save on this device -----
 
-export type ProfileColor = 'mint' | 'lavender' | 'peach' | 'sky' | 'rose';
+export type ProfileColor = 'mint' | 'lavender' | 'peach' | 'sky' | 'rose' | 'sage';
 
 export interface Profile {
   id: string;

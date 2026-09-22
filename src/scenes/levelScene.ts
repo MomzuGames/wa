@@ -182,6 +182,7 @@ export class LevelShellScene implements Scene {
     this.hints.tick(dt);
     this.orb.setFill(this.hints.fill, this.hints.hasUnrevealed);
     this.atmosphere.update(dt);
+    this.level.update?.(dt);
     // The puzzle itself leans very slightly toward the pointer: the opposite of the backdrop.
     this.stage.x += (this.parallax.x * 5 - this.stage.x) * Math.min(1, dt * 4);
     this.stage.y += (this.parallax.y * 5 - this.stage.y) * Math.min(1, dt * 4);

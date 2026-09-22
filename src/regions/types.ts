@@ -5,7 +5,7 @@ import type { AudioEngine } from '../audio/engine';
 import type { ParticleSystem } from '../fx/particles';
 import type { Rng } from '../core/rng';
 
-export type RegionId = 'tidepools' | 'nightsky' | 'stonegarden' | 'crystalcaves' | 'moonlake';
+export type RegionId = 'tidepools' | 'nightsky' | 'stonegarden' | 'crystalcaves' | 'moonlake' | 'shadowterrace';
 export type ClueTier = 1 | 2 | 3 | 4;
 
 export interface ShellContext {
@@ -26,6 +26,8 @@ export interface LevelScene {
   showClue(tier: ClueTier): string | void;
   playCompletion(): Promise<void>;
   resize?(width: number, height: number): void;
+  // Called every frame with the elapsed seconds, for ripples, drift, timed clues and the like.
+  update?(dt: number): void;
   // For the instruction card: a small looping demonstration and a few short lines of text.
   introGlyph?(): Container;
   introLines?(): string[];

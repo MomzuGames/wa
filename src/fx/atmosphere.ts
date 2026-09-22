@@ -105,8 +105,24 @@ export class Atmosphere {
       case 'crystalcaves':
         this.drawFacets(g);
         break;
+      case 'shadowterrace':
+        this.drawLanterns(g);
+        break;
       default:
         this.drawLake(g);
+    }
+  }
+
+  // Shadow Terrace: a few paper lanterns climbing slowly, each with a soft halo.
+  private drawLanterns(g: Graphics): void {
+    for (let i = 0; i < 7; i++) {
+      const speed = 0.012 + this.seed(i * 3 + 200) * 0.01;
+      const p = ((this.time * speed + this.seed(i * 3 + 201)) % 1 + 1) % 1;
+      const x = this.width * (0.08 + this.seed(i * 3 + 202) * 0.84) + Math.sin(this.time * 0.3 + i) * 14;
+      const y = this.height * (1.05 - p * 1.1);
+      const glow = 0.5 + 0.5 * Math.sin(this.time * 1.1 + i * 2);
+      g.circle(x, y, 18).fill({ color: this.accent, alpha: 0.05 + glow * 0.03 });
+      g.roundRect(x - 4, y - 6, 8, 12, 3).fill({ color: this.accent, alpha: 0.35 + glow * 0.2 });
     }
   }
 

@@ -167,6 +167,30 @@ export class Scenery {
         near.fill({ color: palette.ink, alpha: sceneryStyle.nearAlpha }).stroke({ color: this.accent, width: 1, alpha: sceneryStyle.rimAlpha });
         break;
       }
+      case 'shadowterrace': {
+        // Terraced hillside: stepped ridges climbing to a pagoda on the skyline.
+        this.ridge(far, h * 0.48, 30, 10, 0.6, 12);
+        far.fill({ color: palette.ink, alpha: sceneryStyle.farAlpha * 0.7 });
+        for (let step = 0; step < 4; step++) {
+          const y = h * (0.6 + step * 0.085);
+          far.moveTo(-40, y + 20 + step * 4).lineTo(-40, y);
+          for (let x = -40; x <= this.width + 40; x += 60) far.lineTo(x, y + Math.sin(x / 210 + step) * 7);
+          far.lineTo(this.width + 40, h + 40).lineTo(-40, h + 40).closePath();
+          far.fill({ color: palette.ink, alpha: sceneryStyle.farAlpha * (0.8 + step * 0.1) }).stroke({ color: this.accent, width: 1, alpha: sceneryStyle.rimAlpha * (0.6 + step * 0.1) });
+        }
+        // Pagoda: three roofs narrowing toward the top.
+        const px = this.width * 0.78;
+        const base = h * 0.48 + Math.sin(12 * 0.9 + 0.6) * 30 * 0.3;
+        for (let tier = 0; tier < 3; tier++) {
+          const y = base - tier * 26;
+          const wdt = 46 - tier * 10;
+          near.moveTo(px - wdt, y).quadraticCurveTo(px, y - 6, px + wdt, y).lineTo(px + wdt * 0.6, y - 14).lineTo(px - wdt * 0.6, y - 14).closePath().fill({ color: palette.void, alpha: 0.95 }).stroke({ color: this.accent, width: 1, alpha: sceneryStyle.rimAlpha });
+        }
+        near.moveTo(px, base - 78).lineTo(px, base - 92).stroke({ color: this.accent, width: 1, alpha: sceneryStyle.rimAlpha });
+        this.ridge(near, h * 0.88, 8, 3, 3.9, 10);
+        near.fill({ color: palette.ink, alpha: sceneryStyle.nearAlpha }).stroke({ color: this.accent, width: 1, alpha: sceneryStyle.rimAlpha });
+        break;
+      }
       default: {
         // Moon Lake: distant hills behind a wide, still lake.
         this.ridge(far, h * 0.52, 22, 8, 1.2, 12);
@@ -228,6 +252,14 @@ export class Scenery {
       g.moveTo(-40, h * 0.9);
       for (let x = -40; x <= this.width + 40; x += 24) g.lineTo(x, h * 0.9 + Math.sin(x / 120 + this.time * 0.4) * 5);
       g.stroke({ color: this.accent, width: 2, alpha: 0.18 });
+    } else if (this.id === 'shadowterrace') {
+      // Mist drifting between the terrace steps.
+      for (let i = 0; i < 3; i++) {
+        const y = h * (0.64 + i * 0.085);
+        const drift = ((this.time * (6 + i * 2) + i * 300) % (this.width + 400)) - 200;
+        g.ellipse(drift, y, 120 + i * 30, 5).fill({ color: this.accent, alpha: 0.06 });
+        g.ellipse(this.width - drift, y + 12, 90, 4).fill({ color: palette.pearl, alpha: 0.04 });
+      }
     } else if (this.id === 'moonlake') {
       // The moon's reflection, a column of light broken by ripples.
       const cx = this.width * 0.68;

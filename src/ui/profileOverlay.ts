@@ -4,7 +4,7 @@ import { cssHex } from '../design/palette';
 // The one piece of DOM in the game: choosing which light you are. Each light is a
 // named profile with its own save on this device. No accounts, nothing leaves the device.
 
-const COLORS: ProfileColor[] = ['mint', 'lavender', 'peach', 'sky', 'rose'];
+const COLORS: ProfileColor[] = ['mint', 'lavender', 'peach', 'sky', 'rose', 'sage'];
 
 const css = `
 .chowa-profiles { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;

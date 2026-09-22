@@ -5,6 +5,7 @@ import { bakeNightSky } from '../src/regions/nightsky/bake';
 import { bakeStoneGarden } from '../src/regions/stonegarden/bake';
 import { bakeCrystalCaves } from '../src/regions/crystalcaves/bake';
 import { bakeMoonLake } from '../src/regions/moonlake/bake';
+import { bakeShadowTerrace } from '../src/regions/shadowterrace/bake';
 
 // Bakes every region's levels into src/regions/<id>/levels.json.
 // Each baker verifies its own levels with the region solver.
@@ -14,6 +15,7 @@ const regions: Array<{ id: string; bake: () => unknown[] }> = [
   { id: 'stonegarden', bake: bakeStoneGarden },
   { id: 'crystalcaves', bake: bakeCrystalCaves },
   { id: 'moonlake', bake: bakeMoonLake },
+  { id: 'shadowterrace', bake: bakeShadowTerrace },
 ];
 
 for (const region of regions) {

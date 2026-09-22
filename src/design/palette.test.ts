@@ -10,7 +10,7 @@ describe('palette', () => {
   });
 
   it('defines every documented token', () => {
-    const tokens = ['void', 'ink', 'dim', 'mint', 'lavender', 'peach', 'sky', 'rose', 'lemon', 'pearl'];
+    const tokens = ['void', 'ink', 'dim', 'mint', 'lavender', 'peach', 'sky', 'rose', 'sage', 'lemon', 'pearl'];
     for (const token of tokens) {
       expect(palette).toHaveProperty(token);
     }

@@ -196,6 +196,55 @@ function moonlake(destination: Tone.ToneAudioNode): Bed {
   return finish(p);
 }
 
+// Shadow Terrace: a slow koto-like pluck wandering the scale over a breathy low pad.
+function shadowterrace(destination: Tone.ToneAudioNode): Bed {
+  const p = frame(destination);
+  const pluck = new Tone.PolySynth(Tone.FMSynth, {
+    harmonicity: 2,
+    modulationIndex: 3,
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.02, decay: 1.6, sustain: 0, release: 2.5 },
+    modulation: { type: 'sine' },
+    modulationEnvelope: { attack: 0.01, decay: 0.6, sustain: 0, release: 0.5 },
+    volume: -27,
+  });
+  const pluckFilter = new Tone.Filter({ type: 'lowpass', frequency: 1800, Q: 0.3 }).connect(p.out);
+  pluck.connect(pluckFilter);
+  const degrees = [0, 1, 2, 4, 5, 7, 4, 2];
+  let k = 0;
+  const wander = new Tone.Loop((time) => {
+    if (Math.random() < 0.25) return;
+    const step = Math.random() < 0.7 ? 1 : -1;
+    k = (k + step + degrees.length) % degrees.length;
+    pluck.triggerAttackRelease(note(degrees[k]!, 4), '2n', time, 0.35 + Math.random() * 0.2);
+  }, 1.9);
+  const pad = new Tone.PolySynth(Tone.AMSynth, {
+    harmonicity: 1,
+    oscillator: { type: 'sine' },
+    envelope: { attack: 6, decay: 2, sustain: 0.6, release: 8 },
+    volume: -30,
+  });
+  const padFilter = new Tone.Filter({ type: 'lowpass', frequency: 600, Q: 0.3 }).connect(p.out);
+  pad.connect(padFilter);
+  const chords = [
+    [note(0, 2), note(4, 3), note(1, 4)],
+    [note(3, 2), note(0, 3), note(2, 4)],
+  ];
+  let c = 0;
+  const swell = new Tone.Loop((time) => {
+    pad.triggerAttackRelease(chords[c % chords.length]!, 12, time, 0.5);
+    c++;
+  }, 17);
+  const breath = new Tone.Noise({ type: 'brown', volume: -40 });
+  const breathFilter = new Tone.Filter({ type: 'bandpass', frequency: 300, Q: 0.6 }).connect(p.out);
+  breath.connect(breathFilter);
+  const breathLfo = new Tone.LFO({ frequency: 0.05, min: 180, max: 420 }).connect(breathFilter.frequency);
+  p.sources.push(breath, breathLfo);
+  p.loops.push(wander, swell);
+  p.disposables.push(pluck, pluckFilter, pad, padFilter, breath, breathFilter, breathLfo);
+  return finish(p);
+}
+
 export function createBed(id: RegionId, destination: Tone.ToneAudioNode): Bed {
   switch (id) {
     case 'tidepools':
@@ -206,6 +255,8 @@ export function createBed(id: RegionId, destination: Tone.ToneAudioNode): Bed {
       return stonegarden(destination);
     case 'crystalcaves':
       return crystalcaves(destination);
+    case 'shadowterrace':
+      return shadowterrace(destination);
     default:
       return moonlake(destination);
   }

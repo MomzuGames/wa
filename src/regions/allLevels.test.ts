@@ -6,6 +6,7 @@ import nightsky from './nightsky/levels.json';
 import stonegarden from './stonegarden/levels.json';
 import crystalcaves from './crystalcaves/levels.json';
 import moonlake from './moonlake/levels.json';
+import shadowterrace from './shadowterrace/levels.json';
 import { boardFromLevel, type LoopLevel } from './tidepools/model';
 import { solve as solveLoop } from './tidepools/solver';
 import { type SkyLevel } from './nightsky/model';
@@ -16,6 +17,8 @@ import { initialOrients, type PrismLevel } from './crystalcaves/model';
 import { solvePrism } from './crystalcaves/solver';
 import { type RippleLevel } from './moonlake/model';
 import { solveRipple } from './moonlake/solver';
+import { type ShadowLevel } from './shadowterrace/model';
+import { solveShadow } from './shadowterrace/solver';
 
 // One place that states the guarantee: every level of every region is solvable
 // from its starting state, as checked by that region's solver.
@@ -26,9 +29,10 @@ describe('every level in every region', () => {
     stonegarden: stonegarden.length,
     crystalcaves: crystalcaves.length,
     moonlake: moonlake.length,
+    shadowterrace: shadowterrace.length,
   };
 
-  it('has exactly 24 levels per region', () => {
+  it('has exactly ten levels per region', () => {
     for (const id of REGION_ORDER) expect(counts[id]).toBe(progression.levelsPerRegion);
   });
 
@@ -38,5 +42,6 @@ describe('every level in every region', () => {
     (stonegarden as StoneLevel[]).forEach((l) => expect(solveStone(l).placements, l.seed).not.toBeNull());
     (crystalcaves as PrismLevel[]).forEach((l) => expect(solvePrism(l, initialOrients(l)).orients, l.seed).not.toBeNull());
     (moonlake as RippleLevel[]).forEach((l) => expect(solveRipple(l, l.start).presses, l.seed).not.toBeNull());
+    (shadowterrace as ShadowLevel[]).forEach((l) => expect(solveShadow(l).heights, l.seed).not.toBeNull());
   });
 });
