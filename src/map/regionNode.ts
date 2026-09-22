@@ -114,6 +114,7 @@ export class RegionNode extends Container {
   private near = 0; // 0..1: how close the light is
   private hovered = false;
   private chosen = false;
+  private baseScale = 1;
   private _state: RegionState = 'locked';
   readonly accent: number;
 
@@ -195,6 +196,15 @@ export class RegionNode extends Container {
     return Promise.resolve();
   }
 
+  // Phones show the map smaller, with tighter names, so six regions fit without touching.
+  setCompact(compact: boolean): void {
+    this.baseScale = compact ? 0.72 : 1;
+    this.scale.set(this.baseScale);
+    this.nameLabel.style.fontSize = compact ? 13 : 15;
+    this.nameLabel.style.letterSpacing = compact ? 3 : 5;
+    this.nameLabel.y = regionNodeStyle.size * (compact ? 0.7 : 0.74);
+  }
+
   // How close the light is (0 far, 1 on top of it): the name and aura brighten to meet it.
   setNear(strength: number): void {
     this.near = Math.max(0, Math.min(1, strength));
@@ -214,7 +224,7 @@ export class RegionNode extends Container {
     const nameTarget = this.chosen ? 1 : regionNodeStyle.nameIdleAlpha + (regionNodeStyle.nameNearAlpha - regionNodeStyle.nameIdleAlpha) * lift;
     this.nameLabel.alpha += (nameTarget - this.nameLabel.alpha) * k;
     this.aura.alpha += (regionNodeStyle.auraIdle + (regionNodeStyle.auraNear - regionNodeStyle.auraIdle) * lift - this.aura.alpha) * k;
-    const targetScale = 1 + 0.06 * lift + (reducedMotion() ? 0 : 0.02 * Math.sin(this.time * 0.8));
+    const targetScale = this.baseScale * (1 + 0.06 * lift + (reducedMotion() ? 0 : 0.02 * Math.sin(this.time * 0.8)));
     this.scale.set(this.scale.x + (targetScale - this.scale.x) * k);
     const g = this.life;
     g.clear();

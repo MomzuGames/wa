@@ -8,6 +8,7 @@ import { durations, easings, scaled } from '../design/motion';
 import { spiritStyle } from '../ui/spirit';
 import { isRegionComplete, regionUnlocked, solvedCount } from '../core/progress';
 import { createGlow } from '../fx/glow';
+import { isCompact } from '../design/layout';
 import { RegionNode, type RegionState, regionNodeStyle } from './regionNode';
 import { events } from '../core/events';
 import { reducedMotion } from '../design/motion';
@@ -207,10 +208,11 @@ export class WorldMapScene implements Scene {
   private position(id: RegionId): { x: number; y: number } {
     const f = LAYOUT[id];
     if (this.height > this.width) {
-      // Portrait: the journey winds down the screen instead of across it.
-      const spanY = this.height * 0.6;
-      const spanX = this.width * 0.36;
-      return { x: this.width / 2 + f.y * spanX, y: (this.height - spanY) / 2 + 50 + f.x * spanY };
+      // Portrait: the journey winds down the screen instead of across it, swinging wide
+      // from side to side so neighbouring figures and names never meet.
+      const spanY = this.height * 0.7;
+      const spanX = this.width * 0.62;
+      return { x: this.width / 2 + f.y * spanX, y: (this.height - spanY) / 2 + 30 + f.x * spanY };
     }
     const spanX = this.width * mapStyle.spreadX;
     const spanY = this.height * mapStyle.spreadY;
@@ -271,7 +273,12 @@ export class WorldMapScene implements Scene {
   resize(width: number, height: number): void {
     this.width = width;
     this.height = height;
-    for (const id of REGION_ORDER) this.nodes.get(id)!.position.copyFrom(this.position(id));
+    const compact = isCompact(width) || height > width;
+    for (const id of REGION_ORDER) {
+      const node = this.nodes.get(id)!;
+      node.setCompact(compact);
+      node.position.copyFrom(this.position(id));
+    }
     this.paths.clear();
     for (let i = 0; i < REGION_ORDER.length - 1; i++) {
       this.strokePath(this.paths, REGION_ORDER[i]!, REGION_ORDER[i + 1]!, 1);
