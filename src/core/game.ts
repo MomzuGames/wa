@@ -3,7 +3,7 @@ import { SceneManager } from './sceneManager';
 import { events } from './events';
 import { devFlags } from './dev';
 import { createRng } from './rng';
-import { isChapterEnd, levelUnlocked, progression, setBypassLocks } from './progress';
+import { levelUnlocked, progression, setBypassLocks } from './progress';
 import { currentProfile } from './save';
 import { applyUpdateIfReady } from './updates';
 import type { RegionId, ShellContext } from '../regions/types';
@@ -127,8 +127,8 @@ export class Game {
       return;
     }
     const next = levelIndex + 1;
-    const chapterEnded = isChapterEnd(levelIndex);
-    if (!chapterEnded && next < progression.levelsPerRegion && levelUnlocked(regionId, next)) {
+    // A solved level leads straight into the next one; only the last level returns to the trail.
+    if (next < progression.levelsPerRegion && levelUnlocked(regionId, next)) {
       this.showLevel(regionId, next);
     } else {
       this.showRegion(regionId, levelIndex);

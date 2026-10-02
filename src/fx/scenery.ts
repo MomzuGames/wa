@@ -229,24 +229,6 @@ export class Scenery {
         for (let x = -40; x <= this.width + 40; x += 30) g.lineTo(x, reach + Math.sin(x / 70 + this.time * 0.6 + i) * 4);
         g.stroke({ color: this.accent, width: 1.2, alpha });
       }
-    } else if (this.id === 'nightsky') {
-      // A river winding down from the mountains with a slow shimmer along it.
-      const pts: Array<[number, number]> = [];
-      for (let k = 0; k <= 12; k++) {
-        const t = k / 12;
-        pts.push([this.width * (0.55 + Math.sin(t * 4.2) * 0.12 * (1 - t) + t * 0.1), h * (0.62 + t * 0.4)]);
-      }
-      g.moveTo(pts[0]![0], pts[0]![1]);
-      for (const [x, y] of pts.slice(1)) g.lineTo(x, y);
-      g.stroke({ color: this.accent, width: 3, alpha: 0.12 });
-      for (let k = 0; k < 6; k++) {
-        const t = ((this.time * 0.07 + k / 6) % 1) * 12;
-        const i = Math.min(11, Math.floor(t));
-        const f = t - i;
-        const x = pts[i]![0] + (pts[i + 1]![0] - pts[i]![0]) * f;
-        const y = pts[i]![1] + (pts[i + 1]![1] - pts[i]![1]) * f;
-        g.circle(x, y, 1.5).fill({ color: palette.pearl, alpha: 0.35 });
-      }
     } else if (this.id === 'crystalcaves') {
       // An underground stream glowing faintly along the floor.
       g.moveTo(-40, h * 0.9);
