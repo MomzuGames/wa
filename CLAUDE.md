@@ -235,7 +235,8 @@ Quicksand, light weight, generous letter-spacing. It is used only for the title 
 - **Optional stretch, "The Summit":** unlocked after all 5 regions. Mixed-mechanic levels. Build it only in Phase 9, if the owner asks.
 
 ### Profiles
-- The person icon (title and map) opens the profile card (`ui/profileOverlay.ts`, the game's one piece of DOM): each player is a named light with a colour and its own save under `chowa.save.v1.<id>`. The first visit asks you to make a light. The companion takes the chosen colour. Progress is per device by design; there is no login and no server.
+- The person icon (title and map) opens the profile card (`ui/profileOverlay.ts`, DOM): each player is a named light with a colour and its own save under `chowa.save.v1.<id>`. The first visit asks you to make a light. The companion takes the chosen colour. Progress is per device by design; there is no login and no server.
+- **Install link:** `…/wa/?install` opens `ui/installGuide.ts` (DOM, like the profile card) instead of the game: Android Chrome gets a one-tap Install button (the held `beforeinstallprompt`, falling back to menu steps), iPhone Safari gets the Share → Add to Home Screen steps, and in-app browsers get Open in Chrome/Safari. Laptops and installed copies skip it. Detection lives in `core/install.ts`; in dev, `?install=ios-safari|ios-other|android|android-inapp` previews each. The profile card's Share link sends this address.
 
 ### Save data (`localStorage` key `chowa.save.v1`)
 ```ts

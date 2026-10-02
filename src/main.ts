@@ -16,6 +16,11 @@ import { Spirit } from './ui/spirit';
 import { GAME_TITLE } from './config/game';
 import { ProfileOverlay } from './ui/profileOverlay';
 import { installUpdates } from './core/updates';
+import { type InstallContext, INSTALL_PARAM, captureInstallPrompt, installContext, isStandalone, wantsInstallGuide } from './core/install';
+import { InstallGuide } from './ui/installGuide';
+
+// Chrome may offer its install prompt before the game has loaded; hold on to it.
+captureInstallPrompt();
 
 async function main() {
   await document.fonts.load("300 64px 'Quicksand'", GAME_TITLE);
@@ -60,7 +65,28 @@ async function main() {
 
   game.start();
   // First visit: choose or create a light before playing.
-  if (!hasProfiles()) profiles.open();
+  const welcome = () => {
+    if (!hasProfiles()) profiles.open();
+  };
+  if (!showInstallGuide(welcome)) welcome();
+}
+
+// The install link (`?install`) opens a guide for putting the game on a phone's home
+// screen. Laptops and already-installed copies skip it and simply play.
+function showInstallGuide(then: () => void): boolean {
+  if (!wantsInstallGuide(location.search)) return false;
+  const forced = new URLSearchParams(location.search).get(INSTALL_PARAM);
+  // Dev only: `?install=ios-safari` (or android, android-inapp, ios-other) previews a phone's guide.
+  const context =
+    import.meta.env.DEV && forced ? (forced as InstallContext) : installContext(navigator.userAgent, isStandalone(), navigator.maxTouchPoints);
+  if (context === 'installed' || context === 'desktop') {
+    const url = new URL(location.href);
+    url.searchParams.delete(INSTALL_PARAM);
+    history.replaceState(null, '', url);
+    return false;
+  }
+  new InstallGuide(context, then);
+  return true;
 }
 
 void main();

@@ -1,5 +1,6 @@
 import { createProfile, currentProfile, deleteProfile, exportBackup, importBackup, listProfiles, selectProfile, type Profile, type ProfileColor } from '../core/save';
 import { cssHex } from '../design/palette';
+import { installLink } from '../core/install';
 
 // The one piece of DOM in the game: choosing which light you are. Each light is a
 // named profile with its own save on this device. No accounts, nothing leaves the device.
@@ -118,11 +119,11 @@ export class ProfileOverlay {
 
   // Sends the game's address with the phone's share sheet, or copies it.
   private async share(card: HTMLElement): Promise<void> {
-    const url = `${location.origin}${location.pathname}`;
+    const url = installLink(location.origin, location.pathname);
     const note = document.createElement('div');
     note.className = 'ok';
     try {
-      if (navigator.share) await navigator.share({ title: 'Chōwa', text: 'A calm puzzle journey. Open it in Safari or Chrome and add it to your home screen.', url });
+      if (navigator.share) await navigator.share({ title: 'Chōwa', text: 'A calm puzzle journey. Open the link to add it to your home screen.', url });
       else {
         await navigator.clipboard.writeText(url);
         note.textContent = 'Link copied. Send it to anyone; on a phone they can add it to their home screen.';
