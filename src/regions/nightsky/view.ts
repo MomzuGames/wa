@@ -6,7 +6,7 @@ import { durations, easings, reducedMotion, scaled } from '../../design/motion';
 import { isTouch, layout, puzzleArea } from '../../design/layout';
 import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
-import { type SkyLevel, type Star, type Stroke, beginStroke, edgeBetween, isComplete, newStroke, orderAllows, traverse, undo } from './model';
+import { type SkyLevel, type Star, type Stroke, beginStroke, isComplete, newStroke, slideAction, traverse, undo } from './model';
 import { halfPathClue, nextEdgesClue, oddStarsClue, startClue } from './clues';
 import { createNightSkyVoice, type NightSkyVoice } from './sound';
 
@@ -255,15 +255,15 @@ export class SkyLevelScene implements LevelScene {
       this.drawLit();
       return;
     }
-    const last = this.stroke.path[this.stroke.path.length - 1];
-    if (last && star === last.from && this.undoArmed) {
+    const action = slideAction(this.level, this.stroke, star, this.undoArmed);
+    if (action === 'undo') {
       undo(this.stroke);
       this.undoArmed = false;
       this.emit('move');
       this.redrawAll();
       return;
     }
-    if (star !== this.stroke.current && orderAllows(this.level, this.stroke, star) && edgeBetween(this.level, this.stroke.current!, star, this.stroke.remaining) >= 0) {
+    if (action === 'traverse') {
       traverse(this.level, this.stroke, star);
       this.undoArmed = false;
       this.emit('move');

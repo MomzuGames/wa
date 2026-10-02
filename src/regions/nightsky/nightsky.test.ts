@@ -10,6 +10,8 @@ import {
   newStroke,
   oddStars,
   segmentsCross,
+  slideAction,
+  beginStroke,
   traverse,
   undo,
 } from './model';
@@ -105,5 +107,49 @@ describe('baked nightsky levels', () => {
         });
       }
     });
+  });
+});
+
+describe('drag gestures', () => {
+  const level: SkyLevel = {
+    seed: 't',
+    chapter: 0,
+    stars: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }],
+    edges: [
+      { a: 0, b: 1, required: 1, oneWay: false },
+      { a: 1, b: 2, required: 2, oneWay: false },
+    ],
+    solution: [0, 1, 2, 1],
+    drift: false,
+    difficulty: 0,
+  };
+
+  it('slides back along a single line to undo it', () => {
+    const stroke = newStroke(level);
+    beginStroke(level, stroke, 0);
+    traverse(level, stroke, 1);
+    expect(slideAction(level, stroke, 0, true)).toBe('undo');
+  });
+
+  it('traces the second pass of a double line, then undoes it', () => {
+    const stroke = newStroke(level);
+    beginStroke(level, stroke, 0);
+    traverse(level, stroke, 1);
+    traverse(level, stroke, 2);
+    expect(slideAction(level, stroke, 1, true)).toBe('traverse');
+    traverse(level, stroke, 1);
+    expect(slideAction(level, stroke, 2, true)).toBe('undo');
+  });
+
+  // The pointer leaves every star between steps, so undo is always armed: the worst case.
+  it.each(levels.map((l, i) => [i + 1, l] as const))('level %i can be drawn by dragging', (_, l) => {
+    const stroke = newStroke(l);
+    const [first, ...rest] = l.solution;
+    expect(beginStroke(l, stroke, first!)).toBe(true);
+    for (const star of rest) {
+      expect(slideAction(l, stroke, star, true)).toBe('traverse');
+      traverse(l, stroke, star);
+    }
+    expect(isComplete(stroke)).toBe(true);
   });
 });

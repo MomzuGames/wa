@@ -91,6 +91,19 @@ export function undo(stroke: Stroke): Step | null {
   return step;
 }
 
+// What sliding onto `star` during a drag does. Sliding back to the star the last line
+// came from undoes that line, unless a line back still has a pass left (the second pass
+// of a double line): then it is traced, so "across, and back again" works.
+export type SlideAction = 'traverse' | 'undo' | 'none';
+
+export function slideAction(level: SkyLevel, stroke: Stroke, star: number, undoArmed: boolean): SlideAction {
+  if (stroke.current === null || star === stroke.current) return 'none';
+  const canTrace = orderAllows(level, stroke, star) && edgeBetween(level, stroke.current, star, stroke.remaining) >= 0;
+  const last = stroke.path[stroke.path.length - 1];
+  if (last && star === last.from && undoArmed && !canTrace) return 'undo';
+  return canTrace ? 'traverse' : 'none';
+}
+
 export function isComplete(stroke: Stroke): boolean {
   return stroke.remaining.every((r) => r === 0);
 }
