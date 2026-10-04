@@ -204,6 +204,18 @@ export function markIntroSeen(id: RegionId, lines: string[]): number {
   return first;
 }
 
+// ----- The full journey: unlocked once per device, for every light on it -----
+
+const UNLOCK_KEY = `${SAVE_KEY}.unlock`;
+
+export function isFullGame(): boolean {
+  return readJson<boolean>(UNLOCK_KEY, false) === true;
+}
+
+export function setFullGame(value: boolean): void {
+  writeJson(UNLOCK_KEY, value);
+}
+
 // True the first time a tip is shown to this player (and records it); false ever after.
 export function markTipSeen(id: RegionId, tip: string): boolean {
   const data = load();

@@ -3,14 +3,15 @@ import { SceneManager } from './sceneManager';
 import { events } from './events';
 import { devFlags } from './dev';
 import { createRng } from './rng';
-import { levelUnlocked, progression, setBypassLocks } from './progress';
+import { levelPlayable, paywalled, progression, setBypassLocks } from './progress';
 import { currentProfile } from './save';
 import { applyUpdateIfReady } from './updates';
 import type { RegionId, ShellContext } from '../regions/types';
 import { REGION_ORDER } from '../regions/catalog';
 import { getModule } from '../regions/registry';
 import { palette } from '../design/palette';
-import { durations, easings } from '../design/motion';
+import { durations, easings, scaled } from '../design/motion';
+import gsap from 'gsap';
 import type { AudioEngine } from '../audio/engine';
 import type { ParticleSystem } from '../fx/particles';
 import type { Hud } from '../ui/hud';
@@ -49,8 +50,15 @@ export class Game {
   start(): void {
     this.applyProfileTint();
     if (devFlags.enabled) {
-      setBypassLocks(true);
-      const jump = new URLSearchParams(location.search).get('level');
+      const params = new URLSearchParams(location.search);
+      // ?locks=1 keeps progress and the paywall in force, to test them in dev.
+      setBypassLocks(!params.has('locks'));
+      const trail = params.get('trail');
+      if (trail && REGION_ORDER.includes(trail as RegionId)) {
+        this.showRegion(trail as RegionId);
+        return;
+      }
+      const jump = params.get('level');
       if (jump) {
         const [region, index] = jump.split(':');
         if (REGION_ORDER.includes(region as RegionId)) {
@@ -130,10 +138,12 @@ export class Game {
     }
     const next = levelIndex + 1;
     // A solved level leads straight into the next one; only the last level returns to the trail.
-    if (next < progression.levelsPerRegion && levelUnlocked(regionId, next)) {
+    if (next < progression.levelsPerRegion && levelPlayable(regionId, next)) {
       this.showLevel(regionId, next);
     } else {
       this.showRegion(regionId, levelIndex);
+      // The free part of this land is done: offer the rest of the journey, gently.
+      if (next < progression.levelsPerRegion && paywalled(next)) gsap.delayedCall(scaled(durations.sceneTransition) * 2, () => events.emit('unlock:ask'));
     }
   }
 

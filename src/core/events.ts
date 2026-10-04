@@ -26,6 +26,9 @@ export interface GameEvents {
   'input:key': string;
   // A level explaining something about the current state (shown as a toast by the shell).
   'level:note': string;
+  // A paid level was chosen: open the unlock card. And: the full journey was unlocked or locked again.
+  'unlock:ask': void;
+  'unlock:changed': void;
   // A situational tip from a region (a refused star, a stroke let go too soon); shown once ever.
   'level:tip': { id: string; text: string };
 }

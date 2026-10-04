@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chapterOf, earliestUnsolved, isChapterEnd, isLevelUnlocked, isRegionComplete, isRegionUnlocked } from './progress';
+import { chapterOf, earliestUnsolved, isChapterEnd, isLevelUnlocked, isRegionComplete, isRegionUnlocked, isPaidLevel, progression } from './progress';
 
 describe('level unlocking', () => {
   it('unlocks the first level and two ahead of the earliest unsolved', () => {
@@ -43,5 +43,13 @@ describe('region unlocking', () => {
     expect([0, 2, 3, 5, 6, 7, 8, 9].map(chapterOf)).toEqual([0, 0, 1, 1, 2, 2, 3, 3]);
     expect([2, 5, 7, 9].every(isChapterEnd)).toBe(true);
     expect(isChapterEnd(4)).toBe(false);
+  });
+});
+
+describe('free and paid levels', () => {
+  it('keeps 40% of the game free: the first four levels of every land', () => {
+    const free = Array.from({ length: progression.levelsPerRegion }, (_, i) => i).filter((i) => !isPaidLevel(i));
+    expect(free).toEqual([0, 1, 2, 3]);
+    expect((free.length * 6) / (progression.levelsPerRegion * 6)).toBeCloseTo(0.4);
   });
 });

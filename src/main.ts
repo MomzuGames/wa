@@ -21,6 +21,8 @@ import { InstallGuide } from './ui/installGuide';
 import { IS_APP } from './config/platform';
 import { initNative } from './core/native';
 import { showStudioCard } from './ui/studioCard';
+import { UnlockCard } from './ui/unlockCard';
+import { events } from './core/events';
 
 // Chrome may offer its install prompt before the game has loaded; hold on to it.
 captureInstallPrompt();
@@ -47,6 +49,8 @@ async function main() {
   const hud = new Hud(settings);
   const spirit = new Spirit(particles);
   const profiles = new ProfileOverlay(() => game.profileChanged());
+  const unlockCard = new UnlockCard();
+  events.on('unlock:ask', () => unlockCard.open());
   const game = new Game({ app, scenes, audio, particles, hud, settings, openAccount: () => profiles.open() });
 
   app.stage.addChild(background.container, scenes.root, particles.container, spirit, hud, settings);

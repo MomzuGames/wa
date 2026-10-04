@@ -234,6 +234,7 @@ Quicksand, light weight, generous letter-spacing. It is used only for the title 
 - **Region size:** 10 levels in 4 short chapters (3, 3, 2, 2). Level nodes sit along a winding trail inside the region scene. The final level of each region is generated with "ultra" parameters and is the hardest; chapter-final figures sit at levels 3, 6 and 8.
 - **Unlocking within a region:** a level unlocks when the previous one is solved. The player may also be up to 2 levels ahead of their earliest unsolved level, so one hard level never blocks progress.
 - **After a solve** the next level opens by itself (`afterLevel` in `core/game.ts`); only the last level returns to the trail, and finishing the region plays its finale.
+- **Free and paid (the full journey):** levels 1–4 of every region are free (24 of 60, 40%); levels 5–10 are paid (`progression.freeLevels`, `isPaidLevel`, `paywalled`, `levelPlayable` in `core/progress.ts`). Paid levels show a padlock on the trail; tapping one, or finishing the free part of a region, opens the unlock card (`ui/unlockCard.ts`, DOM). The unlock is per device, for every profile (`chowa.save.v1.unlock`). How it unlocks lives in `core/store.ts`: on the **website** a family code (only its SHA-256 is stored; change it there), in the **app** an Apple in-app purchase. Until the paid developer account exists the app uses a **test store** (Unlock is instant; the profile card offers "Lock the journey again (test)"). Dev mode bypasses the paywall unless `?locks=1`.
 - **Regions are never gated:** every region is open from the first visit; players pick any region and come back to it later (`isRegionUnlocked` always returns true). Finishing a region still lights it and draws the glowing trail to the next one.
 - **Finishing a region:** at 100%, play the region finale, return to the map, animate the region filling with light, then slowly draw a glowing path to the next region.
 - Completed regions and levels can always be replayed.
@@ -447,7 +448,8 @@ For every region:
 Add `?dev=1` to the URL to enable:
 - an FPS meter
 - unlock-all
-- jumping to any level (`?level=nightsky:12`)
+- jumping to any level (`?level=nightsky:3`) or trail (`?trail=moonlake`)
+- `?locks=1`: keep progress locks and the paywall in force while testing
 - a solution overlay, only with `?solution=1` as well (it gives every answer away, so `?dev=1` alone never shows it)
 
 Dev features are stripped from production builds with `import.meta.env.DEV` guards. **The solution overlay must never exist in production.**
