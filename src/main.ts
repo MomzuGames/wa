@@ -18,16 +18,20 @@ import { ProfileOverlay } from './ui/profileOverlay';
 import { installUpdates } from './core/updates';
 import { type InstallContext, INSTALL_PARAM, captureInstallPrompt, installContext, isStandalone, wantsInstallGuide } from './core/install';
 import { InstallGuide } from './ui/installGuide';
+import { IS_APP } from './config/platform';
+import { initNative } from './core/native';
 
 // Chrome may offer its install prompt before the game has loaded; hold on to it.
 captureInstallPrompt();
 
 async function main() {
   await document.fonts.load("300 64px 'Quicksand'", GAME_TITLE);
+  // In the iPhone app, saves are restored from the app's own storage before they are read.
+  await initNative();
   load();
 
   installTweenSafety();
-  installUpdates();
+  if (!IS_APP) installUpdates();
   const app = await createApp(document.querySelector<HTMLDivElement>('#app')!);
   const rng = createRng('chowa');
   const audio = new AudioEngine();
@@ -74,7 +78,7 @@ async function main() {
 // The install link (`?install`) opens a guide for putting the game on a phone's home
 // screen. Laptops and already-installed copies skip it and simply play.
 function showInstallGuide(then: () => void): boolean {
-  if (!wantsInstallGuide(location.search)) return false;
+  if (IS_APP || !wantsInstallGuide(location.search)) return false;
   const forced = new URLSearchParams(location.search).get(INSTALL_PARAM);
   // Dev only: `?install=ios-safari` (or android, android-inapp, ios-other) previews a phone's guide.
   const context =

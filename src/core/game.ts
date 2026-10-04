@@ -18,6 +18,7 @@ import type { SettingsPanel } from '../ui/settings';
 import { TitleScene } from '../scenes/title';
 import { WorldMapScene, type MapReveal } from '../map/worldMap';
 import { RegionScene } from '../map/regionScene';
+import { haptic } from './native';
 import { LevelShellScene, type LevelResult } from '../scenes/levelScene';
 
 export interface GameDeps {
@@ -122,6 +123,7 @@ export class Game {
         width: this.width,
         height: this.height,
       };
+      haptic('medium');
       await getModule(regionId).playRegionFinale(ctx);
       this.showMap({ completed: regionId });
       return;

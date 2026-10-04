@@ -1,5 +1,5 @@
 import { Container } from 'pixi.js';
-import { hudGap, layout } from '../design/layout';
+import { hud, hudGap } from '../design/layout';
 import { events } from '../core/events';
 import { IconButton } from './iconButton';
 import type { SettingsPanel } from './settings';
@@ -11,7 +11,6 @@ export class Hud extends Container {
   private hintButton: IconButton;
   private accountButton: IconButton;
   private onAccount: () => void = () => {};
-  private screenWidth = 0;
   private onHelp: () => void = () => {};
   private onHint: () => void = () => {};
 
@@ -46,13 +45,13 @@ export class Hud extends Container {
   }
 
   resize(width: number): void {
-    this.screenWidth = width;
-    const inset = layout.hudInset + layout.hudIconSize / 2;
     const gap = hudGap(width);
-    this.settingsButton.position.set(this.screenWidth - inset, inset);
-    this.helpButton.position.set(this.screenWidth - inset - gap, inset);
-    this.hintButton.position.set(this.screenWidth - inset - gap * 2, inset);
-    this.accountButton.position.set(this.screenWidth - inset - gap, inset);
-    this.backButton.position.set(inset, inset);
+    const right = hud.right(width);
+    const top = hud.top();
+    this.settingsButton.position.set(right, top);
+    this.helpButton.position.set(right - gap, top);
+    this.hintButton.position.set(right - gap * 2, top);
+    this.accountButton.position.set(right - gap, top);
+    this.backButton.position.set(hud.left(), top);
   }
 }

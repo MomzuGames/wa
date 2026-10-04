@@ -1,6 +1,7 @@
 import { createProfile, currentProfile, deleteProfile, exportBackup, importBackup, listProfiles, selectProfile, type Profile, type ProfileColor } from '../core/save';
 import { cssHex } from '../design/palette';
 import { installLink } from '../core/install';
+import { IS_APP } from '../config/platform';
 
 // The one piece of DOM in the game: choosing which light you are. Each light is a
 // named profile with its own save on this device. No accounts, nothing leaves the device.
@@ -12,7 +13,7 @@ const css = `
   background: rgba(0,0,0,0.62); font-family: Quicksand, sans-serif; font-weight: 300; color: ${cssHex('pearl')};
   z-index: 10; opacity: 0; transition: opacity .35s ease; }
 .chowa-profiles.open { opacity: 1; }
-.chowa-profiles .card { width: min(92vw, 400px); background: ${cssHex('ink')}; border: 1px solid ${cssHex('dim')};
+.chowa-profiles .card { box-sizing: border-box; width: min(92vw, 400px); background: ${cssHex('ink')}; border: 1px solid ${cssHex('dim')};
   border-radius: 18px; padding: 26px 24px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
 .chowa-profiles h2 { margin: 0 0 6px; font-weight: 300; font-size: 22px; letter-spacing: 2px; }
 .chowa-profiles p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; opacity: .8; }
@@ -113,7 +114,9 @@ export class ProfileOverlay {
     const share = document.createElement('a');
     share.textContent = 'Share the game';
     share.addEventListener('click', () => void this.share(card));
-    links.append(backup, restore, share);
+    // The app is shared through the App Store, not a web link.
+    links.append(backup, restore);
+    if (!IS_APP) links.append(share);
     card.appendChild(links);
   }
 

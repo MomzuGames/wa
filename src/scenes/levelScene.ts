@@ -3,7 +3,7 @@ import type { Scene } from '../core/sceneManager';
 import type { ClueTier, LevelScene, PuzzleModule, RegionId, ShellContext } from '../regions/types';
 import { alphas, palette, rgba } from '../design/palette';
 import { durations, easings } from '../design/motion';
-import { headerBand, layout } from '../design/layout';
+import { headerBand, hud, layout, safeArea } from '../design/layout';
 import { createRng } from '../core/rng';
 import { events } from '../core/events';
 import { getRegion, markIntroSeen } from '../core/save';
@@ -20,6 +20,7 @@ import { devFlags } from '../core/dev';
 import { LevelIntro } from '../ui/levelIntro';
 import { Atmosphere } from '../fx/atmosphere';
 import gsap from 'gsap';
+import { haptic } from '../core/native';
 
 // Room kept for the light to the left of the level name.
 const SPIRIT_SPACE = 34;
@@ -73,8 +74,9 @@ export class LevelShellScene implements Scene {
       audio: deps.audio,
       particles: deps.particles,
       rng: createRng(`${module.id}:${levelIndex}`),
+      // Puzzles lay out in the part of the screen clear of the Dynamic Island and home bar.
       width: deps.width,
-      height: deps.height,
+      height: deps.height - safeArea.top - safeArea.bottom,
     };
     this.width = deps.width;
     this.height = deps.height;
@@ -116,6 +118,7 @@ export class LevelShellScene implements Scene {
     this.toast = new Toast(accent);
     this.hud.addChild(this.label, this.moveLabel, this.restartButton, this.orb, this.toast);
     this.spotlight.eventMode = 'none';
+    this.level.container.y = safeArea.top;
     this.stage.addChild(this.level.container);
     this.container.addChild(this.atmosphere.container, this.spotlight, this.stage, this.hud);
 
@@ -146,9 +149,8 @@ export class LevelShellScene implements Scene {
   }
 
   enter(): void {
-    const inset = layout.hudInset + layout.hudIconSize / 2;
     this.entered = true;
-    events.emit('spirit:glide', { x: this.spiritX, y: inset });
+    events.emit('spirit:glide', { x: this.spiritX, y: hud.top() });
     // The card appears on its own only when a level introduces something new for this region.
     // It opens on the first page the player has not seen yet; earlier pages stay a swipe away.
     const pages = this.level.introPages?.() ?? [];
@@ -203,7 +205,8 @@ export class LevelShellScene implements Scene {
   resize(width: number, height: number): void {
     this.width = width;
     this.height = height;
-    this.level.resize?.(width, height);
+    this.level.container.y = safeArea.top;
+    this.level.resize?.(width, height - safeArea.top - safeArea.bottom);
     this.atmosphere.resize(width, height);
     const radius = Math.min(width, height) * 0.46;
     const token = this.module.accent;
@@ -221,17 +224,15 @@ export class LevelShellScene implements Scene {
     });
     this.spotlight.clear().circle(width / 2, height / 2, radius).fill(gradient);
     this.intro?.resize(width, height);
-    const inset = layout.hudInset + layout.hudIconSize / 2;
     this.placeHeader(width);
-    if (this.entered) events.emit('spirit:glide', { x: this.spiritX, y: inset });
-    this.restartButton.position.set(width - inset, height - inset);
-    this.orb.position.set(width - inset - layout.hudIconSize - 16, height - inset);
+    if (this.entered) events.emit('spirit:glide', { x: this.spiritX, y: hud.top() });
+    this.restartButton.position.set(hud.right(width), hud.bottom(height));
+    this.orb.position.set(hud.right(width) - layout.hudIconSize - 16, hud.bottom(height));
   }
 
   // The light and the level name sit side by side in the top row, centred when they fit and
   // kept clear of the back button and the icons on the right; a long name shrinks to fit.
   private placeHeader(width: number): void {
-    const inset = layout.hudInset + layout.hudIconSize / 2;
     const band = headerBand(width);
     this.label.scale.set(1);
     const natural = this.label.width;
@@ -240,8 +241,8 @@ export class LevelShellScene implements Scene {
     const pair = SPIRIT_SPACE + natural * scale;
     const left = Math.max(band.left, Math.min(width / 2 - pair / 2, band.right - pair));
     this.spiritX = left + SPIRIT_SPACE / 2 - 4;
-    this.label.position.set(left + SPIRIT_SPACE + (natural * scale) / 2, inset);
-    this.moveLabel.position.set(this.label.x, inset + 22);
+    this.label.position.set(left + SPIRIT_SPACE + (natural * scale) / 2, hud.top());
+    this.moveLabel.position.set(this.label.x, hud.top() + 22);
   }
 
   private restart(): void {
@@ -269,6 +270,7 @@ export class LevelShellScene implements Scene {
     recordAttempts(this.module.id, this.levelIndex, state.units, state.revealedTier);
     const completedRegion = markSolved(this.module.id, this.levelIndex);
     events.emit('spirit:react', 'solved');
+    haptic('light');
     await this.level.playCompletion();
     this.onDone({ regionId: this.module.id, levelIndex: this.levelIndex, completedRegion });
   }

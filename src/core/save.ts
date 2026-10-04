@@ -70,12 +70,25 @@ function readJson<T>(key: string, fallback: T): T {
   }
 }
 
-function writeJson(key: string, value: unknown): void {
+// The app mirrors every write into its own storage (see core/native.ts); the website does not.
+let mirror: ((key: string, value: string | null) => void) | null = null;
+
+export function setStorageMirror(fn: (key: string, value: string | null) => void): void {
+  mirror = fn;
+}
+
+function writeRaw(key: string, value: string | null): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
   } catch {
-    // Storage may be full or blocked.
+    // Storage may be full or blocked; the game keeps running from memory.
   }
+  mirror?.(key, value);
+}
+
+function writeJson(key: string, value: unknown): void {
+  writeRaw(key, JSON.stringify(value));
 }
 
 export function listProfiles(): Profile[] {
@@ -99,11 +112,7 @@ export function createProfile(name: string, color: ProfileColor): Profile {
 
 export function deleteProfile(id: string): void {
   writeJson(PROFILES_KEY, listProfiles().filter((p) => p.id !== id));
-  try {
-    localStorage.removeItem(saveKeyFor(id));
-  } catch {
-    // ignore
-  }
+  writeRaw(saveKeyFor(id), null);
   if (currentProfile()?.id === id) writeJson(CURRENT_KEY, null);
 }
 
@@ -152,11 +161,7 @@ export function load(): SaveData {
 
 export function persist(): void {
   if (!current) return;
-  try {
-    localStorage.setItem(activeKey(), JSON.stringify(current));
-  } catch {
-    // Storage may be full or blocked; the game keeps running from memory.
-  }
+  writeRaw(activeKey(), JSON.stringify(current));
 }
 
 export function getSettings(): Settings {

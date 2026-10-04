@@ -5,6 +5,7 @@ import { Ambient } from './ambient';
 import { createBed, type Bed } from './beds';
 import type { RegionId } from '../regions/types';
 import { note } from './scale';
+import { IS_APP } from '../config/platform';
 
 export const audioConfig = {
   limiterCeilingDb: -12,
@@ -72,10 +73,22 @@ export class AudioEngine {
   private scene: 'title' | 'quiet' | RegionId = 'quiet';
   private beds = new Map<RegionId, Bed>();
 
+  // Silence while the game is in the background (another app, the lock screen) and pick
+  // up again on return; iOS may have interrupted the audio context in between.
+  private followVisibility(): void {
+    document.addEventListener('visibilitychange', () => {
+      const context = Tone.getContext().rawContext as AudioContext;
+      if (document.hidden) void context.suspend().catch(() => undefined);
+      else void context.resume().catch(() => undefined);
+    });
+  }
+
   async start(): Promise<void> {
     if (this.started || this.starting) return;
     this.starting = true;
-    unlockMediaSession();
+    // The app follows the silent switch like other games (see core/native.ts); the website plays through it.
+    if (!IS_APP) unlockMediaSession();
+    this.followVisibility();
     try {
       await Tone.start();
     } catch {

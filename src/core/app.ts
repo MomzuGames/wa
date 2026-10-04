@@ -1,6 +1,7 @@
 import gsap from 'gsap';
 import { Application, Container, type DestroyOptions } from 'pixi.js';
 import { palette } from '../design/palette';
+import { readSafeArea } from '../design/layout';
 
 export async function createApp(mount: HTMLElement): Promise<Application> {
   const app = new Application();
@@ -35,7 +36,10 @@ export function installTweenSafety(): void {
 }
 
 export function onResize(app: Application, handler: (width: number, height: number) => void): () => void {
-  const fire = () => handler(app.screen.width, app.screen.height);
+  const fire = () => {
+    readSafeArea();
+    handler(app.screen.width, app.screen.height);
+  };
   app.renderer.on('resize', fire);
   fire();
   return () => app.renderer.off('resize', fire);

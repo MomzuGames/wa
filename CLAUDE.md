@@ -44,6 +44,7 @@ The feeling to aim for: **meditative focus**. Think soft glowing light on black,
 | Installable app | **vite-plugin-pwa** (installable from Chrome/Edge, works offline) |
 | Save data | `localStorage`, one save per local profile ("light"); no accounts, nothing leaves the device |
 | Hosting | GitHub Pages from the `wa` repo via `.github/workflows/deploy.yml`; built with `base: '/wa/'` |
+| iPhone app | **Capacitor 8** (`ios/`, bundle id `com.momogames.chowa`, iPhone only, portrait). `vite build --mode app` makes the bundled copy (relative paths, no service worker); `IS_APP` in `config/platform.ts` switches off web-only parts (install guide, share link, web updates). `core/native.ts` mirrors saves into Capacitor Preferences, gives a light haptic on a solve and a medium one on a region finale, and sets the audio session to ambient (follows the silent switch). Puzzles and the HUD keep clear of the Dynamic Island and home bar through `safeArea`/`hud` in `design/layout.ts`. Releasing on the App Store as a free game under the MomoGames name. |
 
 Use the latest stable versions. Don't add other frameworks (no React, no game engines) without asking the owner.
 
@@ -54,6 +55,8 @@ Use the latest stable versions. Don't add other frameworks (no React, no game en
 - `npm run play`: build, then preview, then open the browser (one command for the owner)
 - `npm test`: run all Vitest tests
 - `npm run levels`: regenerate all level JSON files from seeds (see §9)
+- `npm run app`: build the app copy and copy it into the Xcode project (`npm run app:open` also opens Xcode)
+- `npm run icons`: redraw the icons, including the opaque 1024 px App Store icon
 
 ---
 

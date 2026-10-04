@@ -30,13 +30,40 @@ export function hudGap(screenWidth: number): number {
   return layout.hudIconSize + (isCompact(screenWidth) ? 8 : 16);
 }
 
+// The phone's own furniture (Dynamic Island, home bar, rounded corners) as CSS reports it.
+// Zero on laptops and in a browser tab; read again on every resize.
+export const safeArea = { top: 0, right: 0, bottom: 0, left: 0 };
+
+export function readSafeArea(): void {
+  if (typeof document === 'undefined') return;
+  const probe = document.createElement('div');
+  probe.style.cssText =
+    'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+  document.body.appendChild(probe);
+  const css = getComputedStyle(probe);
+  safeArea.top = parseFloat(css.paddingTop) || 0;
+  safeArea.right = parseFloat(css.paddingRight) || 0;
+  safeArea.bottom = parseFloat(css.paddingBottom) || 0;
+  safeArea.left = parseFloat(css.paddingLeft) || 0;
+  probe.remove();
+}
+
+// Centres of the HUD icons nearest each edge, kept clear of the phone's furniture.
+const SAFE_GAP = 6;
+const half = layout.hudIconSize / 2;
+export const hud = {
+  top: () => Math.max(layout.hudInset, safeArea.top + SAFE_GAP) + half,
+  bottom: (screenHeight: number) => screenHeight - Math.max(layout.hudInset, safeArea.bottom + SAFE_GAP) - half,
+  left: () => Math.max(layout.hudInset, safeArea.left + SAFE_GAP) + half,
+  right: (screenWidth: number) => screenWidth - Math.max(layout.hudInset, safeArea.right + SAFE_GAP) - half,
+};
+
 // The free stretch of the top row between the back button and the hint, help and settings icons.
 export function headerBand(screenWidth: number): { left: number; right: number } {
-  const inset = layout.hudInset + layout.hudIconSize / 2;
   const breathing = 10;
   return {
-    left: inset + layout.hudIconSize / 2 + breathing,
-    right: screenWidth - inset - hudGap(screenWidth) * 2 - layout.hudIconSize / 2 - breathing,
+    left: hud.left() + half + breathing,
+    right: hud.right(screenWidth) - hudGap(screenWidth) * 2 - half - breathing,
   };
 }
 

@@ -4,10 +4,13 @@ import { VitePWA } from 'vite-plugin-pwa';
 // Production builds are served from GitHub Pages at https://<user>.github.io/wa/.
 const BASE = '/wa/';
 
-export default defineConfig(({ command }) => ({
-  base: command === 'build' ? BASE : '/',
+// `--mode app` builds the copy bundled inside the iPhone app: files load from the app
+// itself, so paths are relative and there is no service worker.
+export default defineConfig(({ command, mode }) => ({
+  base: mode === 'app' ? './' : command === 'build' ? BASE : '/',
   plugins: [
     VitePWA({
+      disable: mode === 'app',
       registerType: 'prompt',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {

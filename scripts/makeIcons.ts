@@ -28,24 +28,23 @@ function chunk(type: string, data: Uint8Array): Uint8Array {
   return out;
 }
 
-function png(size: number, pixel: (x: number, y: number) => number[]): Uint8Array {
-  const raw = new Uint8Array((size * 4 + 1) * size);
+// `opaque` writes RGB with no alpha channel at all, which the App Store requires of icons.
+function png(size: number, pixel: (x: number, y: number) => number[], opaque = false): Uint8Array {
+  const channels = opaque ? 3 : 4;
+  const raw = new Uint8Array((size * channels + 1) * size);
   for (let y = 0; y < size; y++) {
-    raw[y * (size * 4 + 1)] = 0;
+    raw[y * (size * channels + 1)] = 0;
     for (let x = 0; x < size; x++) {
-      const [r, g, b, a] = pixel(x, y);
-      const i = y * (size * 4 + 1) + 1 + x * 4;
-      raw[i] = r!;
-      raw[i + 1] = g!;
-      raw[i + 2] = b!;
-      raw[i + 3] = a!;
+      const px = pixel(x, y);
+      const i = y * (size * channels + 1) + 1 + x * channels;
+      for (let k = 0; k < channels; k++) raw[i + k] = px[k]!;
     }
   }
   const ihdr = new Uint8Array(13);
   const v = new DataView(ihdr.buffer);
   v.setUint32(0, size);
   v.setUint32(4, size);
-  ihdr.set([8, 6, 0, 0, 0], 8);
+  ihdr.set([8, opaque ? 2 : 6, 0, 0, 0], 8);
   const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', new Uint8Array())];
   const total = parts.reduce((n, p) => n + p.length, 0);
   const out = new Uint8Array(total);
@@ -61,7 +60,7 @@ function mix(a: number[], b: number[], t: number): number[] {
   return [0, 1, 2].map((i) => Math.round(a[i]! + (b[i]! - a[i]!) * t));
 }
 
-function icon(size: number, rounded: boolean): Uint8Array {
+function icon(size: number, rounded: boolean, opaque = false): Uint8Array {
   const c = size / 2;
   const R = size * 0.22;
   return png(size, (x, y) => {
@@ -92,10 +91,11 @@ function icon(size: number, rounded: boolean): Uint8Array {
       if (Math.hypot(cx, cy) > r) alpha = 0;
     }
     return [...rgb, alpha];
-  });
+  }, opaque);
 }
 
-for (const [name, size, rounded] of [
+const only = process.argv.includes('--app-only');
+for (const [name, size, rounded] of only ? [] : [
   ['icon-192.png', 192, false],
   ['icon-512.png', 512, false],
   ['icon-maskable-512.png', 512, false],
@@ -104,3 +104,8 @@ for (const [name, size, rounded] of [
   writeFileSync(resolve('public', name), icon(size, rounded));
   console.log(`wrote public/${name}`);
 }
+
+// The iPhone app's icon: one opaque 1024 px square; iOS rounds the corners itself.
+const appIcon = 'ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png';
+writeFileSync(resolve(appIcon), icon(1024, false, true));
+console.log(`wrote ${appIcon}`);
