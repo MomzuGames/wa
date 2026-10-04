@@ -3,7 +3,7 @@ import type { Scene } from '../core/sceneManager';
 import type { ClueTier, LevelScene, PuzzleModule, RegionId, ShellContext } from '../regions/types';
 import { alphas, palette, rgba } from '../design/palette';
 import { durations, easings } from '../design/motion';
-import { isCompact, layout } from '../design/layout';
+import { headerBand, layout } from '../design/layout';
 import { createRng } from '../core/rng';
 import { events } from '../core/events';
 import { getRegion, markIntroSeen } from '../core/save';
@@ -20,6 +20,9 @@ import { devFlags } from '../core/dev';
 import { LevelIntro } from '../ui/levelIntro';
 import { Atmosphere } from '../fx/atmosphere';
 import gsap from 'gsap';
+
+// Room kept for the light to the left of the level name.
+const SPIRIT_SPACE = 34;
 
 export interface LevelShellDeps {
   audio: AudioEngine;
@@ -41,6 +44,8 @@ export class LevelShellScene implements Scene {
   private orb: HintOrb;
   private restartButton: IconButton;
   private label: Text;
+  private spiritX = 0;
+  private entered = false;
   private moveLabel: Text;
   private moves = 0;
   private hud = new Container();
@@ -142,7 +147,8 @@ export class LevelShellScene implements Scene {
 
   enter(): void {
     const inset = layout.hudInset + layout.hudIconSize / 2;
-    events.emit('spirit:glide', { x: isCompact(this.width) ? this.width / 2 - 56 : this.width / 2 + 52, y: inset });
+    this.entered = true;
+    events.emit('spirit:glide', { x: this.spiritX, y: inset });
     // The card appears on its own only when a level introduces something new for this region.
     // It opens on the first page the player has not seen yet; earlier pages stay a swipe away.
     const pages = this.level.introPages?.() ?? [];
@@ -216,10 +222,26 @@ export class LevelShellScene implements Scene {
     this.spotlight.clear().circle(width / 2, height / 2, radius).fill(gradient);
     this.intro?.resize(width, height);
     const inset = layout.hudInset + layout.hudIconSize / 2;
-    this.label.position.set(width / 2, inset);
-    this.moveLabel.position.set(width / 2, inset + 22);
+    this.placeHeader(width);
+    if (this.entered) events.emit('spirit:glide', { x: this.spiritX, y: inset });
     this.restartButton.position.set(width - inset, height - inset);
     this.orb.position.set(width - inset - layout.hudIconSize - 16, height - inset);
+  }
+
+  // The light and the level name sit side by side in the top row, centred when they fit and
+  // kept clear of the back button and the icons on the right; a long name shrinks to fit.
+  private placeHeader(width: number): void {
+    const inset = layout.hudInset + layout.hudIconSize / 2;
+    const band = headerBand(width);
+    this.label.scale.set(1);
+    const natural = this.label.width;
+    const scale = Math.min(1, (band.right - band.left - SPIRIT_SPACE) / natural);
+    this.label.scale.set(scale);
+    const pair = SPIRIT_SPACE + natural * scale;
+    const left = Math.max(band.left, Math.min(width / 2 - pair / 2, band.right - pair));
+    this.spiritX = left + SPIRIT_SPACE / 2 - 4;
+    this.label.position.set(left + SPIRIT_SPACE + (natural * scale) / 2, inset);
+    this.moveLabel.position.set(this.label.x, inset + 22);
   }
 
   private restart(): void {
