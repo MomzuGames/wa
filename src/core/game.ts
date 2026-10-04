@@ -7,7 +7,8 @@ import { levelPlayable, paywalled, progression, setBypassLocks } from './progres
 import { currentProfile, getRegion, markStorySeen, seenStory } from './save';
 import { applyUpdateIfReady } from './updates';
 import type { RegionId, ShellContext } from '../regions/types';
-import { REGION_ACCENT, REGION_ORDER } from '../regions/catalog';
+import { REGION_ORDER } from '../regions/catalog';
+import { familyColor } from '../story/family';
 import type { PaletteToken } from '../design/palette';
 import { StoryPlayer } from '../story/storyPlayer';
 import { StoryBook } from '../ui/storyBook';
@@ -40,12 +41,13 @@ export interface GameDeps {
 export class Game {
   private storyPlaying = false;
   private previewingStory = false;
+  private inOpening = false;
   private storyBook = new StoryBook();
 
   constructor(private deps: GameDeps) {
     events.on('input:back', () => this.back());
     // The book icon: every chapter reached so far, any of which plays again when tapped.
-    events.on('story:book', () => this.storyBook.open(new Set(earnedScenes(this.solved()))));
+    events.on('story:book', () => this.storyBook.open(new Set(earnedScenes(this.solved())), this.hue()));
     events.on('story:play', (id) => void this.replay(id as SceneId));
     events.on('progress:changed', () => this.showFamily(!(this.deps.scenes.scene instanceof LevelShellScene)));
     // Browsers only allow audio after a gesture. iOS Safari accepts only a finished
@@ -117,10 +119,11 @@ export class Game {
     this.deps.hud.setAccountButton(() => this.deps.openAccount());
     this.deps.audio.setScene('quiet');
     this.showFamily(true);
-    const map = new WorldMapScene((id) => this.showRegion(id), reveal);
+    // A new light's journey opens with the story of how it began; the map waits, dreaming.
+    const opening = !reveal && !seenStory().has('prologue') && !this.previewingStory;
+    const map = new WorldMapScene((id) => this.showRegion(id), reveal, opening);
     void this.deps.scenes.go(map);
-    // A new light's journey opens with the story of how it began.
-    if (!seenStory().has('prologue') && !this.previewingStory) void this.openJourney(map);
+    if (opening) void this.openJourney(map);
   }
 
   showRegion(id: RegionId, justSolved: number | null = null): void {
@@ -183,17 +186,39 @@ export class Game {
   // The opening: the story, then on the map six lights fall into their lands, and the
   // smallest light makes up its mind.
   private async openJourney(map: WorldMapScene): Promise<void> {
+    const hud = this.deps.hud;
+    hud.visible = false;
+    this.inOpening = true;
     await this.playStory(['prologue']);
-    if (this.deps.scenes.scene !== map) return;
-    await map.playArrival();
-    events.emit('spirit:say', ['They are out there, asleep in the six lands.', 'I will find every one of them.']);
+    if (this.deps.scenes.scene !== map) {
+      hud.visible = true;
+      this.inOpening = false;
+      return;
+    }
+    // The light comes to the middle, remembers the night its family left, and decides.
+    const spot = map.dreamSpot;
+    events.emit('spirit:glide', { x: spot.x, y: spot.y });
+    await map.playArrival(this.hue());
+    await new Promise<void>((done) => events.emit('spirit:say', { lines: ['They are out there, asleep in the six lands.', 'I will find every one of them.'], done }));
+    // Nothing moves on until the player taps the light; then the map wakes.
+    await map.waitForLightTap();
+    events.emit('spirit:joy', { x: spot.x, y: spot.y });
+    map.wakeUp();
+    this.inOpening = false;
+    hud.alpha = 0;
+    hud.visible = true;
+    gsap.to(hud, { alpha: 1, duration: scaled(durations.sceneTransition) });
   }
 
   // A chapter from the book; the opening also shows its fall into the lands again.
   private async replay(id: SceneId): Promise<void> {
     await this.playStory([id], false);
     const map = this.deps.scenes.scene;
-    if (id === 'prologue' && map instanceof WorldMapScene) await map.playArrival();
+    if (id === 'prologue' && map instanceof WorldMapScene) await map.playArrival(this.hue());
+  }
+
+  private hue(): PaletteToken {
+    return currentProfile()?.color ?? 'mint';
   }
 
   private solved(): Solved {
@@ -203,7 +228,7 @@ export class Game {
   // One family light per finished land follows the player's light.
   private showFamily(visible: boolean): void {
     const solved = this.solved();
-    const tokens: PaletteToken[] = visible ? REGION_ORDER.filter((id) => landDone(solved[id])).map((id) => REGION_ACCENT[id]) : [];
+    const tokens: PaletteToken[] = visible ? REGION_ORDER.filter((id) => landDone(solved[id])).map((id) => familyColor(id, this.hue())) : [];
     events.emit('spirit:family', tokens);
   }
 
@@ -212,7 +237,7 @@ export class Game {
     if (ids.length === 0 || this.storyPlaying) return;
     this.storyPlaying = true;
     if (remember) ids.forEach((id) => markStorySeen(id));
-    const player = new StoryPlayer(this.deps.app, currentProfile()?.color ?? 'mint', this.deps.audio);
+    const player = new StoryPlayer(this.deps.app, this.hue(), this.deps.audio);
     const stage = this.deps.app.stage;
     // The scene, the light and the HUD rest out of sight while the story plays; only the
     // drifting dust of the background (the stage's first layer) stays behind it.
@@ -228,7 +253,7 @@ export class Game {
   }
 
   private back(): void {
-    if (this.storyPlaying) return;
+    if (this.storyPlaying || this.inOpening) return;
     const { settings, scenes } = this.deps;
     if (settings.isOpen) {
       settings.toggle();

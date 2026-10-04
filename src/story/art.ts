@@ -5,6 +5,7 @@ import { createGlow } from '../fx/glow';
 import { Face } from '../ui/face';
 import { createRng } from '../core/rng';
 import { REGION_ACCENT, REGION_ORDER } from '../regions/catalog';
+import { familyColor, familyColors } from './family';
 import type { RegionId } from '../regions/types';
 import type { Art } from './script';
 
@@ -17,7 +18,8 @@ export interface Vignette {
   dispose(): void;
 }
 
-const FAMILY: PaletteToken[] = REGION_ORDER.map((id) => REGION_ACCENT[id]);
+// The smallest light really is the smallest: this much of a family light's size.
+const LITTLE = 0.72;
 
 // One light: a glowing body, a soft halo, and either open eyes (a Face) or sleeping ones.
 class Light extends Container {
@@ -107,6 +109,7 @@ function ring(count: number, radius: number, start = -Math.PI / 2): Array<{ x: n
 // ----- the seven lights singing together (the opening, and the very end) -----
 
 function harmony(size: number, hue: PaletteToken, finale: boolean): Vignette {
+  const FAMILY = familyColors(hue);
   const t = new Tweens();
   const root = new Container();
   const lines = new Graphics();
@@ -123,7 +126,7 @@ function harmony(size: number, hue: PaletteToken, finale: boolean): Vignette {
   });
   lines.stroke({ color: palette.pearl, width: 1, alpha: finale ? 0.35 : 0.2 });
   const lights = spots.map((p, i) => {
-    const light = new Light(tokens[i]!, i === 0 ? size * 0.045 : size * 0.04, false, i === 0);
+    const light = new Light(tokens[i]!, i === 0 ? size * 0.04 * LITTLE : size * 0.04, false, i === 0);
     light.position.set(p.x, p.y);
     spin.addChild(light);
     // The song moves around the ring: each light swells in turn.
@@ -185,6 +188,7 @@ function landGlyph(region: RegionId, s: number): Graphics {
 // ----- the Silence creeps in; the song fades -----
 
 function silence(size: number, hue: PaletteToken): Vignette {
+  const FAMILY = familyColors(hue);
   const t = new Tweens();
   const root = new Container();
   const lines = new Graphics();
@@ -197,7 +201,7 @@ function silence(size: number, hue: PaletteToken): Vignette {
   lines.stroke({ color: palette.pearl, width: 1, alpha: 0.2 });
   const tokens = [hue, ...FAMILY];
   const lights = spots.map((p, i) => {
-    const light = new Light(tokens[i]!, size * 0.04, false, i === 0);
+    const light = new Light(tokens[i]!, i === 0 ? size * 0.04 * LITTLE : size * 0.04, false, i === 0);
     light.position.set(p.x, p.y);
     root.addChild(light);
     return light;
@@ -229,6 +233,7 @@ function silence(size: number, hue: PaletteToken): Vignette {
 // ----- the family flies out, one light to each land -----
 
 function depart(size: number, hue: PaletteToken): Vignette {
+  const FAMILY = familyColors(hue);
   const t = new Tweens();
   const root = new Container();
   const lands = ring(6, size * 0.48);
@@ -239,7 +244,7 @@ function depart(size: number, hue: PaletteToken): Vignette {
     root.addChild(glyph);
     t.add(gsap.to(glyph, { alpha: 0.9, duration: 0.6, delay: 1.9 + i * 0.25 }));
   });
-  const me = new Light(hue, size * 0.04, false, true);
+  const me = new Light(hue, size * 0.04 * LITTLE, false, true);
   root.addChild(me);
   const near = ring(6, size * 0.14);
   FAMILY.forEach((token, i) => {
@@ -257,7 +262,8 @@ function depart(size: number, hue: PaletteToken): Vignette {
 
 // ----- each sings inside its land until it falls asleep -----
 
-function sleeping(size: number): Vignette {
+function sleeping(size: number, hue: PaletteToken): Vignette {
+  const FAMILY = familyColors(hue);
   const t = new Tweens();
   const root = new Container();
   const songs = new Graphics();
@@ -317,10 +323,11 @@ function shoreWaves(size: number, hue: PaletteToken, t: Tweens): Graphics {
 // ----- the smallest, too young to go, tucked in asleep on the shore -----
 
 function shore(size: number, hue: PaletteToken): Vignette {
+  const FAMILY = familyColors(hue);
   const t = new Tweens();
   const root = new Container();
   root.addChild(shoreWaves(size, hue, t));
-  const me = new Light(hue, size * 0.045, true, true);
+  const me = new Light(hue, size * 0.045 * LITTLE, true, true);
   me.position.set(0, size * 0.14);
   root.addChild(me);
   breathe(t, me.body, 0.06, 3.4);
@@ -337,6 +344,7 @@ function shore(size: number, hue: PaletteToken): Vignette {
 // ----- the smallest light wakes on a quiet shore -----
 
 function wake(size: number, hue: PaletteToken): Vignette {
+  const FAMILY = familyColors(hue);
   const t = new Tweens();
   const root = new Container();
   root.addChild(shoreWaves(size, hue, t));
@@ -349,7 +357,7 @@ function wake(size: number, hue: PaletteToken): Vignette {
     root.addChild(far);
     t.add(gsap.to(far, { alpha: 0.7, duration: 1.4, yoyo: true, repeat: -1, delay: 1.5 + i * 0.35, ease: 'sine.inOut' }));
   });
-  const me = new Light(hue, size * 0.05, true, true);
+  const me = new Light(hue, size * 0.05 * LITTLE, true, true);
   me.position.set(0, size * 0.14);
   me.alpha = 0.45;
   root.addChild(me);
@@ -456,12 +464,12 @@ function asleep(region: RegionId, size: number, hue: PaletteToken): Vignette {
   const t = new Tweens();
   const root = new Container();
   root.addChild(backdrop(region, size, t));
-  const sleeper = new Light(REGION_ACCENT[region], size * 0.045, true);
+  const sleeper = new Light(familyColor(region, hue), size * 0.045, true);
   sleeper.position.set(size * 0.08, size * 0.06);
   sleeper.alpha = 0.55;
   root.addChild(sleeper);
   breathe(t, sleeper.body, 0.06, 3.2);
-  const me = new Light(hue, size * 0.045, false, true);
+  const me = new Light(hue, size * 0.045 * LITTLE, false, true);
   me.position.set(-size * 0.55, -size * 0.05);
   me.alpha = 0;
   root.addChild(me);
@@ -476,18 +484,19 @@ function asleep(region: RegionId, size: number, hue: PaletteToken): Vignette {
 // ----- all six asleep, waiting -----
 
 function waiting(size: number, hue: PaletteToken): Vignette {
+  const FAMILY = familyColors(hue);
   const t = new Tweens();
   const root = new Container();
   const spots = ring(6, size * 0.32);
   spots.forEach((p, i) => {
-    const sleeper = new Light(FAMILY[i]!, size * 0.035, true);
+    const sleeper = new Light(FAMILY[i]!, size * 0.042, true);
     sleeper.position.set(p.x, p.y);
     sleeper.alpha = 0.45;
     root.addChild(sleeper);
     breathe(t, sleeper.body, 0.07, 3, i * 0.4);
     t.add(gsap.to(sleeper, { alpha: 0.9, duration: 0.5, yoyo: true, repeat: -1, repeatDelay: 5.2, delay: 0.8 + i * 0.95 }));
   });
-  const me = new Light(hue, size * 0.05, false, true);
+  const me = new Light(hue, size * 0.05 * LITTLE, false, true);
   root.addChild(me);
   // The little light looks from one sleeper to the next.
   spots.forEach((p, i) => t.add(gsap.delayedCall(0.8 + i * 0.95, () => me.face?.lookAt(Math.sign(p.x) * Math.min(1, Math.abs(p.x) / (size * 0.2)), p.y / (size * 0.3)))));
@@ -500,11 +509,11 @@ function home(region: RegionId, size: number, hue: PaletteToken): Vignette {
   const t = new Tweens();
   const root = new Container();
   root.addChild(backdrop(region, size, t));
-  const kin = new Light(REGION_ACCENT[region], size * 0.045, true);
+  const kin = new Light(familyColor(region, hue), size * 0.045, true);
   kin.position.set(size * 0.1, size * 0.06);
   kin.alpha = 0.55;
   root.addChild(kin);
-  const me = new Light(hue, size * 0.045, false, true);
+  const me = new Light(hue, size * 0.045 * LITTLE, false, true);
   me.position.set(-size * 0.16, 0);
   root.addChild(me);
   me.face?.lookAt(1, 0.2);
@@ -539,10 +548,11 @@ function home(region: RegionId, size: number, hue: PaletteToken): Vignette {
 // ----- the whole family, circling together -----
 
 function together(size: number, hue: PaletteToken): Vignette {
+  const FAMILY = familyColors(hue);
   const t = new Tweens();
   const root = new Container();
-  const me = new Light(hue, size * 0.055, false, true);
-  const family = FAMILY.map((token) => new Light(token, size * 0.04, false));
+  const me = new Light(hue, size * 0.045 * LITTLE, false, true);
+  const family = FAMILY.map((token) => new Light(token, size * 0.045, false));
   root.addChild(...family, me);
   const turn = { a: 0, r: size * 0.5 };
   const place = () =>
@@ -571,7 +581,7 @@ export function buildArt(art: Art, size: number, hue: PaletteToken): Vignette {
       v = depart(size, hue);
       break;
     case 'sleeping':
-      v = sleeping(size);
+      v = sleeping(size, hue);
       break;
     case 'shore':
       v = shore(size, hue);

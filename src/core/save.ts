@@ -1,6 +1,7 @@
 import { events } from './events';
 import type { RegionId } from '../regions/types';
 import { SAVE_KEY } from '../config/game';
+import type { LightColor } from '../story/family';
 import { REGION_ORDER as REGION_IDS } from '../regions/catalog';
 
 const LEVELS_PER_REGION = 10;
@@ -51,7 +52,8 @@ function isSaveData(value: unknown): value is SaveData {
 
 // ----- Profiles: each player is a named light with its own save on this device -----
 
-export type ProfileColor = 'mint' | 'lavender' | 'peach' | 'sky' | 'rose' | 'sage';
+// Seven colours to choose from; the family wears the other six (story/family.ts).
+export type ProfileColor = LightColor;
 
 export interface Profile {
   id: string;

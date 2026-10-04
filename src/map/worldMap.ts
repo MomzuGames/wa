@@ -3,12 +3,13 @@ import { Container, type FederatedPointerEvent, Graphics } from 'pixi.js';
 import type { Scene } from '../core/sceneManager';
 import type { RegionId } from '../regions/types';
 import { REGION_ORDER } from '../regions/catalog';
-import { alphas, palette } from '../design/palette';
+import { familyColor } from '../story/family';
+import { alphas, palette, type PaletteToken } from '../design/palette';
 import { durations, easings, scaled } from '../design/motion';
 import { spiritStyle } from '../ui/spirit';
 import { isRegionComplete, regionUnlocked, solvedCount } from '../core/progress';
 import { createGlow } from '../fx/glow';
-import { isCompact } from '../design/layout';
+import { hud, isCompact } from '../design/layout';
 import { RegionNode, type RegionState, regionNodeStyle } from './regionNode';
 import { events } from '../core/events';
 import { reducedMotion } from '../design/motion';
@@ -29,6 +30,11 @@ const mapStyle = {
   tourPause: 1.6,
   // The opening's last image: six lights falling, each into its land.
   fallSeconds: 1.7,
+  dreamAlpha: 0.14, // the lands while the opening finishes
+  landedAlpha: 0.32, // a land once its light has fallen into it
+  wakeSeconds: 1.6,
+  promptRadius: 26,
+  belowHud: 44,
   fallStagger: 0.45,
   fallRadius: 6,
   landRipple: 46,
@@ -66,10 +72,16 @@ export class WorldMapScene implements Scene {
   // The region whose completion is still to be shown; its outgoing path stays dark until then.
   private pendingReveal: RegionId | null;
 
+  // Dreaming: the opening's last moments. The lands are dim and cannot be chosen, and the
+  // light stays put, until the player taps it and the map wakes (see wakeUp).
+  private dreaming: boolean;
+
   constructor(
     private onSelect: (id: RegionId) => void,
     private reveal: MapReveal | null = null,
+    dreaming = false,
   ) {
+    this.dreaming = dreaming;
     this.pendingReveal = reveal?.completed ?? null;
     this.litPaths.filters = [createGlow(palette.pearl, { distance: 12, strength: 1 })];
     this.pulses.filters = [createGlow(palette.pearl, { distance: 10, strength: 1.2 })];
@@ -85,6 +97,13 @@ export class WorldMapScene implements Scene {
       this.world.addChild(node);
     }
     this.applyStates();
+    if (dreaming) {
+      for (const node of this.nodes.values()) {
+        node.alpha = mapStyle.dreamAlpha;
+        node.eventMode = 'none';
+      }
+      this.paths.alpha = mapStyle.dreamAlpha;
+    }
     // The map leans toward the pointer, and the regions brighten as the light passes them.
     this.container.eventMode = 'static';
     this.container.on('globalpointermove', (e: FederatedPointerEvent) => {
@@ -120,7 +139,8 @@ export class WorldMapScene implements Scene {
 
   private spiritSpot(id: RegionId): { x: number; y: number } {
     const p = this.position(id);
-    return { x: p.x, y: p.y + mapStyle.spiritOffsetY };
+    // Never up among the icons at the top of the screen.
+    return { x: p.x, y: Math.max(p.y + mapStyle.spiritOffsetY, hud.top() + mapStyle.belowHud) };
   }
 
   // The light roams from region to region, lighting each as it arrives.
@@ -131,7 +151,7 @@ export class WorldMapScene implements Scene {
 
   // The night the family left, as the smallest light remembers it: six lights fall out of
   // the sky, each into its own land, and sink into it with a ripple.
-  async playArrival(): Promise<void> {
+  async playArrival(player: PaletteToken): Promise<void> {
     const layer = new Container();
     layer.eventMode = 'none';
     this.world.addChild(layer);
@@ -141,7 +161,7 @@ export class WorldMapScene implements Scene {
         (id, i) =>
           new Promise<void>((resolve) => {
             const p = this.position(id);
-            const accent = this.nodes.get(id)!.accent;
+            const accent = palette[familyColor(id, player)];
             const light = new Graphics().circle(0, 0, mapStyle.fallRadius * 2.6).fill({ color: accent, alpha: 0.16 }).circle(0, 0, mapStyle.fallRadius).fill({ color: accent });
             light.filters = [createGlow(accent, { distance: 12, strength: 1.2 })];
             light.position.set(p.x + (rng.next() - 0.5) * 120, -this.world.y - 30);
@@ -162,6 +182,8 @@ export class WorldMapScene implements Scene {
                   ease: easings.response,
                   onUpdate: () => ripple.clear().circle(p.x, p.y, 8 + r.p * mapStyle.landRipple).stroke({ color: accent, width: 1.5, alpha: 0.6 * (1 - r.p) }),
                 });
+                const node = this.nodes.get(id)!;
+                if (this.dreaming) gsap.to(node, { alpha: mapStyle.landedAlpha, duration: scaled(durations.pieceMove) * 3 });
                 gsap.to(light, { alpha: 0, duration: scaled(durations.pieceMove) * 2, onComplete: () => resolve() });
                 gsap.to(light.scale, { x: 0.3, y: 0.3, duration: scaled(durations.pieceMove) * 2 });
               },
@@ -170,6 +192,47 @@ export class WorldMapScene implements Scene {
       ),
     );
     layer.destroy({ children: true });
+  }
+
+  // Where the light waits while the opening finishes: the middle of the screen.
+  get dreamSpot(): { x: number; y: number } {
+    return { x: this.width / 2, y: this.height * 0.5 };
+  }
+
+  // A faint ring breathes around the light; resolves when the player taps it.
+  waitForLightTap(): Promise<void> {
+    const { x, y } = this.dreamSpot;
+    const ring = new Graphics().circle(0, 0, mapStyle.promptRadius).stroke({ color: palette.pearl, width: 1, alpha: 0.6 });
+    ring.position.set(x, y);
+    ring.alpha = 0;
+    const hit = new Graphics().circle(0, 0, mapStyle.promptRadius * 2).fill({ color: palette.pearl, alpha: 0.001 });
+    hit.position.set(x, y);
+    hit.eventMode = 'static';
+    hit.cursor = 'pointer';
+    this.container.addChild(ring, hit);
+    const breath = gsap.to(ring, { alpha: 0.35, duration: 1.6, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+    const grow = gsap.fromTo(ring.scale, { x: 0.9, y: 0.9 }, { x: 1.15, y: 1.15, duration: 1.6, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+    return new Promise((resolve) => {
+      hit.on('pointertap', () => {
+        breath.kill();
+        grow.kill();
+        ring.destroy();
+        hit.destroy();
+        resolve();
+      });
+    });
+  }
+
+  // The map wakes: the lands brighten, become choosable, and the light starts to roam.
+  wakeUp(): void {
+    if (!this.dreaming) return;
+    this.dreaming = false;
+    for (const node of this.nodes.values()) {
+      gsap.to(node, { alpha: 1, duration: scaled(mapStyle.wakeSeconds), ease: easings.ambient });
+      node.eventMode = 'static';
+    }
+    gsap.to(this.paths, { alpha: 1, duration: scaled(mapStyle.wakeSeconds) });
+    this.roam(this.firstUnfinished());
   }
 
   // Choosing a region: its name lights fully and the light leaps into the figure.
@@ -189,6 +252,7 @@ export class WorldMapScene implements Scene {
   }
 
   enter(): void {
+    if (this.dreaming) return;
     if (this.reveal) {
       void this.playReveal(this.reveal.completed);
       return;

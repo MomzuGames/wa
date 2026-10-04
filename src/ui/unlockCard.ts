@@ -1,12 +1,13 @@
 import { cssHex, rgba } from '../design/palette';
 import { progression } from '../core/progress';
 import { STORE, purchase, restore, unlockWithCode } from '../core/store';
+import { currentProfile } from '../core/save';
+import { familyColors } from '../story/family';
 
 // The card that opens on a paid level: one story line and the way to unlock the full
 // journey. On the website that is a family code; in the app, a purchase (for now the test
 // store). Like the profile card, it is DOM, so text fields and buttons behave natively.
 
-const FAMILY = ['mint', 'lavender', 'peach', 'sky', 'rose', 'sage'] as const;
 
 const css = `
 .chowa-unlock { position: fixed; inset: 0; z-index: 12; display: flex; align-items: center; justify-content: center;
@@ -60,8 +61,10 @@ export class UnlockCard {
     this.root = root;
     const free = progression.freeLevels;
     const more = (progression.levelsPerRegion - free) * 6;
-    const kin = FAMILY.map((c, i) => {
-      const a = (i / FAMILY.length) * Math.PI * 2 - Math.PI / 2;
+    const hue = currentProfile()?.color ?? 'mint';
+    const family = familyColors(hue);
+    const kin = family.map((c, i) => {
+      const a = (i / family.length) * Math.PI * 2 - Math.PI / 2;
       return `<div class="kin" style="left:${60 + Math.cos(a) * 50}px;top:${35 + Math.sin(a) * 28}px;background:${cssHex(c)};animation-delay:${-i * 0.5}s"></div>`;
     }).join('');
     const ways =
@@ -73,7 +76,7 @@ export class UnlockCard {
            <p class="note">Test store: no payment is taken.</p>`;
     root.innerHTML = `
       <div class="card">
-        <div class="family"><div class="me"></div>${kin}</div>
+        <div class="family"><div class="me" style="box-shadow:0 0 16px 3px ${cssHex(hue)}"></div>${kin}</div>
         <h2>Your family is waiting</h2>
         <p>The first ${free} puzzles in each of the six lands are free. Unlock the full journey to wake your family: ${more} more puzzles and the rest of the story.</p>
         ${ways}

@@ -1,5 +1,6 @@
 import { cssHex, rgba, type PaletteToken } from '../design/palette';
-import { REGION_ACCENT, REGION_NAME, REGION_ORDER } from '../regions/catalog';
+import { REGION_NAME, REGION_ORDER } from '../regions/catalog';
+import { familyColor } from '../story/family';
 import type { RegionId } from '../regions/types';
 import { events } from '../core/events';
 import { scene, type SceneId } from '../story/script';
@@ -16,12 +17,12 @@ const ORDER: SceneId[] = [
   'finale',
 ];
 
-function title(id: SceneId): { name: string; color: PaletteToken } {
+function title(id: SceneId, player: PaletteToken): { name: string; color: PaletteToken } {
   if (id === 'prologue') return { name: 'The Silence', color: 'pearl' };
   if (id === 'waiting') return { name: 'Waiting', color: 'pearl' };
   if (id === 'finale') return { name: 'Together', color: 'pearl' };
   const [kind, region] = id.split(':') as ['asleep' | 'home', RegionId];
-  return { name: `${REGION_NAME[region]}: ${kind === 'asleep' ? 'asleep' : 'home again'}`, color: REGION_ACCENT[region] };
+  return { name: `${REGION_NAME[region]}: ${kind === 'asleep' ? 'asleep' : 'home again'}`, color: familyColor(region, player) };
 }
 
 const css = `
@@ -53,7 +54,7 @@ let styled = false;
 export class StoryBook {
   private root: HTMLDivElement | null = null;
 
-  open(reached: ReadonlySet<SceneId>): void {
+  open(reached: ReadonlySet<SceneId>, player: PaletteToken): void {
     if (this.root) return;
     if (!styled) {
       styled = true;
@@ -67,7 +68,7 @@ export class StoryBook {
       if (e.target === root) this.close();
     });
     const rows = ORDER.map((id) => {
-      const { name, color } = title(id);
+      const { name, color } = title(id, player);
       const open = reached.has(id);
       const line = open ? scene(id)[0]!.line : '· · ·';
       return `<button class="row" data-id="${id}" ${open ? '' : 'disabled'} style="--c:${cssHex(color)}">

@@ -3,11 +3,13 @@ import { cssHex } from '../design/palette';
 import { installLink } from '../core/install';
 import { IS_APP } from '../config/platform';
 import { STORE, relock } from '../core/store';
+import { LIGHT_COLORS } from '../story/family';
 
 // The one piece of DOM in the game: choosing which light you are. Each light is a
 // named profile with its own save on this device. No accounts, nothing leaves the device.
 
-const COLORS: ProfileColor[] = ['mint', 'lavender', 'peach', 'sky', 'rose', 'sage'];
+// Seven colours: whichever is chosen, the family in the story wears the other six.
+const COLORS: readonly ProfileColor[] = LIGHT_COLORS;
 
 const css = `
 .chowa-profiles { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;

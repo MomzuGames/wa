@@ -19,7 +19,7 @@ export const speechStyle = {
 } as const;
 
 export const familyStyle = {
-  size: 0.6, // of the light's radius
+  size: 1.25, // of the light's radius: the smallest light is the player's
   history: 240, // remembered positions along the path
   spacing: 9, // positions between followers
   follow: 5,
@@ -104,7 +104,7 @@ export class Spirit extends Container {
     events.on('spirit:joy', ({ x, y }) => void this.joy(x, y));
     events.on('spirit:dive', ({ x, y }) => void this.dive(x, y));
     events.on('spirit:family', (tokens) => this.setFamily(tokens));
-    events.on('spirit:say', (lines) => void this.say(lines));
+    events.on('spirit:say', ({ lines, done }) => void this.say(lines).then(() => done?.()));
     this.scheduleIdle();
   }
 

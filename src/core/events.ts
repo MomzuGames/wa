@@ -18,7 +18,7 @@ export interface GameEvents {
   // The family lights that follow the light (one per land finished), in their colours.
   'spirit:family': PaletteToken[];
   // The light says something to itself in a small bubble, one line after another.
-  'spirit:say': string[];
+  'spirit:say': { lines: string[]; done?: () => void };
   'spirit:react': SpiritReaction;
   'audio:started': void;
   'progress:changed': void;
