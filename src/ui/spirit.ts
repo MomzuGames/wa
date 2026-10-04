@@ -1,11 +1,22 @@
 import gsap from 'gsap';
-import { Container, FillGradient, Graphics } from 'pixi.js';
+import { Container, FillGradient, Graphics, Text } from 'pixi.js';
 import { palette, rgba, type PaletteToken } from '../design/palette';
 import { breathe, durations, easings, reducedMotion, scaled } from '../design/motion';
 import { createGlow } from '../fx/glow';
 import type { ParticleSystem } from '../fx/particles';
 import { events } from '../core/events';
 import { Face } from './face';
+
+export const speechStyle = {
+  fontSize: 14,
+  padX: 12,
+  padY: 8,
+  above: 34, // bubble centre above the light
+  margin: 12, // from the screen edges
+  hold: 2.4, // plus reading time
+  secondsPerWord: 0.3,
+  gap: 0.5,
+} as const;
 
 export const familyStyle = {
   size: 0.6, // of the light's radius
@@ -63,6 +74,8 @@ export class Spirit extends Container {
   private familyLayer = new Container();
   private followers: Array<{ view: Container; x: number; y: number; phase: number }> = [];
   private path: Array<{ x: number; y: number }> = [];
+  private bubble: Container | null = null;
+  private sayToken = 0;
 
   constructor(private particles: ParticleSystem) {
     super();
@@ -91,6 +104,7 @@ export class Spirit extends Container {
     events.on('spirit:joy', ({ x, y }) => void this.joy(x, y));
     events.on('spirit:dive', ({ x, y }) => void this.dive(x, y));
     events.on('spirit:family', (tokens) => this.setFamily(tokens));
+    events.on('spirit:say', (lines) => void this.say(lines));
     this.scheduleIdle();
   }
 
@@ -151,6 +165,56 @@ export class Spirit extends Container {
       const bob = reducedMotion() ? 0 : Math.sin(this.clock * 2 + f.phase) * 2;
       f.view.position.set(f.x - this.x, f.y - this.y + bob);
     });
+  }
+
+  // Talking to itself: a small bubble above the light, one line after another, that
+  // follows it as it roams and fades on its own.
+  private async say(lines: string[]): Promise<void> {
+    const token = ++this.sayToken;
+    for (const line of lines) {
+      if (token !== this.sayToken) return;
+      this.bubble?.destroy({ children: true });
+      const text = new Text({
+        text: line,
+        style: { fontFamily: 'Quicksand', fontWeight: '300', fontSize: speechStyle.fontSize, letterSpacing: 1, fill: palette.pearl, align: 'center', wordWrap: true, wordWrapWidth: 220 },
+        resolution: window.devicePixelRatio || 1,
+      });
+      text.anchor.set(0.5);
+      const w = text.width + speechStyle.padX * 2;
+      const h = text.height + speechStyle.padY * 2;
+      const card = new Graphics()
+        .roundRect(-w / 2, -h / 2, w, h, Math.min(14, h / 2))
+        .fill({ color: palette.ink, alpha: 0.9 })
+        .stroke({ color: palette[this.hue], width: 1, alpha: 0.6 })
+        .moveTo(-5, h / 2)
+        .lineTo(0, h / 2 + 6)
+        .lineTo(5, h / 2)
+        .fill({ color: palette.ink, alpha: 0.9 });
+      const bubble = new Container();
+      bubble.addChild(card, text);
+      bubble.y = -speechStyle.above - h / 2;
+      bubble.alpha = 0;
+      this.bubble = bubble;
+      this.addChild(bubble);
+      this.placeBubble();
+      this.face.lookAt(0, -0.6);
+      await gsap.to(bubble, { alpha: 1, duration: scaled(durations.pieceMove) });
+      await new Promise((r) => gsap.delayedCall(speechStyle.hold + line.split(/\s+/).length * speechStyle.secondsPerWord, r));
+      await gsap.to(bubble, { alpha: 0, duration: scaled(durations.pieceMove) });
+      bubble.destroy({ children: true });
+      if (this.bubble === bubble) this.bubble = null;
+      await new Promise((r) => gsap.delayedCall(speechStyle.gap, r));
+    }
+  }
+
+  // Keeps the bubble on screen when the light is near an edge.
+  private placeBubble(): void {
+    const b = this.bubble;
+    if (!b || b.destroyed) return;
+    const half = b.width / 2;
+    const min = speechStyle.margin + half - this.x;
+    const max = window.innerWidth - speechStyle.margin - half - this.x;
+    b.x = Math.max(min, Math.min(max, 0));
   }
 
   show(x?: number, y?: number): void {
@@ -445,6 +509,7 @@ export class Spirit extends Container {
       this.face.lookAt(Math.cos(o.angle + Math.PI / 2), 0);
     }
     this.moveFamily(dt);
+    this.placeBubble();
     events.emit('spirit:at', { x: this.x, y: this.y });
     const moved = Math.hypot(this.x - this.lastPos.x, this.y - this.lastPos.y);
     const from = this.lastPos;

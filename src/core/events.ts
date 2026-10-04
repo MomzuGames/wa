@@ -17,6 +17,8 @@ export interface GameEvents {
   'spirit:tint': PaletteToken;
   // The family lights that follow the light (one per land finished), in their colours.
   'spirit:family': PaletteToken[];
+  // The light says something to itself in a small bubble, one line after another.
+  'spirit:say': string[];
   'spirit:react': SpiritReaction;
   'audio:started': void;
   'progress:changed': void;
@@ -31,8 +33,9 @@ export interface GameEvents {
   // A paid level was chosen: open the unlock card. And: the full journey was unlocked or locked again.
   'unlock:ask': void;
   'unlock:changed': void;
-  // Watch the story so far again (from the profile card).
-  'story:replay': void;
+  // Open the Story screen (the book icon), and play one scene from it.
+  'story:book': void;
+  'story:play': string;
   // A situational tip from a region (a refused star, a stroke let go too soon); shown once ever.
   'level:tip': { id: string; text: string };
 }

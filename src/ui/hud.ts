@@ -10,6 +10,7 @@ export class Hud extends Container {
   private helpButton: IconButton;
   private hintButton: IconButton;
   private accountButton: IconButton;
+  private storyButton: IconButton;
   private onAccount: () => void = () => {};
   private onHelp: () => void = () => {};
   private onHint: () => void = () => {};
@@ -21,10 +22,12 @@ export class Hud extends Container {
     this.helpButton = new IconButton('help', () => this.onHelp());
     this.hintButton = new IconButton('hint', () => this.onHint());
     this.accountButton = new IconButton('account', () => this.onAccount());
+    // The story so far, on the title and the map (beside the person icon).
+    this.storyButton = new IconButton('book', () => events.emit('story:book'));
     this.backButton.visible = false;
     this.helpButton.visible = false;
     this.hintButton.visible = false;
-    this.addChild(this.settingsButton, this.backButton, this.helpButton, this.hintButton, this.accountButton);
+    this.addChild(this.settingsButton, this.backButton, this.helpButton, this.hintButton, this.accountButton, this.storyButton);
   }
 
   setBackVisible(visible: boolean): void {
@@ -33,6 +36,7 @@ export class Hud extends Container {
 
   setAccountButton(handler: (() => void) | null): void {
     this.accountButton.visible = handler !== null;
+    this.storyButton.visible = handler !== null;
     this.onAccount = handler ?? (() => {});
   }
 
@@ -52,6 +56,7 @@ export class Hud extends Container {
     this.helpButton.position.set(right - gap, top);
     this.hintButton.position.set(right - gap * 2, top);
     this.accountButton.position.set(right - gap, top);
+    this.storyButton.position.set(right - gap * 2, top);
     this.backButton.position.set(hud.left(), top);
   }
 }

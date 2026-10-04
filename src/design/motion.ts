@@ -23,12 +23,13 @@ export const tipTiming = {
   retry: 5,
 } as const;
 
-// Story scenes: each beat fades in, holds (a tap moves on once it has shown), fades out.
+// Story scenes: each beat fades in and waits for a tap; a faint dot breathes once it may.
 export const storyTiming = {
   fadeIn: 0.8,
   lineDelay: 0.5,
-  hold: 6,
-  tapAfter: 1.2,
+  tapAfter: 2.2,
+  promptAlpha: 0.32,
+  promptBreath: 1.6,
   fadeOut: 0.6,
 } as const;
 

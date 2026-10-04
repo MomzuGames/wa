@@ -27,6 +27,11 @@ const mapStyle = {
   spiritOffsetY: -78,
   parallax: 22, // px the map shifts toward the pointer
   tourPause: 1.6,
+  // The opening's last image: six lights falling, each into its land.
+  fallSeconds: 1.7,
+  fallStagger: 0.45,
+  fallRadius: 6,
+  landRipple: 46,
 } as const;
 
 // Region positions as fractions of the screen, forming a gentle winding journey.
@@ -122,6 +127,49 @@ export class WorldMapScene implements Scene {
   private roam(startAt: RegionId): void {
     const points = REGION_ORDER.map((id) => this.spiritSpot(id));
     events.emit('spirit:tour', { points, pause: mapStyle.tourPause, start: REGION_ORDER.indexOf(startAt) });
+  }
+
+  // The night the family left, as the smallest light remembers it: six lights fall out of
+  // the sky, each into its own land, and sink into it with a ripple.
+  async playArrival(): Promise<void> {
+    const layer = new Container();
+    layer.eventMode = 'none';
+    this.world.addChild(layer);
+    const rng = createRng('arrival');
+    await Promise.all(
+      REGION_ORDER.map(
+        (id, i) =>
+          new Promise<void>((resolve) => {
+            const p = this.position(id);
+            const accent = this.nodes.get(id)!.accent;
+            const light = new Graphics().circle(0, 0, mapStyle.fallRadius * 2.6).fill({ color: accent, alpha: 0.16 }).circle(0, 0, mapStyle.fallRadius).fill({ color: accent });
+            light.filters = [createGlow(accent, { distance: 12, strength: 1.2 })];
+            light.position.set(p.x + (rng.next() - 0.5) * 120, -this.world.y - 30);
+            const ripple = new Graphics();
+            layer.addChild(ripple, light);
+            const delay = i * mapStyle.fallStagger;
+            gsap.to(light, { x: p.x, duration: scaled(mapStyle.fallSeconds), delay, ease: 'sine.out' });
+            gsap.to(light, {
+              y: p.y,
+              duration: scaled(mapStyle.fallSeconds),
+              delay,
+              ease: 'power2.in',
+              onComplete: () => {
+                const r = { p: 0 };
+                gsap.to(r, {
+                  p: 1,
+                  duration: scaled(durations.completion) * 0.4,
+                  ease: easings.response,
+                  onUpdate: () => ripple.clear().circle(p.x, p.y, 8 + r.p * mapStyle.landRipple).stroke({ color: accent, width: 1.5, alpha: 0.6 * (1 - r.p) }),
+                });
+                gsap.to(light, { alpha: 0, duration: scaled(durations.pieceMove) * 2, onComplete: () => resolve() });
+                gsap.to(light.scale, { x: 0.3, y: 0.3, duration: scaled(durations.pieceMove) * 2 });
+              },
+            });
+          }),
+      ),
+    );
+    layer.destroy({ children: true });
   }
 
   // Choosing a region: its name lights fully and the light leaps into the figure.

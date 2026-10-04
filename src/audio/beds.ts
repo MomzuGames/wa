@@ -13,6 +13,7 @@ export interface Bed {
 const bedConfig = {
   fadeInSeconds: 5,
   fadeOutSeconds: 3,
+  level: 1.5, // the whole bed, a little above its quiet textures alone
 } as const;
 
 function pick<T>(items: readonly T[]): T {
@@ -43,7 +44,7 @@ function finish(parts: Parts): Bed {
         parts.loops.forEach((l) => l.start(0));
       }
       parts.out.gain.cancelScheduledValues(now);
-      parts.out.gain.rampTo(1, bedConfig.fadeInSeconds, now);
+      parts.out.gain.rampTo(bedConfig.level, bedConfig.fadeInSeconds, now);
     },
     stop() {
       const now = Tone.now();
@@ -55,6 +56,34 @@ function finish(parts: Parts): Bed {
       parts.disposables.forEach((d) => d.dispose());
     },
   };
+}
+
+interface Voice {
+  triggerAttackRelease(note: string, duration: Tone.Unit.Time, time?: Tone.Unit.Time, velocity?: number): unknown;
+}
+
+// Each land's signature: a short melody on its own instrument, at its own pace, that comes
+// back after a quiet stretch, alternating between its phrases so it is recognisable
+// without looping audibly. Phrases are pentatonic degrees (7 is the octave above 2).
+function melody(p: Parts, voice: Voice, octave: number, phrases: number[][], step: number, rest: [number, number], velocity = 0.5): void {
+  let phrase = 0;
+  let i = 0;
+  let wait = Math.round(rest[0] / 2 / step);
+  const loop = new Tone.Loop((time) => {
+    if (wait > 0) {
+      wait--;
+      return;
+    }
+    const notes = phrases[phrase % phrases.length]!;
+    voice.triggerAttackRelease(note(notes[i]!, octave), step * 1.8, time, velocity * (0.85 + Math.random() * 0.3));
+    i++;
+    if (i >= notes.length) {
+      i = 0;
+      phrase++;
+      wait = Math.round((rest[0] + Math.random() * (rest[1] - rest[0])) / step);
+    }
+  }, step);
+  p.loops.push(loop);
 }
 
 // Tidepools: lapping filtered noise with occasional water drips.
@@ -76,9 +105,12 @@ function tidepools(destination: Tone.ToneAudioNode): Bed {
     if (Math.random() < 0.3) drip.triggerAttackRelease(note(pick([0, 1, 2, 3, 4, 6]), 5), '16n', time + Math.random() * 0.4, 0.5);
   }, '2n');
   loop.humanize = true;
+  // Melody: a soft marimba rocking like small waves.
+  const marimba = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.012, decay: 0.7, sustain: 0, release: 0.8 }, volume: -19 }).connect(p.out);
+  melody(p, marimba, 4, [[0, 2, 4, 2, 1, 0], [4, 5, 4, 2, 3, 2]], 0.42, [7, 11]);
   p.sources.push(noise, lapLfo, filterLfo);
   p.loops.push(loop);
-  p.disposables.push(lap, lapLfo, filter, filterLfo, noise, drip);
+  p.disposables.push(lap, lapLfo, filter, filterLfo, noise, drip, marimba);
   return finish(p);
 }
 
@@ -111,9 +143,18 @@ function nightsky(destination: Tone.ToneAudioNode): Bed {
   const bellLoop = new Tone.Loop((time) => {
     if (Math.random() < 0.22) bell.triggerAttackRelease(note(pick([4, 6, 7, 9]), 5), '8n', time, 0.4);
   }, '1n');
+  // Melody: a twinkling celesta, high and quick, like stars coming out.
+  const celesta = new Tone.FMSynth({
+    harmonicity: 4,
+    modulationIndex: 2,
+    envelope: { attack: 0.012, decay: 0.9, sustain: 0, release: 1.4 },
+    modulationEnvelope: { attack: 0.01, decay: 0.3, sustain: 0, release: 0.4 },
+    volume: -21,
+  }).connect(chorus);
+  melody(p, celesta, 5, [[4, 7, 9, 7, 5, 4], [2, 4, 7, 9, 10, 9, 7]], 0.28, [8, 13], 0.45);
   p.sources.push(chorus);
   p.loops.push(chordLoop, bellLoop);
-  p.disposables.push(pad, chorus, bell);
+  p.disposables.push(pad, chorus, bell, celesta);
   return finish(p);
 }
 
@@ -136,9 +177,18 @@ function stonegarden(destination: Tone.ToneAudioNode): Bed {
     if (Math.random() < 0.09) wood.triggerAttackRelease(pick(['D3', 'A3', 'E3']), '32n', time);
   }, '4n');
   loop.humanize = true;
+  // Melody: a warm kalimba, unhurried, settling back onto the root like a stone set down.
+  const kalimba = new Tone.FMSynth({
+    harmonicity: 5.07,
+    modulationIndex: 1.4,
+    envelope: { attack: 0.012, decay: 1.1, sustain: 0, release: 1.2 },
+    modulationEnvelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.2 },
+    volume: -18,
+  }).connect(p.out);
+  melody(p, kalimba, 4, [[0, 0, 2, 4, 2], [3, 2, 1, 0]], 0.55, [8, 12]);
   p.sources.push(oscA, oscB, humLfo, detune);
   p.loops.push(loop);
-  p.disposables.push(hum, humLfo, filter, oscA, oscB, detune, wood);
+  p.disposables.push(hum, humLfo, filter, oscA, oscB, detune, wood, kalimba);
   return finish(p);
 }
 
@@ -158,9 +208,14 @@ function crystalcaves(destination: Tone.ToneAudioNode): Bed {
   const hiA = new Tone.Oscillator({ frequency: 'A5', type: 'sine', volume: -34 }).connect(shimmer);
   const hiB = new Tone.Oscillator({ frequency: 'E6', type: 'sine', volume: -38 }).connect(shimmer);
   const hiLfo = new Tone.LFO({ frequency: 0.023, min: -8, max: 8 }).connect(hiB.detune);
+  // Melody: slow glassy rings, notes leaning on each other, echoing in the cave.
+  const glass = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.02, decay: 2.8, sustain: 0, release: 3 }, volume: -18 }).connect(p.out);
+  const echo = new Tone.FeedbackDelay({ delayTime: 0.75, feedback: 0.35, wet: 0.35 }).connect(p.out);
+  glass.connect(echo);
+  melody(p, glass, 5, [[0, 3, 2], [4, 3, 1, 0]], 1.3, [6, 10], 0.55);
   p.sources.push(hiA, hiB, shimmerLfo, hiLfo);
   p.loops.push(bowlLoop);
-  p.disposables.push(bowls, shimmer, shimmerLfo, hiA, hiB, hiLfo);
+  p.disposables.push(bowls, shimmer, shimmerLfo, hiA, hiB, hiLfo, glass, echo);
   return finish(p);
 }
 
@@ -190,9 +245,18 @@ function moonlake(destination: Tone.ToneAudioNode): Bed {
   const sub = new Tone.Gain(0.5).connect(p.out);
   const subLfo = new Tone.LFO({ frequency: 0.041, min: 0.2, max: 0.7 }).connect(sub.gain);
   const subOsc = new Tone.Oscillator({ frequency: 'D2', type: 'sine', volume: -26 }).connect(sub);
+  // Melody: a gentle electric piano drifting down, like moonlight on water.
+  const piano = new Tone.FMSynth({
+    harmonicity: 1,
+    modulationIndex: 2.2,
+    envelope: { attack: 0.02, decay: 2.2, sustain: 0.15, release: 2.5 },
+    modulationEnvelope: { attack: 0.01, decay: 1.2, sustain: 0.1, release: 1.5 },
+    volume: -19,
+  }).connect(filter);
+  melody(p, piano, 4, [[7, 5, 4, 2, 1, 0], [4, 5, 7, 5, 4]], 0.75, [9, 14], 0.55);
   p.sources.push(subOsc, subLfo);
   p.loops.push(swell);
-  p.disposables.push(pad, filter, sub, subLfo, subOsc);
+  p.disposables.push(pad, filter, sub, subLfo, subOsc, piano);
   return finish(p);
 }
 
@@ -239,6 +303,8 @@ function shadowterrace(destination: Tone.ToneAudioNode): Bed {
   const breathFilter = new Tone.Filter({ type: 'bandpass', frequency: 300, Q: 0.6 }).connect(p.out);
   breath.connect(breathFilter);
   const breathLfo = new Tone.LFO({ frequency: 0.05, min: 180, max: 420 }).connect(breathFilter.frequency);
+  // Melody: a koto figure climbing the terrace step by step, then resting.
+  melody(p, pluck, 4, [[0, 1, 2, 4, 5, 4], [2, 4, 5, 7, 5]], 0.45, [10, 15], 0.6);
   p.sources.push(breath, breathLfo);
   p.loops.push(wander, swell);
   p.disposables.push(pluck, pluckFilter, pad, padFilter, breath, breathFilter, breathLfo);

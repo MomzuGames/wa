@@ -2,7 +2,6 @@ import { createProfile, currentProfile, isFullGame, deleteProfile, exportBackup,
 import { cssHex } from '../design/palette';
 import { installLink } from '../core/install';
 import { IS_APP } from '../config/platform';
-import { events } from '../core/events';
 import { STORE, relock } from '../core/store';
 
 // The one piece of DOM in the game: choosing which light you are. Each light is a
@@ -116,14 +115,8 @@ export class ProfileOverlay {
     const share = document.createElement('a');
     share.textContent = 'Share the game';
     share.addEventListener('click', () => void this.share(card));
-    const story = document.createElement('a');
-    story.textContent = 'Watch the story';
-    story.addEventListener('click', () => {
-      this.close();
-      events.emit('story:replay');
-    });
     // The app is shared through the App Store, not a web link.
-    links.append(story, backup, restore);
+    links.append(backup, restore);
     if (!IS_APP) links.append(share);
     // Testing the unlock in the app before real purchases exist: put the lock back.
     if (STORE === 'test' && isFullGame()) {

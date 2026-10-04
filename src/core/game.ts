@@ -10,6 +10,7 @@ import type { RegionId, ShellContext } from '../regions/types';
 import { REGION_ACCENT, REGION_ORDER } from '../regions/catalog';
 import type { PaletteToken } from '../design/palette';
 import { StoryPlayer } from '../story/storyPlayer';
+import { StoryBook } from '../ui/storyBook';
 import type { SceneId } from '../story/script';
 import { earnedScenes, landDone, scenesAfterLevel, type Solved } from '../story/triggers';
 import { getModule } from '../regions/registry';
@@ -39,10 +40,13 @@ export interface GameDeps {
 export class Game {
   private storyPlaying = false;
   private previewingStory = false;
+  private storyBook = new StoryBook();
 
   constructor(private deps: GameDeps) {
     events.on('input:back', () => this.back());
-    events.on('story:replay', () => void this.playStory(earnedScenes(this.solved()), false));
+    // The book icon: every chapter reached so far, any of which plays again when tapped.
+    events.on('story:book', () => this.storyBook.open(new Set(earnedScenes(this.solved()))));
+    events.on('story:play', (id) => void this.replay(id as SceneId));
     events.on('progress:changed', () => this.showFamily(!(this.deps.scenes.scene instanceof LevelShellScene)));
     // Browsers only allow audio after a gesture. iOS Safari accepts only a finished
     // tap (touchend/click) or a key, never touchstart/pointerdown, so listen to those
@@ -113,9 +117,10 @@ export class Game {
     this.deps.hud.setAccountButton(() => this.deps.openAccount());
     this.deps.audio.setScene('quiet');
     this.showFamily(true);
-    void this.deps.scenes.go(new WorldMapScene((id) => this.showRegion(id), reveal));
+    const map = new WorldMapScene((id) => this.showRegion(id), reveal);
+    void this.deps.scenes.go(map);
     // A new light's journey opens with the story of how it began.
-    if (!seenStory().has('prologue') && !this.previewingStory) void this.playStory(['prologue']);
+    if (!seenStory().has('prologue') && !this.previewingStory) void this.openJourney(map);
   }
 
   showRegion(id: RegionId, justSolved: number | null = null): void {
@@ -173,6 +178,22 @@ export class Game {
       // The free part of this land is done: offer the rest of the journey, gently.
       if (next < progression.levelsPerRegion && paywalled(next)) gsap.delayedCall(scaled(durations.sceneTransition) * 2, () => events.emit('unlock:ask'));
     }
+  }
+
+  // The opening: the story, then on the map six lights fall into their lands, and the
+  // smallest light makes up its mind.
+  private async openJourney(map: WorldMapScene): Promise<void> {
+    await this.playStory(['prologue']);
+    if (this.deps.scenes.scene !== map) return;
+    await map.playArrival();
+    events.emit('spirit:say', ['They are out there, asleep in the six lands.', 'I will find every one of them.']);
+  }
+
+  // A chapter from the book; the opening also shows its fall into the lands again.
+  private async replay(id: SceneId): Promise<void> {
+    await this.playStory([id], false);
+    const map = this.deps.scenes.scene;
+    if (id === 'prologue' && map instanceof WorldMapScene) await map.playArrival();
   }
 
   private solved(): Solved {

@@ -1,7 +1,7 @@
 import { Graphics } from 'pixi.js';
 
 // All icons are drawn centred on (0,0) inside a box of `size` px, stroked in `color`.
-export type IconName = 'settings' | 'back' | 'speaker' | 'speakerOff' | 'note' | 'sparkle' | 'leaf' | 'restart' | 'play' | 'help' | 'hint' | 'yes' | 'no' | 'account' | 'turn' | 'flip';
+export type IconName = 'settings' | 'back' | 'speaker' | 'speakerOff' | 'note' | 'sparkle' | 'leaf' | 'restart' | 'play' | 'help' | 'hint' | 'yes' | 'no' | 'account' | 'turn' | 'flip' | 'book';
 
 export function drawIcon(g: Graphics, name: IconName, size: number, color: number): Graphics {
   const s = size / 2;
@@ -68,6 +68,12 @@ export function drawIcon(g: Graphics, name: IconName, size: number, color: numbe
       g.moveTo(0, -s * 0.7).lineTo(0, s * 0.7).stroke({ ...stroke, alpha: 0.5 });
       g.moveTo(-s * 0.15, -s * 0.5).lineTo(-s * 0.7, 0).lineTo(-s * 0.15, s * 0.5).closePath().stroke(stroke);
       g.moveTo(s * 0.15, -s * 0.5).lineTo(s * 0.7, 0).lineTo(s * 0.15, s * 0.5).closePath().fill({ color, alpha: 0.5 });
+      break;
+    case 'book':
+      // An open book: two pages curving from the spine.
+      g.moveTo(0, -s * 0.42).quadraticCurveTo(-s * 0.4, -s * 0.6, -s * 0.82, -s * 0.48).lineTo(-s * 0.82, s * 0.46).quadraticCurveTo(-s * 0.4, s * 0.34, 0, s * 0.56).stroke(stroke);
+      g.moveTo(0, -s * 0.42).quadraticCurveTo(s * 0.4, -s * 0.6, s * 0.82, -s * 0.48).lineTo(s * 0.82, s * 0.46).quadraticCurveTo(s * 0.4, s * 0.34, 0, s * 0.56).stroke(stroke);
+      g.moveTo(0, -s * 0.42).lineTo(0, s * 0.56).stroke(stroke);
       break;
     case 'account':
       g.circle(0, -s * 0.28, s * 0.28).stroke(stroke);
