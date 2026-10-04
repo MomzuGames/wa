@@ -20,11 +20,14 @@ import { type InstallContext, INSTALL_PARAM, captureInstallPrompt, installContex
 import { InstallGuide } from './ui/installGuide';
 import { IS_APP } from './config/platform';
 import { initNative } from './core/native';
+import { showStudioCard } from './ui/studioCard';
 
 // Chrome may offer its install prompt before the game has loaded; hold on to it.
 captureInstallPrompt();
 
 async function main() {
+  // The studio card covers the screen while everything below loads.
+  const studio = skipStudioCard() ? null : showStudioCard();
   await document.fonts.load("300 64px 'Quicksand'", GAME_TITLE);
   // In the iPhone app, saves are restored from the app's own storage before they are read.
   await initNative();
@@ -67,7 +70,9 @@ async function main() {
   installFpsMeter(app);
   exposeDevHandles(app, scenes, audio, game);
 
+  await studio?.held;
   game.start();
+  studio?.dismiss();
   // First visit: choose or create a light before playing.
   const welcome = () => {
     if (!hasProfiles()) profiles.open();
@@ -94,3 +99,8 @@ function showInstallGuide(then: () => void): boolean {
 }
 
 void main();
+
+// Dev jumps straight into a level skip the studio card.
+function skipStudioCard(): boolean {
+  return import.meta.env.DEV && new URLSearchParams(location.search).has('level');
+}

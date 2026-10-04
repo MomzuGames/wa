@@ -16,6 +16,17 @@ export const durations = {
   panelToggle: 0.45,
 } as const;
 
+// The MomoGames studio card shown at launch.
+export const studioCard = {
+  fadeIn: 0.8,
+  hold: 1.6, // shortest time the logo stays before it may fade (a tap skips the rest)
+  fadeOut: 0.7,
+  sway: 2.4, // mohawk spikes rocking
+  blink: 4.2,
+  twinkle: 1.8, // controller buttons
+  bob: 3.6,
+} as const;
+
 export const breathe = {
   scaleFrom: 1.0,
   scaleTo: 1.05,
