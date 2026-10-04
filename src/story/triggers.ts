@@ -24,6 +24,12 @@ export function earnedScenes(solved: Solved): SceneId[] {
   return out;
 }
 
+// Scenes earned but never seen (a player who got there before the story existed, or who
+// finished a land and never came back to it). The prologue has its own opening.
+export function missedScenes(solved: Solved, seen: ReadonlySet<string>): SceneId[] {
+  return earnedScenes(solved).filter((id) => id !== 'prologue' && !seen.has(id));
+}
+
 // The scenes a level just solved in `region` has earned and that have not been seen.
 // The prologue belongs to the map, not to a level.
 export function scenesAfterLevel(region: RegionId, solved: Solved, seen: ReadonlySet<string>): SceneId[] {

@@ -13,7 +13,7 @@ import type { PaletteToken } from '../design/palette';
 import { StoryPlayer } from '../story/storyPlayer';
 import { StoryBook } from '../ui/storyBook';
 import type { SceneId } from '../story/script';
-import { earnedScenes, landDone, scenesAfterLevel, type Solved } from '../story/triggers';
+import { earnedScenes, landDone, missedScenes, scenesAfterLevel, type Solved } from '../story/triggers';
 import { getModule } from '../regions/registry';
 import { palette } from '../design/palette';
 import { durations, easings, scaled } from '../design/motion';
@@ -124,6 +124,7 @@ export class Game {
     const map = new WorldMapScene((id) => this.showRegion(id), reveal, opening);
     void this.deps.scenes.go(map);
     if (opening) void this.openJourney(map);
+    else if (!reveal && !this.previewingStory) void this.catchUp();
   }
 
   showRegion(id: RegionId, justSolved: number | null = null): void {
@@ -208,6 +209,15 @@ export class Game {
     hud.alpha = 0;
     hud.visible = true;
     gsap.to(hud, { alpha: 1, duration: scaled(durations.sceneTransition) });
+    await this.catchUp();
+  }
+
+  // Story a player has earned but missed plays once, on the map, before they carry on.
+  private async catchUp(): Promise<void> {
+    const missed = missedScenes(this.solved(), seenStory());
+    if (missed.length === 0) return;
+    await this.playStory(missed);
+    this.showFamily(true);
   }
 
   // A chapter from the book; the opening also shows its fall into the lands again.
@@ -228,7 +238,9 @@ export class Game {
   // One family light per finished land follows the player's light.
   private showFamily(visible: boolean): void {
     const solved = this.solved();
-    const tokens: PaletteToken[] = visible ? REGION_ORDER.filter((id) => landDone(solved[id])).map((id) => familyColor(id, this.hue())) : [];
+    // A family light follows only once the player has seen it come home.
+    const seen = seenStory();
+    const tokens: PaletteToken[] = visible ? REGION_ORDER.filter((id) => landDone(solved[id]) && seen.has(`home:${id}`)).map((id) => familyColor(id, this.hue())) : [];
     events.emit('spirit:family', tokens);
   }
 

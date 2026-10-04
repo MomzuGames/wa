@@ -21,9 +21,12 @@ export const speechStyle = {
 export const familyStyle = {
   size: 1.25, // of the light's radius: the smallest light is the player's
   history: 240, // remembered positions along the path
-  spacing: 9, // positions between followers
-  follow: 5,
-  restRadius: 22,
+  spacing: 12, // positions between followers
+  follow: 4,
+  restRadius: 38,
+  restSpin: 0.25,
+  gap: 28, // never closer to the light than this
+  travelSpeed: 25, // px per second: below this the light counts as resting
 } as const;
 
 export const spiritStyle = {
@@ -74,6 +77,7 @@ export class Spirit extends Container {
   private familyLayer = new Container();
   private followers: Array<{ view: Container; x: number; y: number; phase: number }> = [];
   private path: Array<{ x: number; y: number }> = [];
+  private pace = 0; // smoothed speed of the light, px per second
   private bubble: Container | null = null;
   private sayToken = 0;
 
@@ -146,20 +150,42 @@ export class Spirit extends Container {
     });
   }
 
-  // Each follower heads for where the light was a moment ago; at rest they gather close.
+  // While the light travels, each follower heads for where it was a moment ago; when it
+  // rests they drift in a loose ring around it. Either way they keep a little distance, so
+  // a family light is never mistaken for a second copy of the player's own.
   private moveFamily(dt: number): void {
     if (this.followers.length === 0) return;
     const last = this.path[this.path.length - 1];
-    if (!last || Math.hypot(last.x - this.x, last.y - this.y) > 0.4) {
+    const step = last ? Math.hypot(last.x - this.x, last.y - this.y) : 0;
+    if (!last || step > 0.4) {
       this.path.push({ x: this.x, y: this.y });
       if (this.path.length > familyStyle.history) this.path.shift();
     }
+    this.pace += ((dt > 0 ? step / dt : 0) - this.pace) * Math.min(1, dt * 4);
+    const travelling = this.pace > familyStyle.travelSpeed;
     const k = Math.min(1, dt * familyStyle.follow);
     this.followers.forEach((f, i) => {
+      let tx: number;
+      let ty: number;
       const back = this.path[this.path.length - 1 - (i + 1) * familyStyle.spacing];
-      const rest = (i / this.followers.length) * Math.PI * 2 + this.clock * 0.3;
-      const tx = back ? back.x : this.x + Math.cos(rest) * familyStyle.restRadius;
-      const ty = back ? back.y : this.y + Math.sin(rest) * familyStyle.restRadius * 0.6;
+      if (travelling && back) {
+        tx = back.x;
+        ty = back.y;
+      } else {
+        const a = (i / this.followers.length) * Math.PI * 2 + this.clock * familyStyle.restSpin;
+        tx = this.x + Math.cos(a) * familyStyle.restRadius;
+        ty = this.y + Math.sin(a) * familyStyle.restRadius * 0.7;
+      }
+      // Never closer than the gap: push the target out from the light.
+      const dx = tx - this.x;
+      const dy = ty - this.y;
+      const d = Math.hypot(dx, dy);
+      if (d < familyStyle.gap) {
+        const ux = d > 0.01 ? dx / d : Math.cos(i * 2.4);
+        const uy = d > 0.01 ? dy / d : Math.sin(i * 2.4);
+        tx = this.x + ux * familyStyle.gap;
+        ty = this.y + uy * familyStyle.gap;
+      }
       f.x += (tx - f.x) * k;
       f.y += (ty - f.y) * k;
       const bob = reducedMotion() ? 0 : Math.sin(this.clock * 2 + f.phase) * 2;

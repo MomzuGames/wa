@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { REGION_ORDER } from '../regions/catalog';
 import type { RegionId } from '../regions/types';
 import { scene, type SceneId } from './script';
-import { earnedScenes, scenesAfterLevel, type Solved } from './triggers';
+import { earnedScenes, missedScenes, scenesAfterLevel, type Solved } from './triggers';
 
 const none = (): Solved => Object.fromEntries(REGION_ORDER.map((id) => [id, []])) as unknown as Solved;
 const upTo = (n: number) => Array.from({ length: n }, (_, i) => i);
@@ -36,5 +36,11 @@ describe('story', () => {
     const seen = new Set<string>(['waiting', ...REGION_ORDER.map((id) => `asleep:${id}`), ...REGION_ORDER.slice(1).map((id) => `home:${id}`)]);
     expect(scenesAfterLevel('tidepools' as RegionId, solved, seen)).toEqual(['home:tidepools', 'finale']);
     expect(earnedScenes(solved)).toHaveLength(1 + 6 + 1 + 6 + 1);
+  });
+
+  it('catches up on scenes a player earned before seeing them, in story order', () => {
+    const solved = { ...none(), tidepools: upTo(10) };
+    expect(missedScenes(solved, new Set(['prologue']))).toEqual(['asleep:tidepools', 'home:tidepools']);
+    expect(missedScenes(solved, new Set(['prologue', 'asleep:tidepools', 'home:tidepools']))).toEqual([]);
   });
 });
