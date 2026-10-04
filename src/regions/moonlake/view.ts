@@ -14,7 +14,9 @@ import { createMoonVoice, type MoonVoice } from './sound';
 const lakeStyle = {
   padRadius: 22,
   minPadRadius: 12,
-  edgeAlpha: 0.25,
+  edgeWidth: 2,
+  edgeAlpha: 0.6,
+  edgeShadeAlpha: 0.55,
   darkAlpha: 0.12,
   halfAlpha: 0.45,
   litAlpha: 0.9,
@@ -121,13 +123,20 @@ export class RippleLevelScene implements LevelScene {
       minDist = Math.min(minDist, Math.hypot(pa.x - pb.x, pa.y - pb.y) * this.area.size);
     }
     this.radius = Math.max(lakeStyle.minPadRadius, Math.min(lakeStyle.padRadius, minDist * 0.34));
+    // The links between pads must read over the lake's own background lines: a dark band
+    // first to part them from the backdrop, then the line itself in the lake's colour.
     this.edges.clear();
-    for (const [a, b] of this.level.edges) {
-      const pa = this.padPos(a);
-      const pb = this.padPos(b);
-      this.edges.moveTo(pa.x, pa.y).lineTo(pb.x, pb.y);
+    for (const [width, color, alpha] of [
+      [lakeStyle.edgeWidth * 3.5, palette.void, lakeStyle.edgeShadeAlpha],
+      [lakeStyle.edgeWidth, this.accent, lakeStyle.edgeAlpha],
+    ] as const) {
+      for (const [a, b] of this.level.edges) {
+        const pa = this.padPos(a);
+        const pb = this.padPos(b);
+        this.edges.moveTo(pa.x, pa.y).lineTo(pb.x, pb.y);
+      }
+      this.edges.stroke({ color, width, alpha, cap: 'round' });
     }
-    this.edges.stroke({ color: palette.dim, width: 1, alpha: lakeStyle.edgeAlpha });
     this.views.forEach((v, i) => {
       v.root.position.copyFrom(this.padPos(i));
       this.drawPad(i);
@@ -348,7 +357,7 @@ export class RippleLevelScene implements LevelScene {
     const states = opts.states ?? 2;
     const pos = (i: number) => ({ x: (i - (count - 1) / 2) * gap, y: 0 });
     const lines = new Graphics();
-    if (count > 1) lines.moveTo(pos(0).x, 0).lineTo(pos(count - 1).x, 0).stroke({ color: palette.dim, width: 1, alpha: lakeStyle.edgeAlpha });
+    if (count > 1) lines.moveTo(pos(0).x, 0).lineTo(pos(count - 1).x, 0).stroke({ color: this.accent, width: lakeStyle.edgeWidth, alpha: lakeStyle.edgeAlpha });
     const ripple = new Graphics();
     const pads = Array.from({ length: count }, (_, i) => {
       const g = new Graphics();
