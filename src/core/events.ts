@@ -35,9 +35,8 @@ export interface GameEvents {
   // A paid level was chosen: open the unlock card. And: the full journey was unlocked or locked again.
   'unlock:ask': void;
   'unlock:changed': void;
-  // Open the Story screen (the book icon), and play one scene from it.
+  // The book icon: replay the story so far.
   'story:book': void;
-  'story:play': string;
   // A situational tip from a region (a refused star, a stroke let go too soon); shown once ever.
   'level:tip': { id: string; text: string };
 }

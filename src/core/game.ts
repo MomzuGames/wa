@@ -11,7 +11,6 @@ import { REGION_ORDER } from '../regions/catalog';
 import { familyColor } from '../story/family';
 import type { PaletteToken } from '../design/palette';
 import { StoryPlayer } from '../story/storyPlayer';
-import { StoryBook } from '../ui/storyBook';
 import type { SceneId } from '../story/script';
 import { earnedScenes, landDone, missedScenes, scenesAfterLevel, type Solved } from '../story/triggers';
 import { getModule } from '../regions/registry';
@@ -42,13 +41,11 @@ export class Game {
   private storyPlaying = false;
   private previewingStory = false;
   private inOpening = false;
-  private storyBook = new StoryBook();
 
   constructor(private deps: GameDeps) {
     events.on('input:back', () => this.back());
-    // The book icon: every chapter reached so far, any of which plays again when tapped.
-    events.on('story:book', () => this.storyBook.open(new Set(earnedScenes(this.solved())), this.hue()));
-    events.on('story:play', (id) => void this.replay(id as SceneId));
+    // The book icon: the story so far, from the beginning.
+    events.on('story:book', () => void this.replay(earnedScenes(this.solved())));
     events.on('progress:changed', () => this.showFamily(!(this.deps.scenes.scene instanceof LevelShellScene)));
     // Browsers only allow audio after a gesture. iOS Safari accepts only a finished
     // tap (touchend/click) or a key, never touchstart/pointerdown, so listen to those
@@ -220,11 +217,14 @@ export class Game {
     this.showFamily(true);
   }
 
-  // A chapter from the book; the opening also shows its fall into the lands again.
-  private async replay(id: SceneId): Promise<void> {
-    await this.playStory([id], false);
+  // The story so far, again, in order: the opening, then (on the map) its lights falling
+  // into the lands once more, then every later chapter reached.
+  private async replay(ids: SceneId[]): Promise<void> {
+    if (this.storyPlaying || this.inOpening) return;
+    await this.playStory(['prologue'], false);
     const map = this.deps.scenes.scene;
-    if (id === 'prologue' && map instanceof WorldMapScene) await map.playArrival(this.hue());
+    if (map instanceof WorldMapScene) await map.playArrival(this.hue());
+    await this.playStory(ids.filter((id) => id !== 'prologue'), false);
   }
 
   private hue(): PaletteToken {
