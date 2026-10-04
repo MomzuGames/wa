@@ -4,10 +4,14 @@ import { events } from './events';
 import { devFlags } from './dev';
 import { createRng } from './rng';
 import { levelPlayable, paywalled, progression, setBypassLocks } from './progress';
-import { currentProfile } from './save';
+import { currentProfile, getRegion, markStorySeen, seenStory } from './save';
 import { applyUpdateIfReady } from './updates';
 import type { RegionId, ShellContext } from '../regions/types';
-import { REGION_ORDER } from '../regions/catalog';
+import { REGION_ACCENT, REGION_ORDER } from '../regions/catalog';
+import type { PaletteToken } from '../design/palette';
+import { StoryPlayer } from '../story/storyPlayer';
+import type { SceneId } from '../story/script';
+import { earnedScenes, landDone, scenesAfterLevel, type Solved } from '../story/triggers';
 import { getModule } from '../regions/registry';
 import { palette } from '../design/palette';
 import { durations, easings, scaled } from '../design/motion';
@@ -33,8 +37,13 @@ export interface GameDeps {
 }
 
 export class Game {
+  private storyPlaying = false;
+  private previewingStory = false;
+
   constructor(private deps: GameDeps) {
     events.on('input:back', () => this.back());
+    events.on('story:replay', () => void this.playStory(earnedScenes(this.solved()), false));
+    events.on('progress:changed', () => this.showFamily(!(this.deps.scenes.scene instanceof LevelShellScene)));
     // Browsers only allow audio after a gesture. iOS Safari accepts only a finished
     // tap (touchend/click) or a key, never touchstart/pointerdown, so listen to those
     // and keep trying until the audio context is really running.
@@ -56,6 +65,15 @@ export class Game {
       const trail = params.get('trail');
       if (trail && REGION_ORDER.includes(trail as RegionId)) {
         this.showRegion(trail as RegionId);
+        return;
+      }
+      // ?story=all (or a scene id such as asleep:moonlake) previews the story.
+      const story = params.get('story');
+      if (story) {
+        this.previewingStory = true;
+        this.showMap();
+        const all: SceneId[] = ['prologue', ...REGION_ORDER.map((id) => `asleep:${id}` as SceneId), 'waiting', ...REGION_ORDER.map((id) => `home:${id}` as SceneId), 'finale'];
+        void this.playStory(story === 'all' ? all : [story as SceneId], false);
         return;
       }
       const jump = params.get('level');
@@ -84,6 +102,7 @@ export class Game {
     this.deps.hud.setLevelButtons(null);
     this.deps.hud.setAccountButton(() => this.deps.openAccount());
     this.deps.audio.setScene('title');
+    this.showFamily(true);
     void this.deps.scenes.go(new TitleScene(() => this.showMap()));
   }
 
@@ -93,7 +112,10 @@ export class Game {
     this.deps.hud.setLevelButtons(null);
     this.deps.hud.setAccountButton(() => this.deps.openAccount());
     this.deps.audio.setScene('quiet');
+    this.showFamily(true);
     void this.deps.scenes.go(new WorldMapScene((id) => this.showRegion(id), reveal));
+    // A new light's journey opens with the story of how it began.
+    if (!seenStory().has('prologue') && !this.previewingStory) void this.playStory(['prologue']);
   }
 
   showRegion(id: RegionId, justSolved: number | null = null): void {
@@ -101,6 +123,7 @@ export class Game {
     this.deps.hud.setLevelButtons(null);
     this.deps.hud.setAccountButton(null);
     this.deps.audio.setScene(id);
+    this.showFamily(true);
     void this.deps.scenes.go(new RegionScene(id, (level) => this.showLevel(id, level), justSolved));
   }
 
@@ -108,6 +131,8 @@ export class Game {
     this.deps.hud.setBackVisible(true);
     this.deps.hud.setAccountButton(null);
     this.deps.audio.setScene(id);
+    // In a level the light sits by the level's name: the family waits off stage.
+    this.showFamily(false);
     const module = getModule(id);
     const scene = new LevelShellScene(
       module,
@@ -121,6 +146,7 @@ export class Game {
 
   private async afterLevel(result: LevelResult): Promise<void> {
     const { regionId, levelIndex, completedRegion } = result;
+    const story = scenesAfterLevel(regionId, this.solved(), seenStory());
     if (completedRegion) {
       const ctx: ShellContext = {
         palette,
@@ -133,9 +159,11 @@ export class Game {
       };
       haptic('medium');
       await getModule(regionId).playRegionFinale(ctx);
+      await this.playStory(story);
       this.showMap({ completed: regionId });
       return;
     }
+    await this.playStory(story);
     const next = levelIndex + 1;
     // A solved level leads straight into the next one; only the last level returns to the trail.
     if (next < progression.levelsPerRegion && levelPlayable(regionId, next)) {
@@ -147,7 +175,39 @@ export class Game {
     }
   }
 
+  private solved(): Solved {
+    return Object.fromEntries(REGION_ORDER.map((id) => [id, getRegion(id).solved])) as unknown as Solved;
+  }
+
+  // One family light per finished land follows the player's light.
+  private showFamily(visible: boolean): void {
+    const solved = this.solved();
+    const tokens: PaletteToken[] = visible ? REGION_ORDER.filter((id) => landDone(solved[id])).map((id) => REGION_ACCENT[id]) : [];
+    events.emit('spirit:family', tokens);
+  }
+
+  // Plays story scenes over the current screen; they are remembered as seen.
+  private async playStory(ids: SceneId[], remember = true): Promise<void> {
+    if (ids.length === 0 || this.storyPlaying) return;
+    this.storyPlaying = true;
+    if (remember) ids.forEach((id) => markStorySeen(id));
+    const player = new StoryPlayer(this.deps.app, currentProfile()?.color ?? 'mint', this.deps.audio);
+    const stage = this.deps.app.stage;
+    // The scene, the light and the HUD rest out of sight while the story plays; only the
+    // drifting dust of the background (the stage's first layer) stays behind it.
+    const resting = stage.children.slice(1).filter((c) => c.visible);
+    stage.addChild(player);
+    await player.fadedIn;
+    resting.forEach((c) => (c.visible = false));
+    await player.play(ids);
+    resting.forEach((c) => (c.visible = true));
+    await player.fadeOut();
+    player.destroy();
+    this.storyPlaying = false;
+  }
+
   private back(): void {
+    if (this.storyPlaying) return;
     const { settings, scenes } = this.deps;
     if (settings.isOpen) {
       settings.toggle();

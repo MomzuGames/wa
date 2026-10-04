@@ -23,6 +23,15 @@ export const tipTiming = {
   retry: 5,
 } as const;
 
+// Story scenes: each beat fades in, holds (a tap moves on once it has shown), fades out.
+export const storyTiming = {
+  fadeIn: 0.8,
+  lineDelay: 0.5,
+  hold: 6,
+  tapAfter: 1.2,
+  fadeOut: 0.6,
+} as const;
+
 // The MomoGames studio card shown at launch.
 export const studioCard = {
   fadeIn: 0.8,

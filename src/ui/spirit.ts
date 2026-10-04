@@ -7,6 +7,14 @@ import type { ParticleSystem } from '../fx/particles';
 import { events } from '../core/events';
 import { Face } from './face';
 
+export const familyStyle = {
+  size: 0.6, // of the light's radius
+  history: 240, // remembered positions along the path
+  spacing: 9, // positions between followers
+  follow: 5,
+  restRadius: 22,
+} as const;
+
 export const spiritStyle = {
   radius: 9,
   haloRadius: 28,
@@ -51,6 +59,10 @@ export class Spirit extends Container {
   private clock = 0;
   private tourToken = 0;
   private joyful: Promise<void> | null = null;
+  // Family lights woken in finished lands follow a little way behind, along the same path.
+  private familyLayer = new Container();
+  private followers: Array<{ view: Container; x: number; y: number; phase: number }> = [];
+  private path: Array<{ x: number; y: number }> = [];
 
   constructor(private particles: ParticleSystem) {
     super();
@@ -60,7 +72,7 @@ export class Spirit extends Container {
     this.face = new Face(spiritStyle.radius);
     this.body.addChild(this.halo, this.dot, this.face);
     this.sway.addChild(this.body);
-    this.addChild(this.sway);
+    this.addChild(this.familyLayer, this.sway);
     this.eventMode = 'none';
     this.alpha = 0;
     this.breatheTween = gsap.to(this.body.scale, {
@@ -78,6 +90,7 @@ export class Spirit extends Container {
     events.on('spirit:tour', ({ points, pause, start }) => void this.tour(points, pause, start));
     events.on('spirit:joy', ({ x, y }) => void this.joy(x, y));
     events.on('spirit:dive', ({ x, y }) => void this.dive(x, y));
+    events.on('spirit:family', (tokens) => this.setFamily(tokens));
     this.scheduleIdle();
   }
 
@@ -97,6 +110,47 @@ export class Spirit extends Container {
     });
     this.halo.clear().circle(0, 0, spiritStyle.haloRadius).fill(gradient);
     this.dot.filters = [createGlow(palette[token], { distance: 16, strength: 1.4 })];
+  }
+
+  private setFamily(tokens: PaletteToken[]): void {
+    const same = tokens.length === this.followers.length;
+    if (same) return;
+    this.followers.forEach((f) => f.view.destroy({ children: true }));
+    this.followers = tokens.map((token, k) => {
+      const view = new Container();
+      const r = spiritStyle.radius * familyStyle.size;
+      view.addChild(
+        new Graphics().circle(0, 0, r * 2.4).fill({ color: palette[token], alpha: 0.16 }),
+        new Graphics().circle(0, 0, r).fill({ color: palette[token] }),
+        new Graphics()
+          .circle(-r * 0.34, -r * 0.08, r * 0.14)
+          .circle(r * 0.34, -r * 0.08, r * 0.14)
+          .fill({ color: palette.void, alpha: 0.85 }),
+      );
+      this.familyLayer.addChild(view);
+      return { view, x: this.x, y: this.y, phase: k * 1.1 };
+    });
+  }
+
+  // Each follower heads for where the light was a moment ago; at rest they gather close.
+  private moveFamily(dt: number): void {
+    if (this.followers.length === 0) return;
+    const last = this.path[this.path.length - 1];
+    if (!last || Math.hypot(last.x - this.x, last.y - this.y) > 0.4) {
+      this.path.push({ x: this.x, y: this.y });
+      if (this.path.length > familyStyle.history) this.path.shift();
+    }
+    const k = Math.min(1, dt * familyStyle.follow);
+    this.followers.forEach((f, i) => {
+      const back = this.path[this.path.length - 1 - (i + 1) * familyStyle.spacing];
+      const rest = (i / this.followers.length) * Math.PI * 2 + this.clock * 0.3;
+      const tx = back ? back.x : this.x + Math.cos(rest) * familyStyle.restRadius;
+      const ty = back ? back.y : this.y + Math.sin(rest) * familyStyle.restRadius * 0.6;
+      f.x += (tx - f.x) * k;
+      f.y += (ty - f.y) * k;
+      const bob = reducedMotion() ? 0 : Math.sin(this.clock * 2 + f.phase) * 2;
+      f.view.position.set(f.x - this.x, f.y - this.y + bob);
+    });
   }
 
   show(x?: number, y?: number): void {
@@ -390,6 +444,7 @@ export class Spirit extends Container {
       this.y += (ty - this.y) * Math.min(1, dt * 3);
       this.face.lookAt(Math.cos(o.angle + Math.PI / 2), 0);
     }
+    this.moveFamily(dt);
     events.emit('spirit:at', { x: this.x, y: this.y });
     const moved = Math.hypot(this.x - this.lastPos.x, this.y - this.lastPos.y);
     const from = this.lastPos;

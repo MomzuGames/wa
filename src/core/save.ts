@@ -26,6 +26,7 @@ export interface SaveData {
   // Instruction lines already shown, per region, so cards appear once per new idea.
   seenIntros: Partial<Record<RegionId, string[]>>;
   seenTips?: Partial<Record<RegionId, string[]>>;
+  seenStory?: string[];
 }
 
 
@@ -149,6 +150,7 @@ export function load(): SaveData {
         settings: { ...fresh.settings, ...parsed.settings },
         seenIntros: { ...(parsed.seenIntros ?? {}) },
         seenTips: { ...(parsed.seenTips ?? {}) },
+        seenStory: [...(parsed.seenStory ?? [])],
       };
       // Regions used to have more levels; drop progress that no longer exists.
       for (const id of REGION_IDS) current.regions[id].solved = current.regions[id].solved.filter((i) => i < LEVELS_PER_REGION);
@@ -187,6 +189,7 @@ export function resetProgress(): void {
   for (const id of REGION_IDS) data.regions[id] = emptyRegion();
   data.seenIntros = {};
   data.seenTips = {};
+  data.seenStory = [];
   persist();
 }
 
@@ -214,6 +217,18 @@ export function isFullGame(): boolean {
 
 export function setFullGame(value: boolean): void {
   writeJson(UNLOCK_KEY, value);
+}
+
+// Story scenes this light has watched.
+export function seenStory(): Set<string> {
+  return new Set(load().seenStory ?? []);
+}
+
+export function markStorySeen(id: string): void {
+  const data = load();
+  if ((data.seenStory ??= []).includes(id)) return;
+  data.seenStory.push(id);
+  persist();
 }
 
 // True the first time a tip is shown to this player (and records it); false ever after.
@@ -276,6 +291,7 @@ export function importBackup(code: string): number {
       mine.seenIntros[id] = [...new Set([...(mine.seenIntros[id] ?? []), ...(incoming.seenIntros?.[id] ?? [])])];
       (mine.seenTips ??= {})[id] = [...new Set([...(mine.seenTips[id] ?? []), ...(incoming.seenTips?.[id] ?? [])])];
     }
+    mine.seenStory = [...new Set([...(mine.seenStory ?? []), ...(incoming.seenStory ?? [])])];
     writeJson(saveKeyFor(p.id), mine);
   }
   writeJson(PROFILES_KEY, merged);
