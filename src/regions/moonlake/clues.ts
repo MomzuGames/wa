@@ -23,3 +23,11 @@ export function stillHelpful(level: RippleLevel, state: number[], hinted: Readon
   const presses = remainingPresses(level, state);
   return new Set([...hinted].filter((i) => presses && presses[i]! > 0));
 }
+
+// A first hint rings three pads: the right one and two that are not part of the shortest
+// way (stone pads never), so the player still has to think which.
+export function nudgePads(level: RippleLevel, state: number[], target: number, seed: string): number[] {
+  const presses = remainingPresses(level, state) ?? [];
+  const others = level.nodes.map((n, i) => (i !== target && !n.frozen && !(presses[i]! > 0) ? i : -1)).filter((i) => i >= 0);
+  return createRng(seed).shuffle([target, ...createRng(seed).shuffle(others).slice(0, 2)]);
+}

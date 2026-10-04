@@ -30,6 +30,8 @@ export interface GameEvents {
   'input:key': string;
   // A level explaining something about the current state (shown as a toast by the shell).
   'level:note': string;
+  // A hint would likely help now: the bulb glows (false when a level starts fresh).
+  'hint:ready': boolean;
   // A paid level was chosen: open the unlock card. And: the full journey was unlocked or locked again.
   'unlock:ask': void;
   'unlock:changed': void;

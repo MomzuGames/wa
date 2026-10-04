@@ -69,6 +69,12 @@ export function transform(tris: Tri[], rot: number, flip: number): Tri[] {
   return normalise(out);
 }
 
+// The orientation that shows the current shape mirrored left to right, as the player sees
+// it flip: flipping after a turn equals turning the other way after a flip.
+export function mirrorOrientation(rot: number, flip: number): { rot: number; flip: number } {
+  return { rot: (4 - (((rot % 4) + 4) % 4)) % 4, flip: flip ? 0 : 1 };
+}
+
 export function shapeKey(tris: Tri[]): string {
   return normalise(tris)
     .map((t) => t.join(','))

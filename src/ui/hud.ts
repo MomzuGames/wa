@@ -1,4 +1,7 @@
-import { Container } from 'pixi.js';
+import gsap from 'gsap';
+import { Container, Graphics } from 'pixi.js';
+import { palette } from '../design/palette';
+import { durations, easings } from '../design/motion';
 import { hud, hudGap } from '../design/layout';
 import { events } from '../core/events';
 import { IconButton } from './iconButton';
@@ -11,6 +14,9 @@ export class Hud extends Container {
   private hintButton: IconButton;
   private accountButton: IconButton;
   private storyButton: IconButton;
+  // A soft glow behind the bulb when a hint would likely help.
+  private hintGlow = new Graphics();
+  private hintGlowTween: gsap.core.Tween | null = null;
   private onAccount: () => void = () => {};
   private onHelp: () => void = () => {};
   private onHint: () => void = () => {};
@@ -27,7 +33,11 @@ export class Hud extends Container {
     this.backButton.visible = false;
     this.helpButton.visible = false;
     this.hintButton.visible = false;
-    this.addChild(this.settingsButton, this.backButton, this.helpButton, this.hintButton, this.accountButton, this.storyButton);
+    this.hintGlow.circle(0, 0, 22).fill({ color: palette.pearl, alpha: 0.12 }).circle(0, 0, 14).fill({ color: palette.pearl, alpha: 0.12 });
+    this.hintGlow.visible = false;
+    this.hintGlow.eventMode = 'none';
+    events.on('hint:ready', (ready) => this.setHintReady(ready));
+    this.addChild(this.hintGlow, this.settingsButton, this.backButton, this.helpButton, this.hintButton, this.accountButton, this.storyButton);
   }
 
   setBackVisible(visible: boolean): void {
@@ -40,10 +50,19 @@ export class Hud extends Container {
     this.onAccount = handler ?? (() => {});
   }
 
+  private setHintReady(ready: boolean): void {
+    const show = ready && this.hintButton.visible;
+    if (show === this.hintGlow.visible) return;
+    this.hintGlow.visible = show;
+    this.hintGlowTween?.kill();
+    this.hintGlowTween = show ? gsap.fromTo(this.hintGlow, { alpha: 0.3 }, { alpha: 1, duration: durations.breathe / 2, yoyo: true, repeat: -1, ease: easings.ambient }) : null;
+  }
+
   // The help (?) and hint buttons only exist while a level is being played.
   setLevelButtons(handlers: { onHelp: () => void; onHint: () => void } | null): void {
     this.helpButton.visible = handlers !== null;
     this.hintButton.visible = handlers !== null;
+    if (!handlers) this.setHintReady(false);
     this.onHelp = handlers?.onHelp ?? (() => {});
     this.onHint = handlers?.onHint ?? (() => {});
   }
@@ -55,6 +74,7 @@ export class Hud extends Container {
     this.settingsButton.position.set(right, top);
     this.helpButton.position.set(right - gap, top);
     this.hintButton.position.set(right - gap * 2, top);
+    this.hintGlow.position.copyFrom(this.hintButton.position);
     this.accountButton.position.set(right - gap, top);
     this.storyButton.position.set(right - gap * 2, top);
     this.backButton.position.set(hud.left(), top);

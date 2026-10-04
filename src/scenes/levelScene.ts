@@ -3,7 +3,7 @@ import type { Scene } from '../core/sceneManager';
 import type { LevelScene, PuzzleModule, RegionId, ShellContext } from '../regions/types';
 import { alphas, palette, rgba } from '../design/palette';
 import { durations, easings, tipTiming } from '../design/motion';
-import { headerBand, hud, layout, safeArea } from '../design/layout';
+import { headerBand, hud, safeArea } from '../design/layout';
 import { createRng } from '../core/rng';
 import { events } from '../core/events';
 import { getRegion, markIntroSeen, markTipSeen } from '../core/save';
@@ -12,7 +12,6 @@ import { ConfirmCard } from '../ui/confirm';
 import { Toast } from '../ui/toast';
 import { markSolved, recordAttempts } from '../core/progress';
 import { HintManager, hintRules } from '../hints/hintManager';
-import { HintOrb } from '../hints/hintOrb';
 import { IconButton } from '../ui/iconButton';
 import type { AudioEngine } from '../audio/engine';
 import type { ParticleSystem } from '../fx/particles';
@@ -22,8 +21,6 @@ import { Atmosphere } from '../fx/atmosphere';
 import gsap from 'gsap';
 import { haptic } from '../core/native';
 
-// Room kept for the light to the left of the level name.
-const SPIRIT_SPACE = 34;
 
 
 export interface LevelShellDeps {
@@ -43,11 +40,8 @@ export class LevelShellScene implements Scene {
   readonly container = new Container();
   private level: LevelScene;
   private hints: HintManager;
-  private orb: HintOrb;
   private restartButton: IconButton;
   private label: Text;
-  private spiritX = 0;
-  private entered = false;
   private moveLabel: Text;
   private moves = 0;
   private hud = new Container();
@@ -88,8 +82,11 @@ export class LevelShellScene implements Scene {
     const saved = getRegion(module.id);
     this.hints = new HintManager(saved.attempts[levelIndex] ?? 0, saved.cluesUsed[levelIndex] ?? 0);
     this.hints.onUnits((units) => {
-      // A soft chime the moment the orb fills, and a tip if one fits how stuck the player is.
-      if (units === hintRules.readyUnits) deps.audio.chime();
+      // When a hint would likely help: a soft chime, and the bulb begins to glow.
+      if (units === hintRules.readyUnits) {
+        deps.audio.chime();
+        events.emit('hint:ready', true);
+      }
       this.offerTip();
     });
 
@@ -106,7 +103,6 @@ export class LevelShellScene implements Scene {
     this.level.on('solved', () => void this.solved());
 
     const accent = palette[module.accent];
-    this.orb = new HintOrb(accent, () => this.askHint());
     this.restartButton = new IconButton('restart', () => this.restart());
     this.label = new Text({
       text: LEVEL_NAMES[module.id][levelIndex] ?? String(levelIndex + 1),
@@ -124,7 +120,7 @@ export class LevelShellScene implements Scene {
     this.moveLabel.alpha = alphas.hudIdle * 0.7;
 
     this.toast = new Toast(accent);
-    this.hud.addChild(this.label, this.moveLabel, this.restartButton, this.orb, this.toast);
+    this.hud.addChild(this.label, this.moveLabel, this.restartButton, this.toast);
     this.spotlight.eventMode = 'none';
     this.level.container.y = safeArea.top;
     this.stage.addChild(this.level.container);
@@ -158,8 +154,9 @@ export class LevelShellScene implements Scene {
   }
 
   enter(): void {
-    this.entered = true;
-    events.emit('spirit:glide', { x: this.spiritX, y: hud.top() });
+    // The light has dived into the puzzle: it stays out of sight until the level is solved.
+    events.emit('spirit:react', 'hide');
+    events.emit('hint:ready', this.hints.ready);
     // The card appears on its own only when a level introduces something new for this region.
     // It opens on the first page the player has not seen yet; earlier pages stay a swipe away.
     const pages = this.level.introPages?.() ?? [];
@@ -191,7 +188,7 @@ export class LevelShellScene implements Scene {
     this.lastToastAt = performance.now() - (tipTiming.gap - tipTiming.firstDelay) * 1000;
   }
 
-  // The bulb and the orb ask first; H gives a hint straight away.
+  // The bulb asks first; H gives a hint straight away.
   askHint(): void {
     if (this.finished || this.intro) return;
     const card = new ConfirmCard('Would you like a hint?', palette[this.module.accent], (yes) => {
@@ -209,7 +206,6 @@ export class LevelShellScene implements Scene {
 
   update(dt: number): void {
     this.hints.tick(dt);
-    this.orb.setFill(this.hints.fill, this.hints.ready);
     this.tipClock += dt;
     if (this.tipClock >= tipTiming.retry) {
       this.tipClock = 0;
@@ -245,24 +241,20 @@ export class LevelShellScene implements Scene {
     this.spotlight.clear().circle(width / 2, height / 2, radius).fill(gradient);
     this.intro?.resize(width, height);
     this.placeHeader(width);
-    if (this.entered) events.emit('spirit:glide', { x: this.spiritX, y: hud.top() });
     this.restartButton.position.set(hud.right(width), hud.bottom(height));
-    this.orb.position.set(hud.right(width) - layout.hudIconSize - 16, hud.bottom(height));
   }
 
-  // The light and the level name sit side by side in the top row, centred when they fit and
-  // kept clear of the back button and the icons on the right; a long name shrinks to fit.
+  // The level name sits centred in the top row, shrinking to fit between the icons.
   private placeHeader(width: number): void {
     const band = headerBand(width);
     this.label.scale.set(1);
     const natural = this.label.width;
-    const scale = Math.min(1, (band.right - band.left - SPIRIT_SPACE) / natural);
+    const scale = Math.min(1, (band.right - band.left) / natural);
     this.label.scale.set(scale);
-    const pair = SPIRIT_SPACE + natural * scale;
-    const left = Math.max(band.left, Math.min(width / 2 - pair / 2, band.right - pair));
-    this.spiritX = left + SPIRIT_SPACE / 2 - 4;
-    this.label.position.set(left + SPIRIT_SPACE + (natural * scale) / 2, hud.top());
-    this.moveLabel.position.set(this.label.x, hud.top() + 22);
+    const half = (natural * scale) / 2;
+    const x = Math.max(band.left + half, Math.min(width / 2, band.right - half));
+    this.label.position.set(x, hud.top());
+    this.moveLabel.position.set(x, hud.top() + 22);
   }
 
   private restart(): void {
@@ -307,7 +299,8 @@ export class LevelShellScene implements Scene {
     const state = this.hints.state;
     recordAttempts(this.module.id, this.levelIndex, state.units, state.used);
     const completedRegion = markSolved(this.module.id, this.levelIndex);
-    events.emit('spirit:react', 'solved');
+    // The light bursts out of the puzzle to celebrate.
+    events.emit('spirit:joy', { x: this.width / 2, y: this.height / 2 });
     haptic('light');
     await this.level.playCompletion();
     this.onDone({ regionId: this.module.id, levelIndex: this.levelIndex, completedRegion });

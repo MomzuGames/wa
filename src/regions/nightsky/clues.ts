@@ -1,10 +1,9 @@
 import { type SkyLevel, edgeBetween, newStroke } from './model';
 import { solveLevel, validStarts } from './solver';
 
-// Hints build a guide: the start of one working stroke, two lines at a time. The last
-// lines are never shown, so the finish is always the player's.
+// Hints build a guide: the start of one working stroke, two lines at a time, never more
+// than half of it, so most of the drawing is always the player's.
 export const GUIDE_STEP = 2;
-export const GUIDE_KEEP = 2;
 
 // One full working stroke as a star sequence, from the first valid start.
 export function guidePath(level: SkyLevel): number[] | null {
@@ -19,11 +18,11 @@ export interface SkyGuide {
   capped: boolean; // nothing more will be shown
 }
 
-// The guide after `hints` hints.
+// The guide after `hints` line-showing hints (0 shows only the start).
 export function guideClue(level: SkyLevel, hints: number): SkyGuide | null {
   const path = guidePath(level);
   if (!path) return null;
-  const limit = Math.max(0, path.length - 1 - GUIDE_KEEP);
+  const limit = Math.floor((path.length - 1) / 2);
   const count = Math.min(hints * GUIDE_STEP, limit);
   const remaining = newStroke(level).remaining.slice();
   const edges: number[] = [];

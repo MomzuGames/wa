@@ -15,11 +15,12 @@ import {
   type Tri,
   fromKey,
   isCover,
+  mirrorOrientation,
   placedKeys,
   transform,
   triCorners,
 } from './model';
-import { stepClue } from './clues';
+import { type StoneStep, moreSteps, stepClue } from './clues';
 import { createStoneVoice, type StoneVoice } from './sound';
 
 const stoneStyle = {
@@ -89,8 +90,13 @@ export class StoneLevelScene implements LevelScene {
   private unsubscribe: Array<() => void> = [];
   private wheelClock = 0;
   private time = 0;
-  // Stones a hint settled, so a restart can leave them where they are.
-  private hintPlaced = new Map<number, Placement>();
+  // Hints never move a stone: a nudge makes the stone to try pulse, then an outline on the
+  // board shows where it belongs (later, a few more). Outlines go once a stone is set there.
+  private hintTarget: StoneStep | null = null;
+  private nudge: { piece: number; tween: gsap.core.Tween } | null = null;
+  private ghosts = new Map<number, Placement>();
+  private ghostLayer = new Graphics();
+  private hintCount = 0;
   private onWheel = (e: WheelEvent) => this.wheel(e);
   // Pixi never hears a cancelled touch (iOS sends one when the system takes the gesture),
   // so the drag would otherwise stay open with the stone floating under nobody's finger.
@@ -111,7 +117,8 @@ export class StoneLevelScene implements LevelScene {
     this.hit.on('pointerup', () => this.onUp());
     this.hit.on('pointerupoutside', () => this.onUp());
     this.magnet.eventMode = 'none';
-    this.container.addChild(this.hit, this.rake, this.silhouette, this.magnet, this.piecesLayer, this.controls);
+    this.ghostLayer.eventMode = 'none';
+    this.container.addChild(this.hit, this.rake, this.silhouette, this.ghostLayer, this.magnet, this.piecesLayer, this.controls);
     // On-screen turn and flip buttons act on the stone you touched last.
     this.turnButton = new IconButton('turn', () => this.turn(1, this.lastTouched ?? this.firstMovable()));
     this.controls.addChild(this.turnButton);
@@ -256,6 +263,7 @@ export class StoneLevelScene implements LevelScene {
     this.turnButton.position.set(inset, height - inset);
     this.flipButton?.position.set(inset + layout.hudIconSize + 16, height - inset);
     this.drawSilhouette();
+    this.drawGhosts();
     // Tray slots along the bottom; two rows on narrow screens with many stones.
     const movable = this.views.filter((_, i) => !this.level.pieces[i]!.fixed);
     const count = movable.length;
@@ -502,6 +510,7 @@ export class StoneLevelScene implements LevelScene {
       this.voice.settle(this.placedCount);
       this.emit('move');
     }
+    this.settleHints();
     this.checkSolved();
   }
 
@@ -511,6 +520,7 @@ export class StoneLevelScene implements LevelScene {
     this.placedCount--;
     this.redrawPiece(i);
     this.emit('move');
+    this.settleHints();
   }
 
   private returnToTray(i: number): void {
@@ -560,7 +570,11 @@ export class StoneLevelScene implements LevelScene {
     const i = this.views.indexOf(target);
     const wasAt = target.placed;
     if (target.placed) this.unplace(i);
-    target.flip = target.flip ? 0 : 1;
+    // Mirror the stone as it looks now. A shape is stored as "mirror, then turn", so a
+    // turned stone that flips must also turn the other way to stay where it was.
+    const mirrored = mirrorOrientation(target.rot, target.flip);
+    target.rot = mirrored.rot;
+    target.flip = mirrored.flip;
     this.voice.turn();
     this.emit('move');
     target.animating = true;
@@ -575,7 +589,7 @@ export class StoneLevelScene implements LevelScene {
         target.animating = false;
         this.redrawPiece(i);
         if (this.dragging === target || target.placed) return;
-        const again = wasAt ? { ...wasAt, flip: target.flip } : null;
+        const again = wasAt ? { ...wasAt, rot: target.rot, flip: target.flip } : null;
         if (again && this.canPlace(i, again)) this.place(i, again, true);
         else this.returnToTray(i);
       },
@@ -601,24 +615,87 @@ export class StoneLevelScene implements LevelScene {
 
   hint(): string {
     if (this.solved) return '';
-    const step = stepClue(this.level, this.currentPlacements());
-    if (!step) return 'One stone left: turn it, or flip it, until it fits the last gap.';
-    const v = this.views[step.piece]!;
-    if (this.dragging === v) this.dragging = null;
-    this.setLastTouched(v);
-    if (step.kind === 'lift') {
-      this.hintPlaced.delete(step.piece);
-      this.unplace(step.piece);
-      this.returnToTray(step.piece);
-      return 'This stone cannot stay where it is: no finished garden has it there. It has gone back to the tray.';
+    this.hintCount++;
+    const placed = this.currentPlacements();
+    if (this.hintTarget && this.stepDone(this.hintTarget)) this.hintTarget = null;
+    // First: which stone to try (or which one is in the way), and why.
+    if (!this.hintTarget) {
+      const step = stepClue(this.level, placed);
+      if (!step) return 'One stone left: turn it, or flip it, until it fits the last gap.';
+      this.hintTarget = step;
+      this.showNudge(step.piece);
+      if (step.kind === 'lift') return 'The pulsing stone cannot stay where it is: no finished garden has it there. Take it back out.';
+      return step.biggest
+        ? 'Try the pulsing stone next. Big stones have the fewest places to go, so set them first.'
+        : 'Try the pulsing stone next: it is the biggest one still waiting.';
     }
-    if (v.placed) this.unplace(step.piece);
-    this.place(step.piece, step.placement, true);
-    this.hintPlaced.set(step.piece, step.placement);
-    this.voice.settle(this.placedCount);
-    return step.biggest
-      ? 'The biggest stone has settled into its place. Big stones have the fewest places to go, so set them first.'
-      : 'The next biggest stone has settled into its place. Now look at the gaps around it.';
+    if (this.hintTarget.kind === 'lift') return 'Take the pulsing stone out of the shape first: drag it back to the tray.';
+    // Then: exactly where it belongs.
+    if (!this.ghosts.has(this.hintTarget.piece)) {
+      this.ghosts.set(this.hintTarget.piece, this.hintTarget.placement);
+      this.drawGhosts();
+      return 'The outline shows where the pulsing stone belongs, turned and flipped as it should be. Set it there.';
+    }
+    // After that: a few more at a time, never more than half of the stones still waiting.
+    const more = moreSteps(this.level, placed, new Set(this.ghosts.keys()), 2);
+    if (more.length === 0) return 'That is all I can show. The rest is yours.';
+    more.forEach((m) => this.ghosts.set(m.piece, m.placement));
+    this.drawGhosts();
+    return more.length === 1 ? 'One more outline shows where a stone belongs.' : 'Two more outlines show where stones belong.';
+  }
+
+  private stepDone(step: StoneStep): boolean {
+    const v = this.views[step.piece]!;
+    if (step.kind === 'lift') return !v.placed;
+    return !!v.placed && samePlacement(v.placed, step.placement);
+  }
+
+  private showNudge(piece: number): void {
+    this.clearNudge();
+    const body = this.views[piece]!.body;
+    const tween = gsap.fromTo(body, { alpha: 0.45 }, { alpha: 1, duration: 0.7, yoyo: true, repeat: -1, ease: easings.ambient });
+    this.nudge = { piece, tween };
+  }
+
+  private clearNudge(): void {
+    if (!this.nudge) return;
+    this.nudge.tween.kill();
+    this.views[this.nudge.piece]!.body.alpha = 1;
+    this.nudge = null;
+  }
+
+  private drawGhosts(): void {
+    const g = this.ghostLayer;
+    g.clear();
+    for (const [piece, at] of this.ghosts) {
+      const tris = this.shapeOf(piece, at.rot, at.flip);
+      this.strokeOutline(g, tris, this.cell, this.origin.x + at.x * this.cell, this.origin.y + at.y * this.cell, palette.pearl, 0.6);
+    }
+  }
+
+  // After each change: outlines whose stone is now set there go, and so does a nudge whose
+  // stone has done what it asked.
+  private settleHints(): void {
+    let changed = false;
+    for (const [piece, at] of this.ghosts) {
+      const v = this.views[piece]!;
+      if (v.placed && samePlacement(v.placed, at)) {
+        this.ghosts.delete(piece);
+        changed = true;
+      }
+    }
+    if (changed) this.drawGhosts();
+    if (this.hintTarget && this.stepDone(this.hintTarget)) {
+      this.clearNudge();
+      this.hintTarget = null;
+    }
+  }
+
+  private clearHints(): void {
+    this.clearNudge();
+    this.ghosts.clear();
+    this.drawGhosts();
+    this.hintTarget = null;
   }
 
   tips(): Tip[] {
@@ -639,15 +716,9 @@ export class StoneLevelScene implements LevelScene {
     if (this.solved) return;
     this.stopTutorial();
     this.dragging = null;
-    let kept = 0;
+    this.clearHints();
     this.views.forEach((v, i) => {
       if (this.level.pieces[i]!.fixed) return;
-      // Stones a hint settled stay put: a restart never takes back a hint.
-      const hinted = this.hintPlaced.get(i);
-      if (hinted && v.placed && samePlacement(hinted, v.placed)) {
-        kept++;
-        return;
-      }
       gsap.killTweensOf([v.root, v.root.scale]);
       v.root.rotation = 0;
       v.placed = null;
@@ -658,7 +729,7 @@ export class StoneLevelScene implements LevelScene {
       v.root.position.set(v.slot.x, v.slot.y);
       v.root.scale.set(this.trayScale);
     });
-    this.placedCount = this.level.pieces.filter((p) => p.fixed).length + kept;
+    this.placedCount = this.level.pieces.filter((p) => p.fixed).length;
     if (this.isTutorial) this.scheduleTutorial();
   }
 

@@ -83,8 +83,6 @@ export class WorldMapScene implements Scene {
   ) {
     this.dreaming = dreaming;
     this.pendingReveal = reveal?.completed ?? null;
-    this.litPaths.filters = [createGlow(palette.pearl, { distance: 12, strength: 1 })];
-    this.pulses.filters = [createGlow(palette.pearl, { distance: 10, strength: 1.2 })];
     this.twinkles.eventMode = 'none';
     this.pulses.eventMode = 'none';
     const rng = createRng('worldmap');
@@ -298,6 +296,7 @@ export class WorldMapScene implements Scene {
       if (!isRegionComplete(solvedCount(a)) || a === this.pendingReveal) continue;
       const t = ((this.time * mapStyle.pulseSpeed + i * 0.37) % 1 + 1) % 1;
       const p = this.curve(a, b, t);
+      g.circle(p.x, p.y, 9).fill({ color: palette.pearl, alpha: 0.1 }).circle(p.x, p.y, 5).fill({ color: palette.pearl, alpha: 0.2 });
       g.circle(p.x, p.y, 3).fill({ color: palette.pearl, alpha: 0.8 });
     }
   }
@@ -377,6 +376,11 @@ export class WorldMapScene implements Scene {
       const settled = isRegionComplete(solvedCount(a)) && a !== this.pendingReveal;
       const lit = isAnimating ? progress : settled ? 1 : 0;
       if (lit <= 0) continue;
+      // A soft drawn glow under each lit trail (no filter: those cost a full-screen pass a frame).
+      for (const [width, alpha] of [[8, 0.06], [4, 0.14]] as const) {
+        this.strokePath(this.litPaths, a, b, lit);
+        this.litPaths.stroke({ color: this.nodes.get(a)!.accent, width, alpha });
+      }
       this.strokePath(this.litPaths, a, b, lit);
       this.litPaths.stroke({ color: this.nodes.get(a)!.accent, width: 1.5, alpha: alphas.hudHover });
     }

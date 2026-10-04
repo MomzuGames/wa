@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import levelsJson from './levels.json';
 import { LEMON, type PrismLevel, ROSE, SKY, initialOrients, isSolutionValid, isSolved, reflect, trace } from './model';
 import { solvePrism } from './solver';
-import { stepClue } from './clues';
+import { moreSteps, stepClue, withShown } from './clues';
 import { generatePrismLevel } from './generator';
 
 const levels = levelsJson as PrismLevel[];
@@ -83,17 +83,18 @@ describe('baked crystalcaves levels', () => {
         expect(solvePrism(level, initialOrients(level)).orients).not.toBeNull();
       });
 
-      it('hints turn a wrong piece each time and leave the last one to the player', () => {
+      it('hints point at wrong pieces, agree with earlier hints, and show at most half', () => {
         const orients = initialOrients(level);
-        const locked = new Set<number>();
-        let steps = 0;
-        for (let step = stepClue(level, orients, locked, `t${steps}`); step; step = stepClue(level, orients, locked, `t${++steps}`)) {
-          expect(orients[step.piece]).not.toBe(step.orient);
-          orients[step.piece] = step.orient;
-          locked.add(step.piece);
-          expect(solvePrism(level, orients, undefined, locked).orients).not.toBeNull();
-        }
-        expect(isSolved(level, orients)).toBe(false);
+        const shown = new Map<number, number>();
+        const first = stepClue(level, orients, new Set(), 't');
+        if (!first) return;
+        expect(orients[first.piece]).not.toBe(first.orient);
+        shown.set(first.piece, first.orient);
+        for (const m of moreSteps(level, orients, shown, 99)) shown.set(m.piece, m.orient);
+        const wrong = level.pieces.filter((p, i) => p.rotatable && orients[i] !== solvePrism(level, withShown(orients, shown), undefined, new Set(shown.keys())).orients![i]).length;
+        expect(shown.size).toBeLessThanOrEqual(Math.max(1, Math.floor(wrong / 2)));
+        // Everything shown fits together into one solution.
+        expect(solvePrism(level, withShown(orients, shown), undefined, new Set(shown.keys())).orients).not.toBeNull();
       });
 
       it('has every target requiring some colour', () => {

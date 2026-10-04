@@ -17,7 +17,7 @@ import {
 } from './model';
 import { solveLevel, validStarts } from './solver';
 import { generateSkyLevel } from './generator';
-import { GUIDE_KEEP, guideClue } from './clues';
+import { guideClue } from './clues';
 
 const levels = levelsJson as SkyLevel[];
 
@@ -85,13 +85,13 @@ describe('baked nightsky levels', () => {
         expect(minStarLineClearance(level)).toBeGreaterThanOrEqual(MIN_STAR_LINE_CLEARANCE - 1e-9);
       });
 
-      it('hints grow a guide that can be traced and never shows the last lines', () => {
+      it('hints grow a guide that can be traced and never shows more than half', () => {
         const total = level.edges.reduce((n, e) => n + e.required, 0);
         let previous = -1;
         for (let hints = 1; hints <= total; hints++) {
           const guide = guideClue(level, hints)!;
           expect(guide.edges.length).toBeGreaterThanOrEqual(previous);
-          expect(guide.edges.length).toBeLessThanOrEqual(total - GUIDE_KEEP);
+          expect(guide.edges.length).toBeLessThanOrEqual(Math.floor(total / 2));
           // The guide is the start of a real stroke: it can be drawn as shown.
           const stroke = newStroke(level);
           expect(beginStroke(level, stroke, guide.start)).toBe(true);

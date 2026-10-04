@@ -27,7 +27,7 @@ import {
   rotateMask,
   tileKind,
 } from './model';
-import { stepClue } from './clues';
+import { type LoopStep, moreSteps, stepClue } from './clues';
 import { createTidepoolsVoice, type TidepoolsVoice } from './sound';
 
 const loopStyle = {
@@ -77,7 +77,12 @@ export class LoopLevelScene implements LevelScene {
   private solved = false;
   private matchedCount = 0;
   private completeCount = 0;
-  private clueLocked = new Set<number>();
+  // Hints never turn a tile: a nudge rings the tile to look at, then faint ghost lines show
+  // how it (and later a few more) should face. Ghosts fade once a tile matches.
+  private hintTarget: LoopStep | null = null;
+  private nudge: { cell: number; g: Graphics; tween: gsap.core.Tween } | null = null;
+  private ghosts = new Map<number, { rotation: number; g: Graphics }>();
+  private hintCount = 0;
   private voice: TidepoolsVoice;
   private tutorialTimer: gsap.core.Tween | null = null;
   private pressTimer: gsap.core.Tween | null = null;
@@ -99,6 +104,7 @@ export class LoopLevelScene implements LevelScene {
     this.container.addChild(this.ripple, this.boardLayer, this.litLayer, this.ghostLayer);
     this.buildTiles();
     this.layout(ctx.width, ctx.height);
+    this.clearHints();
     this.matchedCount = this.countMatched();
     this.completeCount = components(this.board).filter((c) => c.complete).length;
     this.refreshLit();
@@ -158,6 +164,12 @@ export class LoopLevelScene implements LevelScene {
       v.lit.position.set(x, y);
       this.drawTile(i);
     });
+    // Hints follow their tiles to the new size and place.
+    for (const [i, ghost] of this.ghosts) {
+      ghost.g.position.copyFrom(this.views[i]!.root.position);
+      this.drawPipes(ghost.g, rotateMask(this.board.cells[i]!.mask, ghost.rotation), this.accent, 0.45);
+    }
+    if (this.nudge) this.showNudge(this.nudge.cell);
   }
 
   resize(width: number, height: number): void {
@@ -300,6 +312,7 @@ export class LoopLevelScene implements LevelScene {
     this.matchedCount = matched;
     this.completeCount = complete;
     this.refreshLit();
+    this.settleHints();
     if (!this.solved && isSolved(this.board)) {
       this.solved = true;
       this.emit('solved');
@@ -354,8 +367,6 @@ export class LoopLevelScene implements LevelScene {
     this.board.cells.forEach((tile, i) => {
       const original = this.level.cells[i];
       if (!tile || !original) return;
-      // Tiles a hint turned into place stay there: a restart never takes back a hint.
-      if (this.clueLocked.has(i)) return;
       tile.rotation = original.rotation;
       const v = this.views[i]!;
       gsap.killTweensOf(v.pipes);
@@ -371,17 +382,87 @@ export class LoopLevelScene implements LevelScene {
 
   hint(): string {
     if (this.solved) return '';
-    const step = stepClue(this.board, `${this.level.seed}:hint:${this.clueLocked.size}`);
-    if (!step) return 'Just one tile left to turn. You can do this one!';
-    this.lockTile(step.cell, step.rotation);
-    switch (step.reason) {
-      case 'forced':
-        return 'This tile could only fit one way: no line may point off the board or into an empty space. It has turned into place.';
-      case 'neighbour':
-        return 'This tile turned to join the tiles beside it. Follow its lines: each one needs a partner.';
-      default:
-        return 'This tile turned into place and will stay put. Follow its lines to the next tile.';
+    this.hintCount++;
+    const seed = `${this.level.seed}:hint:${this.hintCount}`;
+    if (this.hintTarget && this.faces(this.hintTarget.cell, this.hintTarget.rotation)) this.hintTarget = null;
+    // First: where to look, and why.
+    if (!this.hintTarget) {
+      const step = stepClue(this.board, seed);
+      if (!step) return 'Just one tile left to turn. You can do this one!';
+      this.hintTarget = step;
+      this.showNudge(step.cell);
+      switch (step.reason) {
+        case 'forced':
+          return 'Look at the ringed tile. No line may point off the board or into an empty space, so only one way fits.';
+        case 'neighbour':
+          return 'Look at the ringed tile. The tiles beside it are already right: which way meets their lines?';
+        default:
+          return 'Look at the ringed tile. Try turning it until its lines meet its neighbours.';
+      }
     }
+    // Then: how that tile should face.
+    if (!this.ghosts.has(this.hintTarget.cell)) {
+      this.addGhost(this.hintTarget.cell, this.hintTarget.rotation);
+      return 'The faint lines show which way the ringed tile should face. Turn it to match.';
+    }
+    // After that: a few more tiles at a time, never more than half of what is left.
+    const more = moreSteps(this.board, new Set(this.ghosts.keys()), 2);
+    if (more.length === 0) return 'That is all I can show. The rest is yours.';
+    more.forEach((m) => this.addGhost(m.cell, m.rotation));
+    return more.length === 1 ? 'One more tile shows its shape. Turn it to match.' : 'Two more tiles show their shape. Turn each to match.';
+  }
+
+  private faces(i: number, rotation: number): boolean {
+    const tile = this.board.cells[i]!;
+    return currentMask(tile) === rotateMask(tile.mask, rotation);
+  }
+
+  private showNudge(i: number): void {
+    this.clearNudge();
+    const v = this.views[i]!;
+    const size = this.cell * 1.02;
+    const g = new Graphics().roundRect(-size / 2, -size / 2, size, size, this.cell * loopStyle.cornerFraction).stroke({ color: palette.pearl, width: 1.5, alpha: 0.9 });
+    g.position.copyFrom(v.root.position);
+    this.ghostLayer.addChild(g);
+    const tween = gsap.fromTo(g, { alpha: 0.25 }, { alpha: 0.9, duration: 0.9, yoyo: true, repeat: -1, ease: easings.ambient });
+    this.nudge = { cell: i, g, tween };
+  }
+
+  private clearNudge(): void {
+    this.nudge?.tween.kill();
+    this.nudge?.g.destroy();
+    this.nudge = null;
+  }
+
+  private addGhost(i: number, rotation: number): void {
+    if (this.ghosts.has(i) || this.faces(i, rotation)) return;
+    const g = new Graphics();
+    g.position.copyFrom(this.views[i]!.root.position);
+    this.drawPipes(g, rotateMask(this.board.cells[i]!.mask, rotation), this.accent, 0.45);
+    g.alpha = 0;
+    this.ghostLayer.addChild(g);
+    gsap.to(g, { alpha: 1, duration: scaled(durations.pieceMove) });
+    this.ghosts.set(i, { rotation, g });
+  }
+
+  // Ghosts (and the nudge) go once their tile faces the way they showed.
+  private settleHints(): void {
+    for (const [i, ghost] of this.ghosts) {
+      if (!this.faces(i, ghost.rotation)) continue;
+      gsap.to(ghost.g, { alpha: 0, duration: scaled(durations.pieceMove), onComplete: () => ghost.g.destroy() });
+      this.ghosts.delete(i);
+    }
+    if (this.nudge && this.hintTarget && this.faces(this.hintTarget.cell, this.hintTarget.rotation)) {
+      this.clearNudge();
+      this.hintTarget = null;
+    }
+  }
+
+  private clearHints(): void {
+    this.clearNudge();
+    this.ghosts.forEach((g) => g.g.destroy());
+    this.ghosts.clear();
+    this.hintTarget = null;
   }
 
   tips(): Tip[] {
@@ -392,45 +473,6 @@ export class LoopLevelScene implements LevelScene {
     ];
     if (this.level.links?.length) tips.push({ id: 'loop:links', text: 'Tip: tiles with matching dots always turn together. Set the harder one; the other follows.', after: 2 });
     return tips;
-  }
-
-  private lockTile(i: number, rotation: number): void {
-    const partner = linkPartner(this.board, i);
-    if (partner !== null && !this.board.cells[partner]!.locked) this.lockOne(partner, rotation);
-    this.lockOne(i, rotation);
-  }
-
-  private lockOne(i: number, rotation: number): void {
-    const tile = this.board.cells[i]!;
-    const v = this.views[i]!;
-    const turns = (rotation - tile.rotation + 4) % 4;
-    tile.rotation = rotation;
-    tile.locked = true;
-    this.clueLocked.add(i);
-    v.root.cursor = 'default';
-    v.animating = true;
-    v.lit.visible = false;
-    v.spin += (turns * Math.PI) / 2;
-    gsap.to(v.pipes, {
-      rotation: v.spin,
-      duration: scaled(loopStyle.rotateSeconds) * Math.max(1, turns),
-      ease: easings.tileSnap,
-      overwrite: true,
-      onComplete: () => {
-        v.animating = false;
-        this.drawTile(i);
-        this.shimmer(i);
-        this.afterChange();
-      },
-    });
-  }
-
-  private shimmer(i: number): void {
-    const v = this.views[i]!;
-    const flash = new Graphics().roundRect(-this.cell / 2, -this.cell / 2, this.cell, this.cell, this.cell * loopStyle.cornerFraction).fill({ color: this.accent, alpha: 0.35 });
-    flash.position.copyFrom(v.root.position);
-    this.ghostLayer.addChild(flash);
-    gsap.to(flash, { alpha: 0, duration: scaled(durations.pieceMove) * 3, ease: easings.ambient, onComplete: () => flash.destroy() });
   }
 
   private scheduleTutorial(): void {

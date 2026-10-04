@@ -5,7 +5,6 @@ import { REGION_ACCENT, REGION_NAME } from '../regions/catalog';
 import { palette, rgba } from '../design/palette';
 import { durations, easings, reducedMotion, scaled } from '../design/motion';
 import { layout } from '../design/layout';
-import { createGlow } from '../fx/glow';
 
 export type RegionState = 'locked' | 'unlocked' | 'complete';
 
@@ -13,6 +12,7 @@ export const regionNodeStyle = {
   size: 120,
   strokeWidth: 1.5,
   completeFillAlpha: 0.22,
+  halo: [[7, 0.06], [3.5, 0.14]] as const, // [width multiple, alpha] strokes under the line
   nameIdleAlpha: 0.3,
   nameNearAlpha: 0.75,
   auraIdle: 0.25,
@@ -165,9 +165,19 @@ export class RegionNode extends Container {
 
   private redrawFigure(): void {
     const color = this._state === 'locked' ? palette.dim : this.accent;
+    const line = { color, cap: 'round' as const, join: 'round' as const };
     this.outline.clear();
+    // The glow is drawn, not filtered: two wide faint strokes under the line. A glow filter
+    // on a figure that changes every frame made the map stutter on phones.
+    if (this._state !== 'locked') {
+      const strong = this._state === 'complete' ? 1.6 : 1;
+      for (const [width, alpha] of regionNodeStyle.halo) {
+        drawFigure(this.outline, this.id, regionNodeStyle.size, this.time);
+        this.outline.stroke({ ...line, width: regionNodeStyle.strokeWidth * width, alpha: alpha * strong });
+      }
+    }
     drawFigure(this.outline, this.id, regionNodeStyle.size, this.time);
-    this.outline.stroke({ color, width: regionNodeStyle.strokeWidth, cap: 'round', join: 'round' });
+    this.outline.stroke({ ...line, width: regionNodeStyle.strokeWidth });
     if (this._state === 'complete') {
       this.fill.clear();
       drawFigure(this.fill, this.id, regionNodeStyle.size, this.time);
@@ -179,9 +189,7 @@ export class RegionNode extends Container {
   setState(state: RegionState, animate: boolean): Promise<void> {
     this._state = state;
     this.cursor = state === 'locked' ? 'default' : 'pointer';
-    this.outline.filters = state === 'locked' ? [] : [createGlow(this.accent, { distance: 22, strength: state === 'complete' ? 1.6 : 0.8 })];
     this.fill.clear();
-    this.fill.filters = state === 'complete' ? [createGlow(this.accent, { distance: 40, strength: 1.2, quality: 0.3 })] : [];
     this.redrawFigure();
     if (state === 'complete' && animate) {
       this.fill.alpha = 0;

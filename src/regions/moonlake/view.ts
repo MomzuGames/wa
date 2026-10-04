@@ -8,7 +8,7 @@ import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
 import { liftFinger, makeFinger, refuse, tapAt } from '../../ui/introGlyphs';
 import { type RippleLevel, affectLists, isLit, press } from './model';
-import { stepClue, stillHelpful } from './clues';
+import { nudgePads, remainingPresses, stepClue, stillHelpful } from './clues';
 import { createMoonVoice, type MoonVoice } from './sound';
 
 const lakeStyle = {
@@ -53,7 +53,11 @@ export class RippleLevelScene implements LevelScene {
   private voice: MoonVoice;
   private hand: GhostHand | null = null;
   private tutorialTimer: gsap.core.Tween | null = null;
+  // Hints never press a pad. A nudge glows three pads, one of them part of the shortest way;
+  // the next hint singles it out; later ones add a few more. Glows that stop helping fade.
   private hinted = new Set<number>();
+  private nudge: { target: number; presses: number; pads: number[] } | null = null;
+  private hintCount = 0;
   private live: Array<{ x: number; y: number; t: number }> = [];
 
   constructor(
@@ -160,6 +164,9 @@ export class RippleLevelScene implements LevelScene {
     if (this.hinted.has(i)) {
       const pulse = 0.35 + 0.25 * Math.sin(this.time * 3 + i);
       v.hint.circle(0, 0, r * 1.7).fill({ color: palette.pearl, alpha: pulse * 0.5 });
+    } else if (this.nudge?.pads.includes(i)) {
+      const pulse = 0.5 + 0.5 * Math.sin(this.time * 2 + i);
+      v.hint.circle(0, 0, r * 1.45).stroke({ color: palette.pearl, width: 1.5, alpha: 0.25 + 0.35 * pulse });
     }
   }
 
@@ -175,6 +182,8 @@ export class RippleLevelScene implements LevelScene {
     // Glowing pads stay only while they are still part of a shortest way to light the lake.
     const before = this.hinted;
     this.hinted = stillHelpful(this.level, this.state, this.hinted);
+    // A nudge whose pad is no longer part of a shortest way has done its job.
+    if (this.nudge && !stillHelpful(this.level, this.state, new Set([this.nudge.target])).size) this.nudge = null;
     if (this.hinted.size !== before.size) this.views.forEach((_, k) => this.drawPad(k));
     this.emit('move');
     this.voice.press(i);
@@ -205,34 +214,51 @@ export class RippleLevelScene implements LevelScene {
         this.ripples.circle(r.x, r.y, this.radius + p * wideR).stroke({ color: this.accent, width: 1.5, alpha: 0.5 * (1 - p) });
       }
     }
-    if (this.hinted.size) this.views.forEach((_, i) => this.drawPad(i));
+    if (this.hinted.size || this.nudge) this.views.forEach((_, i) => this.drawPad(i));
   }
 
   restart(): void {
     if (this.solved) return;
     this.stopTutorial();
     this.state = this.level.start.slice();
-    // As many pads glow as before, re-chosen for the fresh lake: a restart never takes back a hint.
-    const glowing = this.hinted.size;
     this.hinted = new Set();
-    for (let k = 0; k < glowing; k++) {
-      const step = stepClue(this.level, this.state, this.hinted, `${this.level.seed}:hint:${k}`);
-      if (step) this.hinted.add(step.pad);
-    }
+    this.nudge = null;
     this.views.forEach((_, i) => this.drawPad(i));
     if (this.isTutorial) this.scheduleTutorial();
   }
 
   hint(): string {
     if (this.solved) return '';
-    const step = stepClue(this.level, this.state, this.hinted, `${this.level.seed}:hint:${this.hinted.size}`);
-    if (!step) return this.hinted.size ? 'Press the glowing pads. The last press after that is yours to find.' : 'Just one press left. Look for the pad that lights everything that is still dark.';
-    this.hinted.add(step.pad);
+    this.hintCount++;
+    const seed = `${this.level.seed}:hint:${this.hintCount}`;
+    // A nudge already showing: single out the right pad.
+    if (this.nudge) {
+      const { target, presses } = this.nudge;
+      this.nudge = null;
+      this.hinted.add(target);
+      this.views.forEach((_, i) => this.drawPad(i));
+      return `This is the one: press the glowing pad${presses === 2 ? ' twice' : ''}.`;
+    }
+    // Nothing glowing yet: three pads, one of which is right.
+    if (this.hinted.size === 0) {
+      const step = stepClue(this.level, this.state, this.hinted, seed);
+      if (!step) return 'Just one press left. Look for the pad that lights everything that is still dark.';
+      this.nudge = { target: step.pad, presses: step.presses, pads: nudgePads(this.level, this.state, step.pad, seed) };
+      this.views.forEach((_, i) => this.drawPad(i));
+      return 'One of the three ringed pads is part of the shortest way to light the whole lake. Which one?';
+    }
+    // After that: a couple more at a time, never more than half of the presses still needed.
+    const remaining = (remainingPresses(this.level, this.state) ?? []).filter((c) => c > 0).length;
+    let added = 0;
+    while (added < 2 && this.hinted.size < Math.floor(remaining / 2)) {
+      const step = stepClue(this.level, this.state, this.hinted, `${seed}:${added}`);
+      if (!step) break;
+      this.hinted.add(step.pad);
+      added++;
+    }
     this.views.forEach((_, i) => this.drawPad(i));
-    const twice = step.presses === 2 ? ' twice' : '';
-    return this.hinted.size === 1
-      ? `Press the glowing pad${twice}. It is part of the shortest way to light the whole lake from here.`
-      : `Another pad glows: press it${twice}. Glowing pads can be pressed in any order.`;
+    if (added === 0) return 'Press the glowing pads. That is all I can show: the rest is yours.';
+    return added === 1 ? 'Another pad glows. Glowing pads can be pressed in any order.' : 'Two more pads glow. Glowing pads can be pressed in any order.';
   }
 
   tips(): Tip[] {

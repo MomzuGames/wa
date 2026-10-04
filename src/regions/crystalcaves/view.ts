@@ -8,7 +8,7 @@ import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
 import { liftFinger, makeFinger, tapAt } from '../../ui/introGlyphs';
 import { COLOR_NAMES, DIR_DELTA, LEMON, ORIENTATIONS, type PieceKind, type PrismLevel, ROSE, SKY, type Segment, isSolved, trace } from './model';
-import { stepClue } from './clues';
+import { type PrismStep, moreSteps, stepClue, withShown } from './clues';
 import { createCrystalVoice, type CrystalVoice } from './sound';
 
 const prismStyle = {
@@ -45,9 +45,14 @@ export class PrismLevelScene implements LevelScene {
   private piecesLayer = new Container();
   private views: PieceView[] = [];
   private orients: number[];
-  private locked = new Set<number>();
+  // Hints never turn a piece: a nudge rings the piece to look at, then a faint ghost shows
+  // the angle it should have (later, a few more). Ghosts fade once a piece matches.
+  private hintTarget: PrismStep | null = null;
+  private nudge: { piece: number; g: Graphics; tween: gsap.core.Tween } | null = null;
+  private ghosts = new Map<number, { orient: number; root: Container }>();
+  private hintLayer = new Container();
+  private hintCount = 0;
   private handlers: Record<'attempt' | 'solved' | 'move', Handler[]> = { attempt: [], solved: [], move: [] };
-  private accent = palette.sky;
   private cell = 50;
   private origin = { x: 0, y: 0 };
   private time = 0;
@@ -69,7 +74,8 @@ export class PrismLevelScene implements LevelScene {
     this.beams.filters = [createGlow(palette.pearl, { distance: 12, strength: 1.2, quality: 0.3 })];
     this.grid.eventMode = 'none';
     this.beams.eventMode = 'none';
-    this.container.addChild(this.grid, this.beams, this.piecesLayer);
+    this.container.addChild(this.grid, this.beams, this.piecesLayer, this.hintLayer);
+    this.hintLayer.eventMode = 'none';
     this.buildPieces();
     this.layout(ctx.width, ctx.height);
     this.retrace(true);
@@ -114,6 +120,13 @@ export class PrismLevelScene implements LevelScene {
     const fit = Math.min(area.width / this.level.width, area.height / this.level.height);
     this.cell = Math.min(prismStyle.maxCell, fit);
     this.origin = { x: width / 2 - (this.level.width * this.cell) / 2, y: height / 2 - (this.level.height * this.cell) / 2 };
+    // Hints are rebuilt at the new size and place.
+    if (this.nudge) this.showNudge(this.nudge.piece);
+    for (const [piece, ghost] of [...this.ghosts]) {
+      ghost.root.destroy({ children: true });
+      this.ghosts.delete(piece);
+      this.addGhost(piece, ghost.orient);
+    }
     const g = this.grid;
     g.clear();
     for (let y = 0; y <= this.level.height; y++) {
@@ -211,7 +224,7 @@ export class PrismLevelScene implements LevelScene {
     if (p.rotatable) {
       const hitR = Math.max(layout.minHitSize / 2, half * 0.9);
       v.ring.circle(0, 0, hitR).fill({ color: palette.pearl, alpha: 0.001 });
-      v.ring.circle(0, 0, half * 0.8).stroke({ color: this.locked.has(i) ? this.accent : palette.dim, width: 1, alpha: this.locked.has(i) ? 0.8 : prismStyle.ringAlpha });
+      v.ring.circle(0, 0, half * 0.8).stroke({ color: palette.dim, width: 1, alpha: prismStyle.ringAlpha });
     }
     this.paintPiece(v.body, v.glyph, p.kind, p.color, this.orients[i]!, s);
     this.drawTargetFill(i);
@@ -268,7 +281,7 @@ export class PrismLevelScene implements LevelScene {
   }
 
   private turn(i: number, forced: number | null = null): void {
-    if (this.solved || (this.locked.has(i) && forced === null)) return;
+    if (this.solved) return;
     const v = this.views[i]!;
     if (v.animating) return;
     this.stopTutorial();
@@ -289,6 +302,7 @@ export class PrismLevelScene implements LevelScene {
         v.animating = false;
         this.drawPiece(i);
         this.retrace(forced !== null && this.solved);
+        this.settleHints();
       },
     });
   }
@@ -301,8 +315,8 @@ export class PrismLevelScene implements LevelScene {
   restart(): void {
     if (this.solved) return;
     this.stopTutorial();
-    // Pieces a hint set stay at their angle: a restart never takes back a hint.
-    this.orients = this.level.pieces.map((p, i) => (this.locked.has(i) ? this.orients[i]! : p.orient));
+    this.orients = this.level.pieces.map((p) => p.orient);
+    this.clearHints();
     this.views.forEach((v, i) => {
       gsap.killTweensOf(v.body);
       v.animating = false;
@@ -314,14 +328,78 @@ export class PrismLevelScene implements LevelScene {
 
   hint(): string {
     if (this.solved) return '';
-    const step = stepClue(this.level, this.orients, this.locked, `${this.level.seed}:hint:${this.locked.size}`);
-    if (!step) return 'Just one piece left to turn. Watch where its beam lands.';
-    this.turn(step.piece, step.orient);
-    this.locked.add(step.piece);
-    this.views[step.piece]!.root.cursor = 'default';
-    return step.onBeam
-      ? 'The beam now travels further: the first wrong piece on its path has turned and will stay put. Follow the beam onward.'
-      : 'This piece has turned to its right angle and will stay put.';
+    this.hintCount++;
+    const shown = new Map([...this.ghosts].map(([i, g]) => [i, g.orient]));
+    if (this.hintTarget && this.orients[this.hintTarget.piece] === this.hintTarget.orient) this.hintTarget = null;
+    // First: which piece to look at, and why.
+    if (!this.hintTarget) {
+      const step = stepClue(this.level, withShown(this.orients, shown), new Set(shown.keys()), `${this.level.seed}:hint:${this.hintCount}`);
+      if (!step) return 'Just one piece left to turn. Watch where its beam lands.';
+      this.hintTarget = step;
+      this.showNudge(step.piece);
+      return step.onBeam
+        ? 'Follow the beam from where it starts: the ringed piece is the first one it meets that needs turning.'
+        : 'Look at the ringed piece. Which way would send its light toward a crystal?';
+    }
+    // Then: the angle it should have.
+    if (!this.ghosts.has(this.hintTarget.piece)) {
+      this.addGhost(this.hintTarget.piece, this.hintTarget.orient);
+      return 'The faint shape shows the angle the ringed piece should have. Turn it to match.';
+    }
+    // After that: a few more at a time, never more than half of what is left.
+    const more = moreSteps(this.level, this.orients, shown, 2);
+    if (more.length === 0) return 'That is all I can show. The rest is yours.';
+    more.forEach((m) => this.addGhost(m.piece, m.orient));
+    return more.length === 1 ? 'One more piece shows its angle.' : 'Two more pieces show their angles.';
+  }
+
+  private showNudge(piece: number): void {
+    this.clearNudge();
+    const p = this.level.pieces[piece]!;
+    const c = this.cellCenter(p.x, p.y);
+    const g = new Graphics().circle(0, 0, this.cell * 0.48).stroke({ color: palette.pearl, width: 1.5, alpha: 0.9 });
+    g.position.set(c.x, c.y);
+    this.hintLayer.addChild(g);
+    const tween = gsap.fromTo(g, { alpha: 0.25 }, { alpha: 0.9, duration: 0.9, yoyo: true, repeat: -1, ease: easings.ambient });
+    this.nudge = { piece, g, tween };
+  }
+
+  private clearNudge(): void {
+    this.nudge?.tween.kill();
+    this.nudge?.g.destroy();
+    this.nudge = null;
+  }
+
+  private addGhost(piece: number, orient: number): void {
+    if (this.ghosts.has(piece) || this.orients[piece] === orient) return;
+    const p = this.level.pieces[piece]!;
+    const ghost = this.miniPiece(p.kind, palette.pearl, orient, this.cell);
+    const c = this.cellCenter(p.x, p.y);
+    ghost.root.position.set(c.x, c.y);
+    ghost.root.alpha = 0;
+    this.hintLayer.addChild(ghost.root);
+    gsap.to(ghost.root, { alpha: 0.4, duration: scaled(durations.pieceMove) });
+    this.ghosts.set(piece, { orient, root: ghost.root });
+  }
+
+  // Ghosts (and the nudge) go once their piece has the angle they showed.
+  private settleHints(): void {
+    for (const [piece, ghost] of this.ghosts) {
+      if (this.orients[piece] !== ghost.orient) continue;
+      gsap.to(ghost.root, { alpha: 0, duration: scaled(durations.pieceMove), onComplete: () => ghost.root.destroy({ children: true }) });
+      this.ghosts.delete(piece);
+    }
+    if (this.hintTarget && this.orients[this.hintTarget.piece] === this.hintTarget.orient) {
+      this.clearNudge();
+      this.hintTarget = null;
+    }
+  }
+
+  private clearHints(): void {
+    this.clearNudge();
+    this.ghosts.forEach((g) => g.root.destroy({ children: true }));
+    this.ghosts.clear();
+    this.hintTarget = null;
   }
 
   tips(): Tip[] {

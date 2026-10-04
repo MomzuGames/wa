@@ -335,20 +335,27 @@ export class SkyLevelScene implements LevelScene {
 
   hint(): string {
     if (this.solved) return '';
-    const guide = guideClue(this.level, this.hintsGiven + 1);
+    // First only where to begin; then the path two lines at a time, up to half of it.
+    const guide = guideClue(this.level, this.hintsGiven);
     if (!guide) return '';
-    const grew = guide.edges.length > this.clueEdges.length;
-    if (grew) this.hintsGiven++;
+    const first = this.clueRings.length === 0;
+    const grew = !first && guide.edges.length > this.clueEdges.length;
+    if (first || grew) this.hintsGiven++;
     this.clueRings = [guide.start];
-    this.clueEdges = guide.edges;
+    this.clueEdges = first ? [] : guide.edges;
     this.redrawAll();
+    if (first) {
+      return oddStars(this.level).length
+        ? 'Start from the ringed star. It has an odd number of lines, and a drawing like this must begin at one of those.'
+        : 'Start from the ringed star. Every star here has an even number of lines, so the drawing ends where it began.';
+    }
     if (!grew) {
       return oddStars(this.level).length
-        ? 'The rest of the path is yours. You will finish on the other star with an odd number of lines.'
-        : 'The rest of the path is yours. You will finish back where you started.';
+        ? 'That is half the path. The rest is yours: you will finish on the other star with an odd number of lines.'
+        : 'That is half the path. The rest is yours: you will finish back where you started.';
     }
-    return this.hintsGiven === 1
-      ? 'Start at the ringed star and trace the glowing lines in order, without lifting your finger.'
+    return this.hintsGiven === 2
+      ? 'From the ringed star, trace the glowing lines in order, without lifting your finger.'
       : 'More of the path glows. Trace the glowing lines first, then carry on.';
   }
 

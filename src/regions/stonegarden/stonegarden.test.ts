@@ -5,6 +5,8 @@ import {
   type StoneLevel,
   type Tri,
   canonical,
+  flipTri,
+  mirrorOrientation,
   isChiral,
   isConnected,
   isCover,
@@ -107,5 +109,18 @@ describe('baked stonegarden levels', () => {
         });
       }
     });
+  });
+});
+
+describe('flipping a turned stone', () => {
+  it('mirrors the stone as it looks now, for every turn', () => {
+    const L: Tri[] = [[0, 0, 0], [0, 0, 1], [0, 1, 1], [1, 1, 0], [1, 1, 3]];
+    for (const flip of [0, 1]) {
+      for (let rot = 0; rot < 4; rot++) {
+        const seen = transform(L, rot, flip);
+        const next = mirrorOrientation(rot, flip);
+        expect(transform(L, next.rot, next.flip)).toEqual(normalise(seen.map(flipTri)));
+      }
+    }
   });
 });

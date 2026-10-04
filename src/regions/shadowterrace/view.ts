@@ -9,7 +9,7 @@ import { GhostHand } from '../../ui/ghostHand';
 import { holdAt, liftFinger, makeFinger, refuse, tapAt } from '../../ui/introGlyphs';
 import { events } from '../../core/events';
 import { type ShadowLevel, frontProfile, isSolved, sideProfile, startHeights, stoneCount } from './model';
-import { stepClue } from './clues';
+import { nearestSolution, stepClue } from './clues';
 import { createShadowVoice, type ShadowVoice } from './sound';
 
 const terraceStyle = {
@@ -68,8 +68,10 @@ export class ShadowLevelScene implements LevelScene {
   // Dragging sideways across the terrace turns it; the drag starts as a possible tap.
   private press: { x: number; y: number; angle: number; swiping: boolean } | null = null;
   private ghostStacks = new Map<number, { height: number; until: number | null }>();
-  // Stacks a hint built, so a restart can keep them.
-  private hintBuilt = new Map<number, number>();
+  // Hints never build: a nudge marks the stack to look at (its row and column glow faintly
+  // on the floor), then a pale outline shows its right height (later, a few more).
+  private hintMark: { cell: number; height: number } | null = null;
+  private hintCount = 0;
   private brightUntil = 0;
   private unsubscribe: () => void;
   private screenWidth = 0;
@@ -305,6 +307,14 @@ export class ShadowLevelScene implements LevelScene {
         const corners = [this.project(x, y, 0), this.project(x + 1, y, 0), this.project(x + 1, y + 1, 0), this.project(x, y + 1, 0)];
         this.poly(g, corners).fill({ color: palette.ink, alpha: terraceStyle.floorAlpha * 0.5 });
         this.poly(g, corners).stroke({ color: palette.dim, width: 1, alpha: terraceStyle.floorAlpha });
+        const nudged = this.hintMark;
+        if (nudged) {
+          const nx = nudged.cell % n;
+          const ny = Math.floor(nudged.cell / n);
+          const pulse = 0.5 + 0.5 * Math.sin(this.time * 3);
+          if (x === nx && y === ny) this.poly(g, corners).stroke({ color: palette.pearl, width: 2, alpha: 0.4 + 0.5 * pulse });
+          else if (x === nx || y === ny) this.poly(g, corners).fill({ color: palette.pearl, alpha: 0.04 + 0.06 * pulse });
+        }
       }
     }
   }
@@ -560,8 +570,9 @@ export class ShadowLevelScene implements LevelScene {
     if (next > cap) next = 0;
     if (next < 0) next = cap;
     this.heights[i] = next;
-    this.ghostStacks.delete(i);
-    this.hintBuilt.delete(i);
+    // An outline (or the nudge) goes once its stack reaches the height it showed.
+    if (this.ghostStacks.get(i)?.height === next) this.ghostStacks.delete(i);
+    if (this.hintMark?.cell === i && this.hintMark.height === next) this.hintMark = null;
     this.emit('move');
     if (next > before) this.voice.place(next);
     else this.voice.remove();
@@ -589,7 +600,7 @@ export class ShadowLevelScene implements LevelScene {
 
   update(dt: number): void {
     this.time += dt;
-    if (this.ghostStacks.size || this.time < this.brightUntil + 0.1) this.dirty = true;
+    if (this.ghostStacks.size || this.hintMark || this.time < this.brightUntil + 0.1) this.dirty = true;
     for (const [i, g] of this.ghostStacks) if (g.until !== null && this.time > g.until) this.ghostStacks.delete(i);
     if (this.dirty) this.draw();
   }
@@ -598,32 +609,56 @@ export class ShadowLevelScene implements LevelScene {
     if (this.solved) return;
     this.stopTutorial();
     this.heights = startHeights(this.level);
-    // Stacks a hint built stay built: a restart never takes back a hint.
-    for (const [i, h] of this.hintBuilt) this.heights[i] = h;
     gsap.killTweensOf(this.shown);
     this.shown = this.heights.slice();
     this.ghostStacks.clear();
+    this.hintMark = null;
     this.dirty = true;
     if (this.isTutorial) this.scheduleTutorial();
   }
 
   hint(): string {
     if (this.solved) return '';
-    const step = stepClue(this.level, this.heights, `${this.level.seed}:hint:${this.hintBuilt.size}`, this.hintBuilt);
-    if (!step) return 'Just one stack left to fix. Compare its row and column with their shadows.';
-    const before = this.heights[step.cell]!;
-    this.heights[step.cell] = step.height;
-    this.hintBuilt.set(step.cell, step.height);
-    this.ghostStacks.delete(step.cell);
-    if (step.height > before) this.voice.place(step.height);
-    else this.voice.remove();
-    gsap.to(this.shown, { [step.cell]: step.height, duration: scaled(terraceStyle.growSeconds), ease: easings.tileSnap, onUpdate: () => (this.dirty = true) });
+    this.hintCount++;
+    const seed = `${this.level.seed}:hint:${this.hintCount}`;
+    const shown = new Map([...this.ghostStacks].map(([i, g]) => [i, g.height]));
+    if (this.hintMark && this.heights[this.hintMark.cell] === this.hintMark.height) this.hintMark = null;
+    // First: which stack to look at, and which shadow is wrong.
+    if (!this.hintMark) {
+      const step = stepClue(this.level, this.heights, seed, shown);
+      if (!step) return 'Just one stack left to fix. Compare its row and column with their shadows.';
+      this.hintMark = step;
+      this.dirty = true;
+      return step.height < this.heights[step.cell]!
+        ? 'Look at the marked stack: it is too tall. No stack can rise above the shadow of its row or its column.'
+        : 'Look at the marked stack. A shadow along its row or column is still too short: something there must reach it.';
+    }
+    // Then: the height it should have.
+    if (!this.ghostStacks.has(this.hintMark.cell)) {
+      this.ghostStacks.set(this.hintMark.cell, { height: this.hintMark.height, until: null });
+      this.dirty = true;
+      return this.hintMark.height < this.heights[this.hintMark.cell]!
+        ? 'The pale outline shows how tall the marked stack should be. Take stones away to match.'
+        : 'The pale outline shows how tall the marked stack should be. Build it to match.';
+    }
+    // After that: a few more at a time, never more than half of the stacks still wrong.
+    const wrong = this.wrongStacks(shown);
+    let added = 0;
+    while (added < 2 && this.ghostStacks.size < Math.floor(wrong / 2)) {
+      const more = stepClue(this.level, this.heights, `${seed}:${added}`, new Map([...this.ghostStacks].map(([i, g]) => [i, g.height])));
+      if (!more) break;
+      this.ghostStacks.set(more.cell, { height: more.height, until: null });
+      added++;
+    }
     this.dirty = true;
-    this.explainCount();
-    if (step.height < before) return 'That stack was too tall, so stones came off it. No stack can rise above the shadow of its row or its column.';
-    return this.hintBuilt.size === 1
-      ? 'One stack has risen to its right height. Tall shadows need a stack that reaches them, so start with those.'
-      : 'Another stack has risen to its right height. Check which shadows are still too short.';
+    if (added === 0) return 'That is all I can show. The rest is yours.';
+    return added === 1 ? 'One more outline shows a stack\'s right height.' : 'Two more outlines show the right heights.';
+  }
+
+  // Stacks that differ from a solution agreeing with every outline shown.
+  private wrongStacks(shown: Map<number, number>): number {
+    const target = nearestSolution({ ...this.level, fixed: this.level.fixed.map((f, i) => shown.get(i) ?? f) }, this.heights);
+    return target ? target.filter((h, i) => h !== this.heights[i] && this.level.fixed[i]! < 0).length : 0;
   }
 
   tips(): Tip[] {
