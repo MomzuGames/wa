@@ -44,3 +44,16 @@ describe('story', () => {
     expect(missedScenes(solved, new Set(['prologue', 'asleep:tidepools', 'home:tidepools']))).toEqual([]);
   });
 });
+
+describe('whispers on the trail', () => {
+  it('says the newest milestone once, and never an older one after it', async () => {
+    const { whisperFor } = await import('./whispers');
+    expect(whisperFor('moonlake', 0, new Set())!.line).toContain('asleep somewhere');
+    const at3 = whisperFor('moonlake', 3, new Set())!;
+    expect(at3.line).toContain('Closer now');
+    const seen = new Set(at3.ids);
+    expect(whisperFor('moonlake', 3, seen)).toBeNull();
+    expect(whisperFor('moonlake', 2, seen)).toBeNull();
+    expect(whisperFor('moonlake', 4, seen)!.line).toContain('There you are');
+  });
+});

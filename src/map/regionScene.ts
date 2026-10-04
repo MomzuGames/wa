@@ -6,13 +6,16 @@ import { LEVEL_NAMES, REGION_ACCENT } from '../regions/catalog';
 import { spiritStyle } from '../ui/spirit';
 import { alphas, palette } from '../design/palette';
 import { breathe, durations, easings, reducedMotion, scaled } from '../design/motion';
-import { layout } from '../design/layout';
 import { createGlow } from '../fx/glow';
-import { getRegion } from '../core/save';
 import { earliestUnsolved, isChapterEnd, levelUnlocked, paywalled, progression } from '../core/progress';
 import { events } from '../core/events';
 import { Atmosphere } from '../fx/atmosphere';
 import { createRng } from '../core/rng';
+import { StoryLight } from '../story/art';
+import { familyColor } from '../story/family';
+import { whisperFor } from '../story/whispers';
+import { currentProfile, getRegion, markStorySeen, seenStory } from '../core/save';
+import { hud, layout } from '../design/layout';
 
 const trailStyle = {
   nodeRadius: 15,
@@ -29,6 +32,12 @@ const trailStyle = {
   nameNearAlpha: 0.95,
   nearRadius: 120,
   tourPause: 1.2,
+  // The family member asleep in this land, in the sky above the trail: faint at first,
+  // brighter and larger with every level solved.
+  sleeperRadius: 11,
+  sleeperAlpha: [0.22, 0.9] as const,
+  sleeperScale: [0.85, 1.2] as const,
+  whisperDelay: 1.4,
 } as const;
 
 // 'paid': part of the full journey, not unlocked yet; tapping it opens the unlock card.
@@ -57,6 +66,7 @@ export class RegionScene implements Scene {
   private screen = { x: 1, y: 1 };
   private unsubscribe: () => void = () => {};
   private unsubscribeUnlock: () => void = () => {};
+  private sleeper: StoryLight | null = null;
   private chosen = -1;
 
   constructor(
@@ -100,6 +110,20 @@ export class RegionScene implements Scene {
       this.container.addChild(root);
     }
     this.refreshStates();
+    // Until the land is finished, its sleeping family member waits in the sky above the trail.
+    const solved = getRegion(regionId).solved.length;
+    if (solved < progression.levelsPerRegion) {
+      const sleeper = new StoryLight(familyColor(regionId, currentProfile()?.color ?? 'mint'), trailStyle.sleeperRadius, true);
+      const f = solved / progression.levelsPerRegion;
+      const [a0, a1] = trailStyle.sleeperAlpha;
+      const [s0, s1] = trailStyle.sleeperScale;
+      sleeper.alpha = a0 + (a1 - a0) * f;
+      sleeper.scale.set(s0 + (s1 - s0) * f);
+      sleeper.eventMode = 'none';
+      this.container.addChild(sleeper);
+      this.sleeper = sleeper;
+      this.tweens.push(gsap.to(sleeper.body.scale, { x: 1.07, y: 1.07, duration: durations.breathe / 2, yoyo: true, repeat: -1, ease: easings.ambient }));
+    }
     this.unsubscribeUnlock = events.on('unlock:changed', () => this.refreshStates());
     // Levels brighten as the light passes over them.
     this.unsubscribe = events.on('spirit:at', ({ x, y }) => {
@@ -219,6 +243,22 @@ export class RegionScene implements Scene {
         }),
       );
     });
+    // Back from a level: the sleeper stirs, a little brighter than before.
+    if (this.justSolved !== null && this.sleeper) {
+      const sleeper = this.sleeper;
+      this.tweens.push(gsap.fromTo(sleeper, { alpha: Math.min(1, sleeper.alpha + 0.35) }, { alpha: sleeper.alpha, duration: durations.completion, delay: scaled(durations.sceneTransition) * 0.6, ease: easings.ambient }));
+    }
+    // Now and then the light says something to itself about how close it is.
+    const solvedHere = getRegion(this.regionId).solved.length;
+    const whisper = solvedHere < progression.levelsPerRegion ? whisperFor(this.regionId, solvedHere, seenStory()) : null;
+    if (whisper) {
+      this.tweens.push(
+        gsap.delayedCall(trailStyle.whisperDelay, () => {
+          whisper.ids.forEach((id) => markStorySeen(id));
+          events.emit('spirit:say', { lines: [whisper.line] });
+        }),
+      );
+    }
     if (this.justSolved !== null) {
       const node = this.nodes[this.justSolved]!;
       gsap.delayedCall(scaled(durations.sceneTransition) * 0.6, () => {
@@ -279,6 +319,9 @@ export class RegionScene implements Scene {
       }
     });
     this.trail.stroke({ color: palette.dim, width: 1, alpha: trailStyle.lineAlpha });
+    // The sleeper floats in the sky between the icons and the first row of the trail.
+    const firstRow = Math.min(...this.points.map((p) => p.y));
+    this.sleeper?.position.set(width / 2, (hud.top() + 30 + firstRow - trailStyle.chapterEndRadius * 2) / 2);
   }
 
   destroy(): void {
