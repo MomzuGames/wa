@@ -71,8 +71,9 @@ export function pieceAt(level: PrismLevel, x: number, y: number): number {
 
 const MAX_STEPS = 4000;
 
-// Deterministic beam tracing with loop detection. Beams pass through each other.
-export function trace(level: PrismLevel, orients: number[]): Trace {
+// Deterministic beam tracing with loop detection. Beams pass through each other. Lights the
+// player has switched off (`off`, by piece index) send nothing.
+export function trace(level: PrismLevel, orients: number[], off: ReadonlySet<number> = new Set()): Trace {
   const segments: Segment[] = [];
   const received = new Map<number, number>();
   const grid = new Map<number, number>();
@@ -80,7 +81,7 @@ export function trace(level: PrismLevel, orients: number[]): Trace {
   const seen = new Set<string>();
   const queue: Segment[] = [];
   level.pieces.forEach((p, i) => {
-    if (p.kind !== 'emitter') return;
+    if (p.kind !== 'emitter' || off.has(i)) return;
     const dir = orients[i]! as Dir;
     const [dx, dy] = DIR_DELTA[dir]!;
     queue.push({ x: p.x + dx, y: p.y + dy, dir, color: p.color });
@@ -126,6 +127,21 @@ export function trace(level: PrismLevel, orients: number[]): Trace {
     }
   }
   return { segments, received };
+}
+
+// The board trimmed to the cells its pieces use. A beam that leaves that area never meets a
+// piece again, so this changes nothing about the puzzle, and the board sits centred.
+export function cropToPieces(level: PrismLevel): PrismLevel {
+  const xs = level.pieces.map((p) => p.x);
+  const ys = level.pieces.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  return {
+    ...level,
+    width: Math.max(...xs) - minX + 1,
+    height: Math.max(...ys) - minY + 1,
+    pieces: level.pieces.map((p) => ({ ...p, x: p.x - minX, y: p.y - minY })),
+  };
 }
 
 export function isSolved(level: PrismLevel, orients: number[]): boolean {

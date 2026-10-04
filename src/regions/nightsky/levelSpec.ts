@@ -9,9 +9,9 @@ export function paramsForChapter(chapter: number, seed: string, levelInChapter: 
   const late = levelInChapter >= 1;
   switch (chapter) {
     case 0:
-      return { stars: [4, 8], edges: [4, 8], crossings: [0, 1], closed: true, oneWayFraction: 0, doubleEdges: 0, drift: false };
+      return { stars: [6, 9], edges: [8, 11], crossings: [0, 1], closed: true, oneWayFraction: 0, doubleEdges: 0, drift: false };
     case 1:
-      return { stars: [7, 11], edges: [8, 13], crossings: [1, late ? 5 : 3], closed: false, oneWayFraction: 0, doubleEdges: 0, drift: false };
+      return { stars: [8, 11], edges: [10, 14], crossings: [1, late ? 5 : 3], closed: false, oneWayFraction: 0, doubleEdges: 0, drift: false };
     case 2:
       return { stars: [8, 12], edges: [10, 15], crossings: [1, 5], closed: rng.chance(0.4), oneWayFraction: 0.35, doubleEdges: 0, drift: false, orderedStars: 2 };
     default:
@@ -59,33 +59,6 @@ export function handcraftedLevels(): Record<number, () => SkyLevel> {
           { x: 0.15, y: 0.8 },
         ],
         [0, 1, 2, 0],
-      ),
-    1: () =>
-      figure(
-        'nightsky:hand:2',
-        0,
-        [
-          { x: 0.15, y: 0.2 },
-          { x: 0.85, y: 0.2 },
-          { x: 0.15, y: 0.8 },
-          { x: 0.85, y: 0.8 },
-        ],
-        [0, 3, 2, 1, 0],
-      ),
-    2: () =>
-      figure(
-        'nightsky:hand:3',
-        0,
-        [
-          { x: 0.05, y: 0.5 }, // beak
-          { x: 0.2, y: 0.4 }, // head
-          { x: 0.45, y: 0.35 }, // back
-          { x: 0.85, y: 0.3 }, // tail
-          { x: 0.95, y: 0.45 }, // tail tip
-          { x: 0.5, y: 0.6 }, // belly
-          { x: 0.4, y: 0.1 }, // wing tip
-        ],
-        [0, 1, 6, 2, 3, 4, 5, 0],
       ),
     5: () =>
       figure(

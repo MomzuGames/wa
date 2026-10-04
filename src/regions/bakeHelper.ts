@@ -1,5 +1,11 @@
 import { chapterRange, progression } from '../core/progress';
 
+const bakeStyle = {
+  candidates: 7,
+  quantileFrom: 0.15, // level 2 takes a gentler candidate...
+  quantileTo: 1, // ...the last levels the hardest
+} as const;
+
 export interface Bakeable {
   difficulty: number;
 }
@@ -22,11 +28,18 @@ export function bakeRegion<T extends Bakeable>(
     for (let levelIndex = start; levelIndex < end; levelIndex++) {
       if (handcrafted[levelIndex]) continue;
       const ultra = levelIndex === progression.levelsPerRegion - 1;
-      let level: T | null = null;
-      for (let variant = 0; !level && variant < 40; variant++) {
-        level = generate(`${id}:${chapter + 1}:${levelIndex - start + 1}:${variant}`, chapter, levelIndex - start, ultra);
+      // Several candidates per slot; the later the level, the harder the one chosen, so
+      // difficulty climbs steadily through the land (a gentle ramp from level 2 on).
+      const candidates: T[] = [];
+      const wanted = ultra ? 1 : bakeStyle.candidates;
+      for (let variant = 0; candidates.length < wanted && variant < 60; variant++) {
+        const made = generate(`${id}:${chapter + 1}:${levelIndex - start + 1}:${variant}`, chapter, levelIndex - start, ultra);
+        if (made) candidates.push(made);
       }
-      if (!level) throw new Error(`failed to generate ${id} level ${levelIndex + 1}`);
+      if (candidates.length === 0) throw new Error(`failed to generate ${id} level ${levelIndex + 1}`);
+      candidates.sort((a, b) => a.difficulty - b.difficulty);
+      const q = bakeStyle.quantileFrom + (bakeStyle.quantileTo - bakeStyle.quantileFrom) * (levelIndex / (progression.levelsPerRegion - 1));
+      const level = candidates[Math.min(candidates.length - 1, Math.round(q * (candidates.length - 1)))]!;
       if (ultra) ultraLevel = level;
       else {
         slots.push(levelIndex);

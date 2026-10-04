@@ -21,7 +21,7 @@ export const atmosphereStyle = {
   rakeAlpha: 0.08,
   facetCount: 7,
   facetAlpha: 0.08,
-  sparkCount: 26,
+  sparkCount: 0, // drifting sparks read as stray pieces over the cave's puzzles
   waveLines: 4,
   waveAlpha: 0.1,
   fireflyCount: 18,

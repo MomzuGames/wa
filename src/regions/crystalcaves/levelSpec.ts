@@ -5,13 +5,15 @@ import { solvePrism } from './solver';
 
 export function paramsForChapter(chapter: number, seed: string, levelInChapter: number, ultra = false): PrismParams {
   const rng = createRng(seed);
-  if (ultra) return { size: [8, 8], emitters: [3, 3], mirrors: [6, 8], splitters: [2, 3], filters: [2, 3], blockers: [2, 4], targets: [4, 5], colors: rng.shuffle([ROSE, SKY, LEMON]), requireMix: true, dichroics: [2, 3] };
+  // The finale is hard by its routing, not by clutter: fewer filters and blockers.
+  if (ultra) return { size: [8, 8], emitters: [3, 3], mirrors: [7, 9], splitters: [2, 3], filters: [1, 1], blockers: [1, 2], targets: [3, 4], colors: rng.shuffle([ROSE, SKY, LEMON]), requireMix: true, dichroics: [1, 2] };
   const late = levelInChapter >= 1;
   switch (chapter) {
     case 0:
-      return { size: [4, 5], emitters: [1, 1], mirrors: [late ? 3 : 2, late ? 4 : 3], splitters: [0, 0], filters: [0, 0], blockers: [0, 0], targets: [1, late ? 2 : 1], colors: [SKY], requireMix: false };
+      // One light, one crystal, but a longer path of mirrors to set.
+      return { size: [5, 6], emitters: [1, 1], mirrors: [late ? 4 : 3, late ? 5 : 4], splitters: [0, 0], filters: [0, 0], blockers: [0, 0], targets: [1, 1], colors: [SKY], requireMix: false };
     case 1:
-      return { size: [5, 6], emitters: [2, 3], mirrors: [3, 5], splitters: [1, 2], filters: [0, 0], blockers: [0, 0], targets: [2, 3], colors: [SKY], requireMix: false };
+      return { size: [6, 6], emitters: [2, 3], mirrors: [4, 6], splitters: [1, 2], filters: [0, 0], blockers: [0, 0], targets: [2, 3], colors: [SKY], requireMix: false };
     case 2:
       return { size: [6, 6], emitters: [2, 3], mirrors: [3, 5], splitters: [1, 2], filters: [0, 0], blockers: [0, 1], targets: [2, 3], colors: rng.shuffle([ROSE, SKY, LEMON]), requireMix: true };
     default:
@@ -44,21 +46,6 @@ export function handcraftedLevels(): Record<number, () => PrismLevel> {
           { kind: 'target', x: 2, y: 3, orient: 0, rotatable: false, color: SKY },
         ],
         [1, 1, 0],
-      ),
-    // Two mirrors in a row.
-    1: () =>
-      handcrafted(
-        'crystalcaves:hand:2',
-        0,
-        5,
-        5,
-        [
-          { kind: 'emitter', x: 2, y: 0, orient: 2, rotatable: false, color: SKY },
-          { kind: 'mirror', x: 2, y: 2, orient: 0, rotatable: true, color: 0 },
-          { kind: 'mirror', x: 4, y: 2, orient: 0, rotatable: true, color: 0 },
-          { kind: 'target', x: 4, y: 4, orient: 0, rotatable: false, color: SKY },
-        ],
-        [2, 1, 1, 0],
       ),
   };
 }

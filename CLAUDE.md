@@ -232,7 +232,7 @@ Quicksand, light weight, generous letter-spacing. It is used only for the title 
   - Locked: a dim outline, silent.
   - Unlocked: an accent outline, breathing gently.
   - Complete: filled with soft accent light, with its ambient layer audible on the map.
-- **Region size:** 10 levels in 4 short chapters (3, 3, 2, 2). Level nodes sit along a winding trail inside the region scene. The final level of each region is generated with "ultra" parameters and is the hardest; chapter-final figures sit at levels 3, 6 and 8.
+- **Region size:** 10 levels in 4 short chapters (3, 3, 2, 2). Level nodes sit along a winding trail inside the region scene. The final level of each region is generated with "ultra" parameters and is the hardest; handcrafted figures sit at levels 6 and 8. Level 1 is the only handcrafted tutorial: levels 2–4 are generated real puzzles on a gentle ramp (the owner found the old first four levels too easy).
 - **Unlocking within a region:** a level unlocks when the previous one is solved. The player may also be up to 2 levels ahead of their earliest unsolved level, so one hard level never blocks progress.
 - **After a solve** the next level opens by itself (`afterLevel` in `core/game.ts`); only the last level returns to the trail, and finishing the region plays its finale.
 - **Free and paid (the full journey):** levels 1–4 of every region are free (24 of 60, 40%); levels 5–10 are paid (`progression.freeLevels`, `isPaidLevel`, `paywalled`, `levelPlayable` in `core/progress.ts`). Paid levels show a padlock on the trail; tapping one, or finishing the free part of a region, opens the unlock card (`ui/unlockCard.ts`, DOM). The unlock is per device, for every profile (`chowa.save.v1.unlock`). How it unlocks lives in `core/store.ts`: on the **website** a family code (only its SHA-256 is stored; change it there), in the **app** an Apple in-app purchase. Until the paid developer account exists the app uses a **test store** (Unlock is instant; the profile card offers "Lock the journey again (test)"). Dev mode bypasses the paywall unless `?locks=1`.
@@ -293,7 +293,7 @@ Attempts and clues used are saved per level.
 ## 8. The Five Regions
 
 For every region:
-- Levels 1–2 are handcrafted tutorials, and level 1 has the ghost-hand demo.
+- Level 1 is a handcrafted tutorial with the ghost-hand demo; from level 2 on every level is a real puzzle, climbing gently.
 - Each region introduces a new mechanic per chapter and a **signature twist** from chapter 3 (see each region below). The instruction card's glyph is rebuilt from the level, so every twist present in the level is shown visually as well as in the captions.
 - Each chapter's final level is handcrafted and forms a recognisable figure where the mechanic allows it: a whale, a bird, a lotus, a fox, a moon and so on.
 - All other levels are generated from seeds.
@@ -370,7 +370,8 @@ For every region:
   - filter (passes only one colour)
   - blocker
   - dichroic mirror (chapter 4+): bounces only its own colour and lets every other colour pass straight through, so one beam can be split by colour
-- **Input:** click a rotatable piece to cycle its orientation.
+- **Input:** click a rotatable piece to cycle its orientation. With more than one light, tapping a light switches its beam off and on (`off` in `trace`), to follow one beam at a time; a level only counts as solved with every light on.
+- **Board:** every board is cropped to the cells its pieces use (`cropToPieces`, at bake; a beam leaving that area never meets a piece again), and drawn as soft squares so blockers and filters clearly sit in cells. The cave backdrop has no drifting sparks.
 - **Win condition:** every target receives exactly its required colour mask.
   - Beam tracing is deterministic, with loop detection.
 - **Generator:** place emitters and pieces, orient them randomly into a solution, trace the beams to decide target colours, then scramble the rotatable pieces. Reject levels that are pre-solved or have unused rotatable pieces.
@@ -424,7 +425,7 @@ For every region:
 - Levels are **baked** into `src/regions/<id>/levels.json` by `npm run levels`.
   - Each generated level is stored with its seed, difficulty parameters, board data and one stored solution.
   - Handcrafted levels live in the same file with `"handcrafted": true`.
-- `generateLevels.ts` runs the solver on every level. It computes a difficulty metric (search nodes explored, minimum moves, or similar) and sorts the levels within each chapter from easiest to hardest.
+- `generateLevels.ts` runs the solver on every level. For each generated slot it makes several candidates and picks a harder one the later the level (`bakeHelper.ts`), so difficulty climbs steadily. It computes a difficulty metric (search nodes explored, minimum moves, or similar) and sorts the levels within each chapter from easiest to hardest.
 - **Tests must assert, for every level in every region:**
   - it is solvable by the solver
   - it is not solved at its start state

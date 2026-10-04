@@ -6,12 +6,12 @@ import { solveRipple } from './solver';
 export function paramsForChapter(chapter: number, seed: string, levelInChapter: number, ultra = false): RippleParams {
   const rng = createRng(seed);
   if (ultra) return { shape: 'grid', size: [5, 5], states: 3, wideNodes: [2, 3], frozenNodes: [2, 4], presses: [8, 12], minSolution: 8 };
-  const late = levelInChapter >= 1;
+  void levelInChapter;
   switch (chapter) {
     case 0:
-      return { shape: 'grid', size: [3, late ? 4 : 3], states: 2, wideNodes: [0, 0], presses: [2, late ? 5 : 3], minSolution: late ? 3 : 2 };
+      return { shape: 'grid', size: [4, 4], states: 2, wideNodes: [0, 0], presses: [4, 6], minSolution: 4 };
     case 1:
-      return { shape: rng.chance(0.5) ? 'ring' : 'cluster', size: [7, 10], states: 2, wideNodes: [0, 0], presses: [3, 6], minSolution: 3 };
+      return { shape: rng.chance(0.5) ? 'ring' : 'cluster', size: [8, 11], states: 2, wideNodes: [0, 0], presses: [4, 7], minSolution: 4 };
     case 2: {
       const shape: PondShape = rng.chance(0.4) ? 'grid' : 'cluster';
       return { shape, size: shape === 'grid' ? [3, 4] : [8, 11], states: 3, wideNodes: [0, 0], frozenNodes: [1, 2], presses: [3, 7], minSolution: 4 };
@@ -51,21 +51,6 @@ export function handcraftedLevels(): Record<number, () => RippleLevel> {
   return {
     0: () =>
       pond('moonlake:hand:1', 0, 2, [{ x: 0.2, y: 0.5, wide: false }, { x: 0.5, y: 0.5, wide: false }, { x: 0.8, y: 0.5, wide: false }], [[0, 1], [1, 2]], [0, 1, 0]),
-    1: () =>
-      pond(
-        'moonlake:hand:2',
-        0,
-        2,
-        [{ x: 0.3, y: 0.3, wide: false }, { x: 0.7, y: 0.3, wide: false }, { x: 0.3, y: 0.7, wide: false }, { x: 0.7, y: 0.7, wide: false }],
-        [[0, 1], [0, 2], [1, 3], [2, 3]],
-        [1, 0, 0, 1],
-      ),
-    // A flower: a centre pad ringed by six petals.
-    2: () => {
-      const nodes = [{ x: 0.5, y: 0.5, wide: false }, ...circle(6, 0.36)];
-      const edges: Array<[number, number]> = [...loop(6, 1), ...Array.from({ length: 6 }, (_, i) => [0, i + 1] as [number, number])];
-      return pond('moonlake:hand:3', 0, 2, nodes, edges, [0, 1, 0, 1, 0, 1, 0]);
-    },
     // A fish: an oval body, a tail fork and an eye.
     5: () => {
       const body = circle(8, 0.3, 0.42, 0.5, 0);

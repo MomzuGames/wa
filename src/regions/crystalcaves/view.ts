@@ -9,11 +9,14 @@ import { GhostHand } from '../../ui/ghostHand';
 import { liftFinger, makeFinger, tapAt } from '../../ui/introGlyphs';
 import { COLOR_NAMES, DIR_DELTA, LEMON, ORIENTATIONS, type PieceKind, type PrismLevel, ROSE, SKY, type Segment, isSolved, trace } from './model';
 import { type PrismStep, moreSteps, stepClue, withShown } from './clues';
+import { events } from '../../core/events';
 import { createCrystalVoice, type CrystalVoice } from './sound';
 
 const prismStyle = {
   maxCell: 76,
-  gridAlpha: 0.22,
+  gridAlpha: 0.55,
+  cellAlpha: 0.6,
+  offAlpha: 0.3, // a switched-off light
   beamWidth: 3,
   beamAlpha: 0.75,
   flowSpeed: 3,
@@ -47,6 +50,9 @@ export class PrismLevelScene implements LevelScene {
   private orients: number[];
   // Hints never turn a piece: a nudge rings the piece to look at, then a faint ghost shows
   // the angle it should have (later, a few more). Ghosts fade once a piece matches.
+  // Lights the player has switched off (piece indices): their beams are not drawn and reach
+  // nothing. A level only counts as solved with every light on.
+  private off = new Set<number>();
   private hintTarget: PrismStep | null = null;
   private nudge: { piece: number; g: Graphics; tween: gsap.core.Tween } | null = null;
   private ghosts = new Map<number, { orient: number; root: Container }>();
@@ -105,6 +111,10 @@ export class PrismLevelScene implements LevelScene {
         root.eventMode = 'static';
         root.cursor = 'pointer';
         root.on('pointertap', () => this.turn(i));
+      } else if (piece.kind === 'emitter' && this.level.pieces.filter((p) => p.kind === 'emitter').length > 1) {
+        root.eventMode = 'static';
+        root.cursor = 'pointer';
+        root.on('pointertap', () => this.toggleLight(i));
       }
       this.piecesLayer.addChild(root);
       this.views.push({ root, body, ring, glyph, fill, animating: false });
@@ -127,15 +137,16 @@ export class PrismLevelScene implements LevelScene {
       this.ghosts.delete(piece);
       this.addGhost(piece, ghost.orient);
     }
+    // The board as soft squares, so every piece clearly sits in a cell of the cave floor.
     const g = this.grid;
     g.clear();
-    for (let y = 0; y <= this.level.height; y++) {
-      g.moveTo(this.origin.x, this.origin.y + y * this.cell).lineTo(this.origin.x + this.level.width * this.cell, this.origin.y + y * this.cell);
+    const inset = this.cell * 0.06;
+    for (let y = 0; y < this.level.height; y++) {
+      for (let x = 0; x < this.level.width; x++) {
+        g.roundRect(this.origin.x + x * this.cell + inset, this.origin.y + y * this.cell + inset, this.cell - inset * 2, this.cell - inset * 2, this.cell * 0.14);
+      }
     }
-    for (let x = 0; x <= this.level.width; x++) {
-      g.moveTo(this.origin.x + x * this.cell, this.origin.y).lineTo(this.origin.x + x * this.cell, this.origin.y + this.level.height * this.cell);
-    }
-    g.stroke({ color: palette.dim, width: 1, alpha: prismStyle.gridAlpha });
+    g.fill({ color: palette.ink, alpha: prismStyle.cellAlpha }).stroke({ color: palette.dim, width: 1, alpha: prismStyle.gridAlpha });
     this.views.forEach((v, i) => {
       const p = this.level.pieces[i]!;
       v.root.position.copyFrom(this.cellCenter(p.x, p.y));
@@ -226,8 +237,23 @@ export class PrismLevelScene implements LevelScene {
       v.ring.circle(0, 0, hitR).fill({ color: palette.pearl, alpha: 0.001 });
       v.ring.circle(0, 0, half * 0.8).stroke({ color: palette.dim, width: 1, alpha: prismStyle.ringAlpha });
     }
+    if (p.kind === 'emitter' && v.root.eventMode === 'static') v.ring.circle(0, 0, Math.max(layout.minHitSize / 2, half * 0.9)).fill({ color: palette.pearl, alpha: 0.001 });
     this.paintPiece(v.body, v.glyph, p.kind, p.color, this.orients[i]!, s);
+    v.body.alpha = this.off.has(i) ? prismStyle.offAlpha : 1;
     this.drawTargetFill(i);
+  }
+
+  // Switching a light off and on again: its beam vanishes, so busy boards can be worked on
+  // one light at a time.
+  private toggleLight(i: number): void {
+    if (this.solved) return;
+    if (this.off.has(i)) this.off.delete(i);
+    else this.off.add(i);
+    this.voice.turn(i);
+    gsap.fromTo(this.views[i]!.root.scale, { x: 0.85, y: 0.85 }, { x: 1, y: 1, duration: scaled(durations.pieceMove), ease: easings.tileSnap });
+    this.drawPiece(i);
+    this.retrace(false);
+    if (this.off.size > 0) events.emit('level:tip', { id: 'prism:lights', text: 'Tip: a switched-off light sends nothing. Turn every light back on to finish.' });
   }
 
   private drawTargetFill(i: number): void {
@@ -261,7 +287,7 @@ export class PrismLevelScene implements LevelScene {
   }
 
   private retrace(silent: boolean): void {
-    const t = trace(this.level, this.orients);
+    const t = trace(this.level, this.orients, this.off);
     this.segments = t.segments;
     this.received = t.received;
     let lit = 0;
@@ -274,7 +300,7 @@ export class PrismLevelScene implements LevelScene {
     if (!silent && lit > this.litCount) this.voice.targetLit(lit);
     this.litCount = lit;
     this.drawBeams();
-    if (!silent && !this.solved && isSolved(this.level, this.orients)) {
+    if (!silent && !this.solved && this.off.size === 0 && isSolved(this.level, this.orients)) {
       this.solved = true;
       this.emit('solved');
     }
@@ -316,6 +342,7 @@ export class PrismLevelScene implements LevelScene {
     if (this.solved) return;
     this.stopTutorial();
     this.orients = this.level.pieces.map((p) => p.orient);
+    this.off.clear();
     this.clearHints();
     this.views.forEach((v, i) => {
       gsap.killTweensOf(v.body);
@@ -523,6 +550,36 @@ export class PrismLevelScene implements LevelScene {
         return root;
       },
     });
+    // Lights can be switched off and on, when there is more than one.
+    if (this.level.pieces.filter((p) => p.kind === 'emitter').length > 1) {
+      pages.push({
+        caption: `${isTouch() ? 'Tap' : 'Click'} a light to switch its beam off, and again to switch it back on, to follow one beam at a time. Every light must be on to finish.`,
+        glyph: () => {
+          const root = new Container();
+          const beams = new Graphics();
+          const top = this.miniPiece('emitter', ROSE, 1, s);
+          top.root.position.set(-s * 1.6, -s * 0.6);
+          const bottom = this.miniPiece('emitter', SKY, 1, s);
+          bottom.root.position.set(-s * 1.6, s * 0.6);
+          const finger = makeFinger();
+          root.addChild(beams, top.root, bottom.root, finger);
+          const draw = (topOn: boolean) => {
+            beams.clear();
+            if (topOn) this.beamLine(beams, { x: -s * 1.2, y: -s * 0.6 }, { x: s * 1.8, y: -s * 0.6 }, ROSE);
+            this.beamLine(beams, { x: -s * 1.2, y: s * 0.6 }, { x: s * 1.8, y: s * 0.6 }, SKY);
+            top.body.alpha = topOn ? 1 : prismStyle.offAlpha;
+          };
+          draw(true);
+          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
+          tapAt(tl, finger, -s * 1.6, -s * 0.6, 0.8).call(() => draw(false), undefined, '<');
+          liftFinger(tl, finger);
+          tapAt(tl, finger, -s * 1.6, -s * 0.6, 1.4).call(() => draw(true), undefined, '<');
+          liftFinger(tl, finger);
+          root.on('destroyed', () => tl.kill());
+          return root;
+        },
+      });
+    }
     // 2. What a beam does.
     pages.push({
       caption: 'A beam travels straight through empty cells, bounces off a mirror, and stops at a crystal, a stone or the edge of the cave.',

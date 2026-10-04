@@ -5,9 +5,10 @@ import { solve } from './solver';
 
 // Chapter parameters: sizes and features per CLAUDE.md §8.
 const chapterParams: Array<(rng: { int(a: number, b: number): number }) => LoopParams> = [
+  // Level 2 (the only generated level of chapter 1): small, but a real puzzle.
   (rng) => {
-    const size = rng.int(3, 4);
-    return { width: size, height: size, irregular: false, loopiness: 0.08, components: 1, lockedFraction: 0 };
+    const size = rng.int(4, 5);
+    return { width: size, height: size, irregular: false, loopiness: 0.14, components: 1, lockedFraction: 0 };
   },
   (rng) => {
     const size = rng.int(5, 6);
@@ -96,24 +97,6 @@ export function handcraftedLevels(): Record<number, () => LoopLevel> {
         'o x o',
         '|   |',
         'o-o-o',
-      ]),
-    1: () =>
-      handcraftedPattern('tidepools:hand:2', 0, [
-        'o-o-o', //
-        '  |  ',
-        'o-o-o',
-        '|   |',
-        'o x o',
-      ]),
-    2: () =>
-      handcraftedPattern('tidepools:hand:3', 0, [
-        'o-o-o-o', //
-        '|     |',
-        'o-o o-o',
-        '| | | |',
-        'o-o o-o',
-        '|     |',
-        'o-o-o-o',
       ]),
     5: () =>
       handcraftedShape(

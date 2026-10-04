@@ -10,7 +10,7 @@ export function paramsForChapter(chapter: number, seed: string, levelInChapter: 
   const late = levelInChapter >= 1;
   switch (chapter) {
     case 0:
-      return { size: 3, maxHeight: 2, density: [0.5, 0.8], count: 'none', fixedStones: [0, 0], minStones: 3 };
+      return { size: 4, maxHeight: 2, density: [0.45, 0.7], count: 'none', fixedStones: [0, 0], minStones: 5 };
     case 1:
       return { size: late ? 4 : 3, maxHeight: 3, density: [0.45, 0.7], count: 'exact', fixedStones: [0, 0], minStones: 5 };
     case 2:
@@ -57,20 +57,6 @@ export function handcraftedLevels(): Record<number, () => ShadowLevel> {
       terrace('shadowterrace:hand:1', 0, [
         [1, 0],
         [0, 0],
-      ]),
-    // Two heights: the shadows now differ from column to column.
-    1: () =>
-      terrace('shadowterrace:hand:2', 0, [
-        [2, 0, 1],
-        [0, 1, 0],
-        [1, 0, 2],
-      ]),
-    // A staircase climbing across the terrace.
-    2: () =>
-      terrace('shadowterrace:hand:3', 0, [
-        [1, 2, 3],
-        [0, 1, 2],
-        [0, 0, 1],
       ]),
     // A ziggurat, counted exactly.
     5: () =>
