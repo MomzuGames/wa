@@ -58,32 +58,5 @@ export function handcraftedLevels(): Record<number, () => ShadowLevel> {
         [1, 0],
         [0, 0],
       ]),
-    // A ziggurat, counted exactly.
-    5: () =>
-      terrace(
-        'shadowterrace:hand:6',
-        1,
-        [
-          [0, 1, 1, 1, 0],
-          [1, 2, 2, 2, 1],
-          [1, 2, 3, 2, 1],
-          [1, 2, 2, 2, 1],
-          [0, 1, 1, 1, 0],
-        ],
-        { count: 'exact' },
-      ),
-    // A small castle: four towers, walls between, an empty court, one tower already built.
-    7: () =>
-      terrace(
-        'shadowterrace:hand:8',
-        2,
-        [
-          [3, 1, 1, 3],
-          [1, 0, 0, 1],
-          [1, 0, 0, 2],
-          [3, 1, 2, 3],
-        ],
-        { count: 'exact', fixed: [[0, 0]] },
-      ),
   };
 }

@@ -1,5 +1,5 @@
 import { createRng } from '../../core/rng';
-import { generateStoneLevel, type StoneParams } from './generator';
+import { type StoneParams } from './generator';
 import { type Piece, type StoneLevel, type Tri, isConnected, normalise, triKey } from './model';
 import { solveStone } from './solver';
 
@@ -58,25 +58,6 @@ function fromOwnerGrid(seed: string, chapter: number, rows: string[], tray: Reco
   return level;
 }
 
-// Chapter-final figures as silhouettes: '#' full cell; 'a' 'b' 'c' 'd' keep only the
-// NW, NE, SE or SW half of the cell; '.' empty. Pieces are generated from the seed.
-function fromSilhouette(seed: string, chapter: number, rows: string[], params: Omit<StoneParams, 'silhouette' | 'cells'>): StoneLevel {
-  const height = rows.length;
-  const width = rows[0]!.length;
-  const keys: number[] = [];
-  const halves: Record<string, number[]> = { a: [0, 3], b: [0, 1], c: [1, 2], d: [2, 3] };
-  rows.forEach((row, y) =>
-    [...row].forEach((ch, x) => {
-      if (ch === '#') for (let t = 0; t < 4; t++) keys.push(triKey(width, x, y, t));
-      else if (halves[ch]) for (const t of halves[ch]!) keys.push(triKey(width, x, y, t));
-    }),
-  );
-  const level = generateStoneLevel(seed, chapter, { ...params, cells: [0, 0], silhouette: { width, height, keys } });
-  if (!level) throw new Error(`could not partition handcrafted silhouette ${seed}`);
-  level.handcrafted = true;
-  return level;
-}
-
 export function handcraftedLevels(): Record<number, () => StoneLevel> {
   return {
     0: () =>
@@ -86,34 +67,6 @@ export function handcraftedLevels(): Record<number, () => StoneLevel> {
         ['A A', 'A B'],
         { A: { rot: 1, flip: 0 }, B: { rot: 0, flip: 0 } },
         false,
-      ),
-    5: () =>
-      fromSilhouette(
-        'stonegarden:hand:6',
-        1,
-        [
-          'd...c', // fox
-          '##.##',
-          '#####',
-          '#####',
-          'c###d',
-          '.c#d.',
-        ],
-        { pieces: [6, 6], diagonalCuts: [0, 0], diagonalSplits: [0, 1], allowFlip: false, requireFlip: false },
-      ),
-    7: () =>
-      fromSilhouette(
-        'stonegarden:hand:8',
-        2,
-        [
-          '..b#a..', // lotus
-          '.b###a.',
-          'b#####a',
-          '#######',
-          'c#####d',
-          '.c###d.',
-        ],
-        { pieces: [7, 7], diagonalCuts: [0, 0], diagonalSplits: [1, 2], allowFlip: true, requireFlip: true },
       ),
   };
 }

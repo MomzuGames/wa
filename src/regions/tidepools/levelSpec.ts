@@ -1,5 +1,5 @@
 import { createRng } from '../../core/rng';
-import { generateLoopLevel, type LoopParams } from './generator';
+import { type LoopParams } from './generator';
 import { E, N, S, W, type Board, type LoopLevel, type Tile, distinctRotations, isSolved } from './model';
 import { solve } from './solver';
 
@@ -71,23 +71,6 @@ function handcraftedPattern(seed: string, chapter: number, rows: string[]): Loop
   return { seed, chapter, handcrafted: true, width, height, cells, solution: cells.map(() => 0), difficulty: 0 };
 }
 
-// Silhouettes for chapter finals: '#' present, '.' hole.
-function silhouette(rows: string[]): { width: number; height: number; present: boolean[] } {
-  const height = rows.length;
-  const width = rows[0]!.length;
-  const present: boolean[] = [];
-  for (const row of rows) for (const ch of row) present.push(ch === '#');
-  return { width, height, present };
-}
-
-function handcraftedShape(seed: string, chapter: number, rows: string[], loopiness: number, components: number, lockedFraction: number): LoopLevel {
-  const { width, height, present } = silhouette(rows);
-  const level = generateLoopLevel(seed, chapter, { width, height, irregular: false, loopiness, components, lockedFraction, present });
-  if (!level) throw new Error(`could not generate shaped level ${seed}`);
-  level.handcrafted = true;
-  return level;
-}
-
 export function handcraftedLevels(): Record<number, () => LoopLevel> {
   return {
     0: () =>
@@ -98,38 +81,5 @@ export function handcraftedLevels(): Record<number, () => LoopLevel> {
         '|   |',
         'o-o-o',
       ]),
-    5: () =>
-      handcraftedShape(
-        'tidepools:hand:6',
-        1,
-        [
-          '..####', // bird
-          '.#####',
-          '######',
-          '.####.',
-          '..##..',
-          '.####.',
-        ],
-        0.2,
-        1,
-        0,
-      ),
-    7: () =>
-      handcraftedShape(
-        'tidepools:hand:8',
-        2,
-        [
-          '.#.#.#.', // lotus
-          '.#####.',
-          '#######',
-          '#######',
-          '.#####.',
-          '..###..',
-          '...#...',
-        ],
-        0.22,
-        1,
-        0.1,
-      ),
   };
 }

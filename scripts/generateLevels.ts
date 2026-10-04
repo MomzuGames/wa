@@ -1,5 +1,7 @@
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { freezeLevels } from '../src/regions/bakeHelper';
+import { progression } from '../src/core/progress';
 import { bakeTidepools } from '../src/regions/tidepools/bake';
 import { bakeNightSky } from '../src/regions/nightsky/bake';
 import { bakeStoneGarden } from '../src/regions/stonegarden/bake';
@@ -18,8 +20,13 @@ const regions: Array<{ id: string; bake: () => unknown[] }> = [
   { id: 'shadowterrace', bake: bakeShadowTerrace },
 ];
 
+// The free levels are settled: keep them exactly as they are unless --all is passed.
+const keepFree = !process.argv.includes('--all');
+
 for (const region of regions) {
   const started = Date.now();
+  const file0 = resolve('src/regions', region.id, 'levels.json');
+  if (keepFree && existsSync(file0)) freezeLevels(region.id, JSON.parse(readFileSync(file0, 'utf8')).slice(0, progression.freeLevels));
   const levels = region.bake();
   const file = resolve('src/regions', region.id, 'levels.json');
   writeFileSync(file, JSON.stringify(levels));

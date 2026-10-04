@@ -36,36 +36,9 @@ function pond(seed: string, chapter: number, states: 2 | 3, nodes: PadNode[], ed
   return level;
 }
 
-function circle(count: number, radius: number, cx = 0.5, cy = 0.5, phase = -Math.PI / 2): PadNode[] {
-  return Array.from({ length: count }, (_, i) => {
-    const a = phase + (i / count) * Math.PI * 2;
-    return { x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius, wide: false };
-  });
-}
-
-function loop(count: number, offset = 0): Array<[number, number]> {
-  return Array.from({ length: count }, (_, i) => [offset + i, offset + ((i + 1) % count)] as [number, number]);
-}
-
 export function handcraftedLevels(): Record<number, () => RippleLevel> {
   return {
     0: () =>
       pond('moonlake:hand:1', 0, 2, [{ x: 0.2, y: 0.5, wide: false }, { x: 0.5, y: 0.5, wide: false }, { x: 0.8, y: 0.5, wide: false }], [[0, 1], [1, 2]], [0, 1, 0]),
-    // A fish: an oval body, a tail fork and an eye.
-    5: () => {
-      const body = circle(8, 0.3, 0.42, 0.5, 0);
-      const nodes: PadNode[] = [...body, { x: 0.88, y: 0.3, wide: false }, { x: 0.88, y: 0.7, wide: false }, { x: 0.3, y: 0.44, wide: false }];
-      const edges: Array<[number, number]> = [...loop(8), [0, 8], [0, 9], [8, 9], [10, 3], [10, 5]];
-      return pond('moonlake:hand:6', 1, 2, nodes, edges, [1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1]);
-    },
-    // A lotus in three states: an inner ring of five and an outer ring of ten.
-    7: () => {
-      const inner = circle(5, 0.18);
-      const outer = circle(10, 0.4, 0.5, 0.5, -Math.PI / 2 + Math.PI / 10);
-      const nodes = [...inner, ...outer];
-      const edges: Array<[number, number]> = [...loop(5), ...loop(10, 5)];
-      for (let i = 0; i < 5; i++) edges.push([i, 5 + i * 2], [i, 5 + ((i * 2 + 1) % 10)]);
-      return pond('moonlake:hand:8', 2, 3, nodes, edges, [1, 2, 0, 1, 0, 2, 0, 1, 0, 0, 1, 2, 0, 0, 1]);
-    },
   };
 }

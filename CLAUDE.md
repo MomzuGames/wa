@@ -232,7 +232,7 @@ Quicksand, light weight, generous letter-spacing. It is used only for the title 
   - Locked: a dim outline, silent.
   - Unlocked: an accent outline, breathing gently.
   - Complete: filled with soft accent light, with its ambient layer audible on the map.
-- **Region size:** 10 levels in 4 short chapters (3, 3, 2, 2). Level nodes sit along a winding trail inside the region scene. The final level of each region is generated with "ultra" parameters and is the hardest; handcrafted figures sit at levels 6 and 8. Level 1 is the only handcrafted tutorial: levels 2–4 are generated real puzzles on a gentle ramp (the owner found the old first four levels too easy).
+- **Region size:** 10 levels in 4 short chapters (3, 3, 2, 2). Level nodes sit along a winding trail inside the region scene. The final level of each region is generated with "ultra" parameters and is the hardest. Level 1 is the only handcrafted level (the tutorial): levels 2–4 are generated real puzzles on a gentle ramp, and levels 5–9 climb steadily from level 4 toward the final level (the owner found the old early levels too easy and the old picture levels at 6 and 8 a dip in difficulty, so those pictures were retired).
 - **Unlocking within a region:** a level unlocks when the previous one is solved. The player may also be up to 2 levels ahead of their earliest unsolved level, so one hard level never blocks progress.
 - **After a solve** the next level opens by itself (`afterLevel` in `core/game.ts`); only the last level returns to the trail, and finishing the region plays its finale.
 - **Free and paid (the full journey):** levels 1–4 of every region are free (24 of 60, 40%); levels 5–10 are paid (`progression.freeLevels`, `isPaidLevel`, `paywalled`, `levelPlayable` in `core/progress.ts`). Paid levels show a padlock on the trail; tapping one, or finishing the free part of a region, opens the unlock card (`ui/unlockCard.ts`, DOM). The unlock is per device, for every profile (`chowa.save.v1.unlock`). How it unlocks lives in `core/store.ts`: on the **website** a family code (only its SHA-256 is stored; change it there), in the **app** an Apple in-app purchase. Until the paid developer account exists the app uses a **test store** (Unlock is instant; the profile card offers "Lock the journey again (test)"). Dev mode bypasses the paywall unless `?locks=1`.
@@ -295,7 +295,7 @@ Attempts and clues used are saved per level.
 For every region:
 - Level 1 is a handcrafted tutorial with the ghost-hand demo; from level 2 on every level is a real puzzle, climbing gently.
 - Each region introduces a new mechanic per chapter and a **signature twist** from chapter 3 (see each region below). The instruction card's glyph is rebuilt from the level, so every twist present in the level is shown visually as well as in the captions.
-- Each chapter's final level is handcrafted and forms a recognisable figure where the mechanic allows it: a whale, a bird, a lotus, a fox, a moon and so on.
+- (Retired: the handcrafted picture levels. Every level after the tutorial is generated, so difficulty never dips.)
 - All other levels are generated from seeds.
 
 ### Region 1 — Tidepools (Loop) · accent `mint`
@@ -425,7 +425,7 @@ For every region:
 - Levels are **baked** into `src/regions/<id>/levels.json` by `npm run levels`.
   - Each generated level is stored with its seed, difficulty parameters, board data and one stored solution.
   - Handcrafted levels live in the same file with `"handcrafted": true`.
-- `generateLevels.ts` runs the solver on every level. For each generated slot it makes several candidates and picks a harder one the later the level (`bakeHelper.ts`), so difficulty climbs steadily. It computes a difficulty metric (search nodes explored, minimum moves, or similar) and sorts the levels within each chapter from easiest to hardest.
+- `generateLevels.ts` runs the solver on every level. Free levels (1–4) pick a harder candidate the later the slot; levels 5–9 each aim at a target that climbs in proportion from level 4 to the final level, choosing the nearest of a dozen candidates and never an easier one than the level before, then ordered easiest-first within each chapter (`bakeHelper.ts`). **The settled free levels are kept exactly as they are** when baking again (`freezeLevels`, read from the current `levels.json`); `npm run levels -- --all` rebuilds them too. It computes a difficulty metric (search nodes explored, minimum moves, or similar) and sorts the levels within each chapter from easiest to hardest.
 - **Tests must assert, for every level in every region:**
   - it is solvable by the solver
   - it is not solved at its start state

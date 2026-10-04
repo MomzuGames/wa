@@ -60,36 +60,5 @@ export function handcraftedLevels(): Record<number, () => SkyLevel> {
         ],
         [0, 1, 2, 0],
       ),
-    5: () =>
-      figure(
-        'nightsky:hand:6',
-        1,
-        [
-          { x: 0.05, y: 0.5 }, // nose
-          { x: 0.35, y: 0.25 }, // top
-          { x: 0.75, y: 0.3 }, // tail top
-          { x: 0.65, y: 0.5 }, // tail join
-          { x: 0.75, y: 0.7 }, // tail bottom
-          { x: 0.35, y: 0.75 }, // bottom
-          { x: 0.45, y: 0.12 }, // fin
-        ],
-        [5, 0, 1, 6, 3, 2, 4, 3, 5, 1],
-      ),
-    7: () =>
-      figure(
-        'nightsky:hand:8',
-        2,
-        [
-          { x: 0.1, y: 0.6 }, // nose
-          { x: 0.3, y: 0.15 }, // left ear
-          { x: 0.6, y: 0.15 }, // right ear
-          { x: 0.75, y: 0.5 }, // cheek
-          { x: 0.45, y: 0.85 }, // chin
-          { x: 0.38, y: 0.45 }, // left eye
-          { x: 0.55, y: 0.45 }, // right eye
-        ],
-        [0, 1, 5, 2, 3, 4, 0, 6, 5],
-        { oneWay: [[0, 1], [3, 4]] },
-      ),
   };
 }
