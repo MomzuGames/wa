@@ -16,6 +16,7 @@ export class HintOrb extends Container {
   private hit = new Graphics();
   private readyTween: gsap.core.Tween | null = null;
   private accent: number;
+  private shown = { fill: -1, ready: false };
 
   constructor(accent: number, onPress: () => void) {
     super();
@@ -37,6 +38,9 @@ export class HintOrb extends Container {
   setFill(fill: number, ready: boolean): void {
     const r = orbStyle.radius - orbStyle.ringWidth;
     const clamped = Math.min(1, Math.max(0, fill));
+    // Called every frame: redraw only when something changed.
+    if (clamped === this.shown.fill && ready === this.shown.ready) return;
+    this.shown = { fill: clamped, ready };
     this.light.clear();
     if (clamped > 0) {
       const top = r - clamped * 2 * r;

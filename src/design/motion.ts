@@ -16,6 +16,13 @@ export const durations = {
   panelToggle: 0.45,
 } as const;
 
+// Gentle tips: a calm distance from other captions; the first waits a moment after play begins.
+export const tipTiming = {
+  gap: 25,
+  firstDelay: 6,
+  retry: 5,
+} as const;
+
 // The MomoGames studio card shown at launch.
 export const studioCard = {
   fadeIn: 0.8,

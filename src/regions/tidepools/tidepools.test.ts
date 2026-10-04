@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import levelsJson from './levels.json';
-import { E, N, S, W, boardFromLevel, isSolutionValid, isSolved, rotateMask, tileKind, type LoopLevel } from './model';
+import { E, N, S, W, boardFromLevel, isSolutionValid, isSolved, linkPartner, rotateMask, tileKind, type LoopLevel } from './model';
 import { countSolutions, solve } from './solver';
 import { generateLoopLevel } from './generator';
-import { ghostClue, revealFraction } from './clues';
+import { stepClue } from './clues';
 
 const levels = levelsJson as LoopLevel[];
 
@@ -73,11 +73,21 @@ describe('baked tidepools levels', () => {
         expect(solve(boardFromLevel(level)).solution).not.toBeNull();
       });
 
-      it('never reveals more than half in clue tier 4', () => {
+      it('hints turn a wrong tile into place each time and never finish the puzzle', () => {
         const board = boardFromLevel(level);
-        const clue = ghostClue(board, 'test');
-        expect(clue).not.toBeNull();
-        expect(revealFraction(board, clue!)).toBeLessThanOrEqual(0.5);
+        let steps = 0;
+        for (let step = stepClue(board, `t${steps}`); step; step = stepClue(board, `t${++steps}`)) {
+          const tile = board.cells[step.cell]!;
+          expect(tile.rotation === step.rotation).toBe(false);
+          for (const i of [step.cell, linkPartner(board, step.cell)]) {
+            if (i === null || board.cells[i]!.locked) continue;
+            board.cells[i]!.rotation = step.rotation;
+            board.cells[i]!.locked = true;
+          }
+          expect(solve(board).solution).not.toBeNull();
+          expect(steps).toBeLessThan(board.cells.length);
+        }
+        expect(isSolved(board)).toBe(false);
       });
 
       it('keeps blanks under 20% of tiles', () => {

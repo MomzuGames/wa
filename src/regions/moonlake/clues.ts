@@ -1,32 +1,25 @@
 import { createRng } from '../../core/rng';
-import { type RippleLevel, pressCount } from './model';
+import { type RippleLevel } from './model';
 import { solveRipple } from './solver';
 
-// All Moon Lake clues come from the minimum solution for the current state.
+// Every hint comes from the fewest presses that light the lake from the current state.
 export function remainingPresses(level: RippleLevel, state: number[]): number[] | null {
   return solveRipple(level, state).presses;
 }
 
-// Tiers 1 and 2: one, then two more, pads from the minimum solution.
-export function nodeClue(level: RippleLevel, state: number[], count: number, exclude: Set<number>, seed: string): number[] {
+// One more pad to glow (with how many presses it needs), or null when at most one pad of
+// the shortest way is left unlit by hints: that last press is the player's.
+export function stepClue(level: RippleLevel, state: number[], hinted: ReadonlySet<number>, seed: string): { pad: number; presses: number } | null {
   const presses = remainingPresses(level, state);
-  if (!presses) return [];
-  const rng = createRng(seed);
-  const candidates = presses.map((c, i) => (c > 0 && !exclude.has(i) ? i : -1)).filter((i) => i >= 0);
-  return rng.shuffle(candidates).slice(0, count);
+  if (!presses) return null;
+  const open = presses.map((c, i) => (c > 0 && !hinted.has(i) ? i : -1)).filter((i) => i >= 0);
+  if (open.length <= 1) return null;
+  const pad = createRng(seed).pick(open);
+  return { pad, presses: presses[pad]! };
 }
 
-// Tier 3: how many presses remain, shown as dots.
-export function countClue(level: RippleLevel, state: number[]): number {
+// After the lake changes, glowing pads that are no longer part of a shortest way go dark.
+export function stillHelpful(level: RippleLevel, state: number[], hinted: ReadonlySet<number>): Set<number> {
   const presses = remainingPresses(level, state);
-  return presses ? pressCount(presses) : 0;
-}
-
-// Tier 4: at most half of the remaining presses.
-export function halfClue(level: RippleLevel, state: number[], seed: string): number[] {
-  const presses = remainingPresses(level, state);
-  if (!presses) return [];
-  const rng = createRng(seed);
-  const sites = presses.map((c, i) => (c > 0 ? i : -1)).filter((i) => i >= 0);
-  return rng.shuffle(sites).slice(0, Math.floor(sites.length / 2));
+  return new Set([...hinted].filter((i) => presses && presses[i]! > 0));
 }

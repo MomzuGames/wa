@@ -1,7 +1,7 @@
 import gsap from 'gsap';
 import { Container, FederatedPointerEvent, Graphics } from 'pixi.js';
-import type { ClueTier, IntroPage, LevelScene, ShellContext } from '../types';
-import { alphas, palette } from '../../design/palette';
+import type { IntroPage, LevelScene, ShellContext, Tip } from '../types';
+import { palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
 import { isCompact, isTouch, puzzleArea } from '../../design/layout';
 import { GhostHand } from '../../ui/ghostHand';
@@ -19,7 +19,7 @@ import {
   transform,
   triCorners,
 } from './model';
-import { halfClue, pieceClue, solutionFor } from './clues';
+import { stepClue } from './clues';
 import { createStoneVoice, type StoneVoice } from './sound';
 
 const stoneStyle = {
@@ -38,7 +38,6 @@ const stoneStyle = {
   turnSeconds: 0.28,
   settleSeconds: 0.32,
   returnSeconds: 0.4,
-  clueGhostSeconds: 3,
   tutorialDelay: 1.6,
   wheelCooldown: 0.18,
   shadowOffset: 5,
@@ -64,7 +63,6 @@ export class StoneLevelScene implements LevelScene {
   readonly container = new Container();
   readonly usesRotateKey = true;
   private silhouette = new Graphics();
-  private clueLayer = new Graphics();
   private rake = new Graphics();
   private piecesLayer = new Container();
   private hit = new Graphics();
@@ -91,9 +89,8 @@ export class StoneLevelScene implements LevelScene {
   private unsubscribe: Array<() => void> = [];
   private wheelClock = 0;
   private time = 0;
-  private ghosts: Array<{ piece: number; placement: Placement; until: number | null }> = [];
-  private seamsUntil: number | null = null;
-  private seamSolution: Map<number, Placement> | null = null;
+  // Stones a hint settled, so a restart can leave them where they are.
+  private hintPlaced = new Map<number, Placement>();
   private onWheel = (e: WheelEvent) => this.wheel(e);
   // Pixi never hears a cancelled touch (iOS sends one when the system takes the gesture),
   // so the drag would otherwise stay open with the stone floating under nobody's finger.
@@ -108,14 +105,13 @@ export class StoneLevelScene implements LevelScene {
   ) {
     this.voice = createStoneVoice(ctx.audio);
     this.silhouette.eventMode = 'none';
-    this.clueLayer.eventMode = 'none';
     this.rake.eventMode = 'none';
     this.hit.eventMode = 'static';
     this.hit.on('globalpointermove', (e: FederatedPointerEvent) => this.onMove(e));
     this.hit.on('pointerup', () => this.onUp());
     this.hit.on('pointerupoutside', () => this.onUp());
     this.magnet.eventMode = 'none';
-    this.container.addChild(this.hit, this.rake, this.silhouette, this.clueLayer, this.magnet, this.piecesLayer, this.controls);
+    this.container.addChild(this.hit, this.rake, this.silhouette, this.magnet, this.piecesLayer, this.controls);
     // On-screen turn and flip buttons act on the stone you touched last.
     this.turnButton = new IconButton('turn', () => this.turn(1, this.lastTouched ?? this.firstMovable()));
     this.controls.addChild(this.turnButton);
@@ -289,7 +285,6 @@ export class StoneLevelScene implements LevelScene {
         v.root.scale.set(this.trayScale);
       }
     });
-    this.drawClues();
   }
 
   resize(width: number, height: number): void {
@@ -503,8 +498,6 @@ export class StoneLevelScene implements LevelScene {
       },
     });
     gsap.to(v.root.scale, { x: 1, y: 1, duration: scaled(stoneStyle.settleSeconds), overwrite: true });
-    this.ghosts = this.ghosts.filter((g) => g.piece !== i);
-    this.drawClues();
     if (!silent) {
       this.voice.settle(this.placedCount);
       this.emit('move');
@@ -606,89 +599,55 @@ export class StoneLevelScene implements LevelScene {
     return placed;
   }
 
-  showClue(tier: ClueTier): string | void {
-    if (this.solved) return;
-    const placed = this.currentPlacements();
-    let caption: string | undefined;
-    switch (tier) {
-      case 1: {
-        const clue = pieceClue(this.level, placed, `${this.level.seed}:clue1`);
-        if (!clue) return 'Every stone is already in its place.';
-        this.ghosts = this.ghosts.filter((g) => g.until !== null);
-        this.ghosts.push({ ...clue, until: null });
-        this.setLastTouched(this.views[clue.piece]!);
-        caption = placed.has(clue.piece)
-          ? 'The brighter stone is resting in the wrong spot. The outline shows where it belongs.'
-          : 'The outline shows where one of your stones belongs. Match its shape exactly.';
-        break;
-      }
-      case 2: {
-        const clue = pieceClue(this.level, placed, `${this.level.seed}:clue2:${this.placedCount}`);
-        if (!clue) return 'Every stone is already in its place.';
-        const v = this.views[clue.piece]!;
-        if (this.dragging === v) this.dragging = null;
-        if (v.placed) this.unplace(clue.piece);
-        this.place(clue.piece, clue.placement, true);
-        this.voice.settle(this.placedCount);
-        caption = 'One stone has settled into its place by itself.';
-        break;
-      }
-      case 3:
-        this.seamSolution = solutionFor(this.level, placed);
-        this.seamsUntil = this.time + stoneStyle.clueGhostSeconds;
-        caption = 'For a moment, the seams show how the shape divides into stones.';
-        break;
-      case 4:
-        for (const g of halfClue(this.level, placed, `${this.level.seed}:clue4`)) {
-          this.ghosts.push({ ...g, until: this.time + stoneStyle.clueGhostSeconds });
-        }
-        caption = 'For a moment, outlines show where half of the stones belong.';
-        break;
+  hint(): string {
+    if (this.solved) return '';
+    const step = stepClue(this.level, this.currentPlacements());
+    if (!step) return 'One stone left: turn it, or flip it, until it fits the last gap.';
+    const v = this.views[step.piece]!;
+    if (this.dragging === v) this.dragging = null;
+    this.setLastTouched(v);
+    if (step.kind === 'lift') {
+      this.hintPlaced.delete(step.piece);
+      this.unplace(step.piece);
+      this.returnToTray(step.piece);
+      return 'This stone cannot stay where it is: no finished garden has it there. It has gone back to the tray.';
     }
-    this.drawClues();
-    return caption;
+    if (v.placed) this.unplace(step.piece);
+    this.place(step.piece, step.placement, true);
+    this.hintPlaced.set(step.piece, step.placement);
+    this.voice.settle(this.placedCount);
+    return step.biggest
+      ? 'The biggest stone has settled into its place. Big stones have the fewest places to go, so set them first.'
+      : 'The next biggest stone has settled into its place. Now look at the gaps around it.';
   }
 
-  private drawClues(): void {
-    const g = this.clueLayer;
-    g.clear();
-    for (const ghost of this.ghosts) {
-      const tris = this.shapeOf(ghost.piece, ghost.placement.rot, ghost.placement.flip);
-      const ox = this.origin.x + ghost.placement.x * this.cell;
-      const oy = this.origin.y + ghost.placement.y * this.cell;
-      this.strokeOutline(g, tris, this.cell, ox, oy, this.accent, alphas.hudIdle);
-    }
-    if (this.seamSolution && this.seamsUntil !== null) {
-      for (const [i, placement] of this.seamSolution) {
-        const tris = this.shapeOf(i, placement.rot, placement.flip);
-        this.strokeOutline(g, tris, this.cell, this.origin.x + placement.x * this.cell, this.origin.y + placement.y * this.cell, this.accent, 0.22);
-      }
-    }
+  tips(): Tip[] {
+    const tips: Tip[] = [
+      { id: 'stone:big', text: 'Tip: place the biggest stones first. They fit in the fewest places.', after: 1 },
+      { id: 'stone:corners', text: 'Tip: look at narrow tips and corners of the shape. Only a few stones can fill them.', after: 3 },
+      { id: 'stone:turn', text: isTouch() ? 'Tip: tap a stone to turn it. It need not be in the shape to turn.' : 'Tip: click a stone, scroll or press R to turn it.', after: 2 },
+    ];
+    if (this.level.allowFlip) tips.push({ id: 'stone:flip', text: isTouch() ? 'Tip: some stones only fit as their mirror image. Hold a stone, or use the flip button, to flip it.' : 'Tip: some stones only fit as their mirror image. Double-click or press F to flip one.', after: 2 });
+    return tips;
   }
 
   update(dt: number): void {
     this.time += dt;
-    let changed = false;
-    const before = this.ghosts.length;
-    this.ghosts = this.ghosts.filter((g) => g.until === null || g.until > this.time);
-    if (this.ghosts.length !== before) changed = true;
-    if (this.seamsUntil !== null && this.time > this.seamsUntil) {
-      this.seamsUntil = null;
-      this.seamSolution = null;
-      changed = true;
-    }
-    if (changed) this.drawClues();
   }
 
   restart(): void {
     if (this.solved) return;
     this.stopTutorial();
     this.dragging = null;
-    this.ghosts = [];
-    this.seamsUntil = null;
-    this.seamSolution = null;
+    let kept = 0;
     this.views.forEach((v, i) => {
       if (this.level.pieces[i]!.fixed) return;
+      // Stones a hint settled stay put: a restart never takes back a hint.
+      const hinted = this.hintPlaced.get(i);
+      if (hinted && v.placed && samePlacement(hinted, v.placed)) {
+        kept++;
+        return;
+      }
       gsap.killTweensOf([v.root, v.root.scale]);
       v.root.rotation = 0;
       v.placed = null;
@@ -699,8 +658,7 @@ export class StoneLevelScene implements LevelScene {
       v.root.position.set(v.slot.x, v.slot.y);
       v.root.scale.set(this.trayScale);
     });
-    this.placedCount = this.level.pieces.filter((p) => p.fixed).length;
-    this.drawClues();
+    this.placedCount = this.level.pieces.filter((p) => p.fixed).length + kept;
     if (this.isTutorial) this.scheduleTutorial();
   }
 
@@ -989,4 +947,8 @@ export class StoneLevelScene implements LevelScene {
     this.views.forEach((v) => gsap.killTweensOf([v.root, v.root.scale]));
     this.container.destroy({ children: true });
   }
+}
+
+function samePlacement(a: Placement, b: Placement): boolean {
+  return a.x === b.x && a.y === b.y && a.rot === b.rot && a.flip === b.flip;
 }

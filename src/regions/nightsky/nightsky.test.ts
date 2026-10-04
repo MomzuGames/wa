@@ -17,7 +17,7 @@ import {
 } from './model';
 import { solveLevel, validStarts } from './solver';
 import { generateSkyLevel } from './generator';
-import { halfPathClue, nextEdgesClue, revealFraction, startClue } from './clues';
+import { GUIDE_KEEP, guideClue } from './clues';
 
 const levels = levelsJson as SkyLevel[];
 
@@ -85,15 +85,26 @@ describe('baked nightsky levels', () => {
         expect(minStarLineClearance(level)).toBeGreaterThanOrEqual(MIN_STAR_LINE_CLEARANCE - 1e-9);
       });
 
-      it('never reveals more than half the edges in clue tier 4', () => {
-        const clue = halfPathClue(level, newStroke(level));
-        expect(revealFraction(level, clue)).toBeLessThanOrEqual(0.5);
+      it('hints grow a guide that can be traced and never shows the last lines', () => {
+        const total = level.edges.reduce((n, e) => n + e.required, 0);
+        let previous = -1;
+        for (let hints = 1; hints <= total; hints++) {
+          const guide = guideClue(level, hints)!;
+          expect(guide.edges.length).toBeGreaterThanOrEqual(previous);
+          expect(guide.edges.length).toBeLessThanOrEqual(total - GUIDE_KEEP);
+          // The guide is the start of a real stroke: it can be drawn as shown.
+          const stroke = newStroke(level);
+          expect(beginStroke(level, stroke, guide.start)).toBe(true);
+          for (const e of guide.edges) {
+            const edge = level.edges[e]!;
+            const to = edge.a === stroke.current ? edge.b : edge.a;
+            expect(traverse(level, stroke, to)).toBe(true);
+          }
+          previous = guide.edges.length;
+        }
+        expect(guideClue(level, 1)!.edges.length).toBeGreaterThan(0);
       });
 
-      it('offers a starting star and two next edges', () => {
-        expect(startClue(level, newStroke(level))).not.toBeNull();
-        expect(nextEdgesClue(level, newStroke(level)).length).toBeGreaterThan(0);
-      });
 
       if (level.chapter === 1 && !level.handcrafted) {
         it('has exactly two odd stars in chapter 2', () => {

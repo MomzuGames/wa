@@ -1,67 +1,56 @@
 import { createRng } from '../../core/rng';
-import { type Board, currentMask, rotateMask } from './model';
+import { DELTA, DIRS, type Board, currentMask, rotateMask } from './model';
 import { forcedCells, solve } from './solver';
 
-export interface LoopClueTier1 {
-  kind: 'lock';
-  cells: number[];
-  rotations: number[];
+// A hint turns one tile that is wrong right now into its place in a solution.
+export interface LoopStep {
+  cell: number;
+  rotation: number;
+  // forced: only one way fits (edges, blanks or fixed neighbours decide it);
+  // neighbour: it joins tiles that are already right; any: neither, but it is still right.
+  reason: 'forced' | 'neighbour' | 'any';
 }
-export interface LoopClueTier3 {
-  kind: 'forced';
-  cells: number[];
-}
-export interface LoopClueTier4 {
-  kind: 'ghost';
-  cells: number[];
-  masks: number[];
-}
-export type LoopClue = LoopClueTier1 | LoopClueTier3 | LoopClueTier4;
 
-// Tiles whose current orientation already matches a solution close to the player's state.
-function tilesAgreeing(board: Board, solution: number[]): number[] {
+function wrongCells(board: Board, solution: number[]): number[] {
   const out: number[] = [];
   board.cells.forEach((tile, i) => {
     if (!tile || tile.locked || tile.mask === 0) return;
-    if (currentMask(tile) === rotateMask(tile.mask, solution[i]!)) out.push(i);
+    if (currentMask(tile) !== rotateMask(tile.mask, solution[i]!)) out.push(i);
   });
   return out;
 }
 
-function lockable(board: Board): number[] {
-  const out: number[] = [];
-  board.cells.forEach((tile, i) => {
-    if (tile && !tile.locked && tile.mask !== 0) out.push(i);
+function touchesSettled(board: Board, i: number, wrong: Set<number>): boolean {
+  const x = i % board.width;
+  const y = Math.floor(i / board.width);
+  return DIRS.some((d) => {
+    const nx = x + DELTA[d].dx;
+    const ny = y + DELTA[d].dy;
+    if (nx < 0 || ny < 0 || nx >= board.width || ny >= board.height) return false;
+    const j = ny * board.width + nx;
+    const t = board.cells[j];
+    return !!t && t.mask !== 0 && !wrong.has(j);
   });
-  return out;
 }
 
-// Tier 1 locks one tile, tier 2 locks two more. Prefers tiles the player already has right.
-export function lockClue(board: Board, count: number, seed: string): LoopClueTier1 | null {
-  const result = solve(board);
-  if (!result.solution) return null;
+// The next step from the player's current board, or null when at most one tile is left
+// to turn: the last move is always the player's own.
+export function stepClue(board: Board, seed: string): LoopStep | null {
+  const { solution } = solve(board);
+  if (!solution) return null;
+  const wrong = wrongCells(board, solution);
+  if (wrong.length <= 1) return null;
   const rng = createRng(seed);
-  const agreeing = rng.shuffle(tilesAgreeing(board, result.solution));
-  const others = rng.shuffle(lockable(board).filter((i) => !agreeing.includes(i)));
-  const cells = [...agreeing, ...others].slice(0, count);
-  return { kind: 'lock', cells, rotations: cells.map((i) => result.solution![i]!) };
-}
-
-export function forcedClue(board: Board): LoopClueTier3 {
-  return { kind: 'forced', cells: forcedCells(board) };
-}
-
-// Tier 4 ghosts the correct connectors on at most half of the unlocked tiles.
-export function ghostClue(board: Board, seed: string): LoopClueTier4 | null {
-  const result = solve(board);
-  if (!result.solution) return null;
-  const rng = createRng(seed);
-  const candidates = rng.shuffle(lockable(board));
-  const cells = candidates.slice(0, Math.floor(candidates.length / 2));
-  return { kind: 'ghost', cells, masks: cells.map((i) => rotateMask(board.cells[i]!.mask, result.solution![i]!)) };
-}
-
-export function revealFraction(board: Board, clue: LoopClueTier4): number {
-  const total = lockable(board).length;
-  return total === 0 ? 0 : clue.cells.length / total;
+  const wrongSet = new Set(wrong);
+  const forced = new Set(forcedCells(board));
+  const pick = (cells: number[], reason: LoopStep['reason']): LoopStep | null => {
+    if (cells.length === 0) return null;
+    const cell = rng.pick(cells);
+    return { cell, rotation: solution[cell]!, reason };
+  };
+  return (
+    pick(wrong.filter((i) => forced.has(i)), 'forced') ??
+    pick(wrong.filter((i) => touchesSettled(board, i, wrongSet)), 'neighbour') ??
+    pick(wrong, 'any')
+  );
 }

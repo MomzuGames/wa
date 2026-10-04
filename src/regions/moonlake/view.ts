@@ -1,14 +1,14 @@
 import gsap from 'gsap';
 import { Container, Graphics } from 'pixi.js';
-import type { ClueTier, IntroPage, LevelScene, ShellContext } from '../types';
-import { alphas, palette } from '../../design/palette';
+import type { IntroPage, LevelScene, ShellContext, Tip } from '../types';
+import { palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
 import { layout, puzzleArea } from '../../design/layout';
 import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
 import { liftFinger, makeFinger, refuse, tapAt } from '../../ui/introGlyphs';
 import { type RippleLevel, affectLists, isLit, press } from './model';
-import { countClue, halfClue, nodeClue } from './clues';
+import { stepClue, stillHelpful } from './clues';
 import { createMoonVoice, type MoonVoice } from './sound';
 
 const lakeStyle = {
@@ -20,9 +20,7 @@ const lakeStyle = {
   litAlpha: 0.9,
   rippleSeconds: 0.9,
   rippleScale: 3.2,
-  clueSeconds: 3,
   tutorialDelay: 1.6,
-  dotGap: 12,
   shadowOffset: 4,
   shadowAlpha: 0.45,
 } as const;
@@ -41,7 +39,6 @@ export class RippleLevelScene implements LevelScene {
   readonly container = new Container();
   private edges = new Graphics();
   private ripples = new Graphics();
-  private dots = new Graphics();
   private padsLayer = new Container();
   private moon = new Graphics();
   private views: PadView[] = [];
@@ -57,9 +54,6 @@ export class RippleLevelScene implements LevelScene {
   private hand: GhostHand | null = null;
   private tutorialTimer: gsap.core.Tween | null = null;
   private hinted = new Set<number>();
-  private shimmer: { nodes: number[]; until: number } | null = null;
-  private countUntil: number | null = null;
-  private countValue = 0;
   private live: Array<{ x: number; y: number; t: number }> = [];
 
   constructor(
@@ -72,10 +66,9 @@ export class RippleLevelScene implements LevelScene {
     this.voice = createMoonVoice(ctx.audio);
     this.edges.eventMode = 'none';
     this.ripples.eventMode = 'none';
-    this.dots.eventMode = 'none';
     this.moon.eventMode = 'none';
     this.padsLayer.filters = [createGlow(this.accent, { distance: 14, strength: 1, quality: 0.3 })];
-    this.container.addChild(this.moon, this.edges, this.ripples, this.padsLayer, this.dots);
+    this.container.addChild(this.moon, this.edges, this.ripples, this.padsLayer);
     this.buildPads();
     this.layout(ctx.width, ctx.height);
   }
@@ -135,7 +128,6 @@ export class RippleLevelScene implements LevelScene {
       v.root.position.copyFrom(this.padPos(i));
       this.drawPad(i);
     });
-    this.drawDots(width, height);
   }
 
   resize(width: number, height: number): void {
@@ -165,21 +157,10 @@ export class RippleLevelScene implements LevelScene {
     v.ring.clear();
     if (node.wide) v.ring.circle(0, 0, r * 1.35).stroke({ color: this.accent, width: 1, alpha: 0.35 });
     v.hint.clear();
-    const shimmering = this.shimmer && this.shimmer.nodes.includes(i);
-    if (this.hinted.has(i) || shimmering) {
+    if (this.hinted.has(i)) {
       const pulse = 0.35 + 0.25 * Math.sin(this.time * 3 + i);
       v.hint.circle(0, 0, r * 1.7).fill({ color: palette.pearl, alpha: pulse * 0.5 });
     }
-  }
-
-  private drawDots(width: number, height: number): void {
-    this.dots.clear();
-    if (this.countUntil === null) return;
-    const n = this.countValue;
-    const startX = width / 2 - ((n - 1) * lakeStyle.dotGap) / 2;
-    const y = this.area.y + this.area.size + 28;
-    for (let k = 0; k < n; k++) this.dots.circle(startX + k * lakeStyle.dotGap, y, 3).fill({ color: this.accent, alpha: alphas.hudHover });
-    void height;
   }
 
   private pressPad(i: number): void {
@@ -191,7 +172,10 @@ export class RippleLevelScene implements LevelScene {
     }
     this.stopTutorial();
     this.state = press(this.level, this.state, i, this.affects);
-    this.hinted.delete(i);
+    // Glowing pads stay only while they are still part of a shortest way to light the lake.
+    const before = this.hinted;
+    this.hinted = stillHelpful(this.level, this.state, this.hinted);
+    if (this.hinted.size !== before.size) this.views.forEach((_, k) => this.drawPad(k));
     this.emit('move');
     this.voice.press(i);
     const p = this.padPos(i);
@@ -221,53 +205,44 @@ export class RippleLevelScene implements LevelScene {
         this.ripples.circle(r.x, r.y, this.radius + p * wideR).stroke({ color: this.accent, width: 1.5, alpha: 0.5 * (1 - p) });
       }
     }
-    if (this.hinted.size || this.shimmer) {
-      if (this.shimmer && this.time > this.shimmer.until) this.shimmer = null;
-      this.views.forEach((_, i) => this.drawPad(i));
-    }
-    if (this.countUntil !== null && this.time > this.countUntil) {
-      this.countUntil = null;
-      this.dots.clear();
-    }
+    if (this.hinted.size) this.views.forEach((_, i) => this.drawPad(i));
   }
 
   restart(): void {
     if (this.solved) return;
     this.stopTutorial();
     this.state = this.level.start.slice();
-    this.hinted.clear();
-    this.shimmer = null;
-    this.countUntil = null;
-    this.dots.clear();
+    // As many pads glow as before, re-chosen for the fresh lake: a restart never takes back a hint.
+    const glowing = this.hinted.size;
+    this.hinted = new Set();
+    for (let k = 0; k < glowing; k++) {
+      const step = stepClue(this.level, this.state, this.hinted, `${this.level.seed}:hint:${k}`);
+      if (step) this.hinted.add(step.pad);
+    }
     this.views.forEach((_, i) => this.drawPad(i));
     if (this.isTutorial) this.scheduleTutorial();
   }
 
-  showClue(tier: ClueTier): string | void {
-    if (this.solved) return;
-    let caption: string | undefined;
-    switch (tier) {
-      case 1:
-      case 2: {
-        const found = nodeClue(this.level, this.state, 1, this.hinted, `${this.level.seed}:clue${tier}:${this.hinted.size}`);
-        if (found.length === 0) return this.hinted.size ? 'Press the pads that are glowing.' : 'No single press helps from here: try restarting the level.';
-        for (const i of found) this.hinted.add(i);
-        caption = this.hinted.size === 1 ? 'Press the glowing pad.' : 'Another pad glows. Press every glowing pad, in any order.';
-        break;
-      }
-      case 3:
-        this.countValue = countClue(this.level, this.state);
-        this.countUntil = this.time + lakeStyle.clueSeconds;
-        this.drawDots(this.ctx.width, this.ctx.height);
-        caption = `The dots below show how many presses are still needed: ${this.countValue}.`;
-        break;
-      case 4:
-        this.shimmer = { nodes: halfClue(this.level, this.state, `${this.level.seed}:clue4`), until: this.time + lakeStyle.clueSeconds };
-        caption = 'For a moment, half of the pads still to press shimmer.';
-        break;
-    }
+  hint(): string {
+    if (this.solved) return '';
+    const step = stepClue(this.level, this.state, this.hinted, `${this.level.seed}:hint:${this.hinted.size}`);
+    if (!step) return this.hinted.size ? 'Press the glowing pads. The last press after that is yours to find.' : 'Just one press left. Look for the pad that lights everything that is still dark.';
+    this.hinted.add(step.pad);
     this.views.forEach((_, i) => this.drawPad(i));
-    return caption;
+    const twice = step.presses === 2 ? ' twice' : '';
+    return this.hinted.size === 1
+      ? `Press the glowing pad${twice}. It is part of the shortest way to light the whole lake from here.`
+      : `Another pad glows: press it${twice}. Glowing pads can be pressed in any order.`;
+  }
+
+  tips(): Tip[] {
+    const tips: Tip[] = [
+      { id: 'lake:order', text: 'Tip: the order of presses never matters, and pressing a pad twice cancels itself out.', after: 1 },
+      { id: 'lake:rows', text: 'Tip: work from one side to the other. Light the first row, then use the pads below to fix anything still dark above them.', after: 3 },
+    ];
+    if (this.level.states === 3) tips.push({ id: 'lake:three', text: 'Tip: each press moves a pad one step: dark, half-lit, lit, then dark again.', after: 1 });
+    if (this.level.nodes.some((n) => n.frozen)) tips.push({ id: 'lake:stone', text: 'Tip: a grey stone pad changes only when a pad beside it is pressed.', after: 1 });
+    return tips;
   }
 
   private scheduleTutorial(): void {

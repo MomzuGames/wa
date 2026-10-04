@@ -1,49 +1,23 @@
 import { createRng } from '../../core/rng';
-import { type PrismLevel, type Segment, trace } from './model';
+import { type PrismLevel, touchedPieces } from './model';
 import { solvePrism } from './solver';
 
-export interface LockClue {
-  pieces: number[];
-  orients: number[];
+// A hint turns one piece that is wrong right now to its angle in a solution that keeps
+// every piece earlier hints set. It prefers the first wrong piece a beam reaches today,
+// so the light visibly travels further. The last piece is always the player's to turn.
+export interface PrismStep {
+  piece: number;
+  orient: number;
+  onBeam: boolean;
 }
 
-function solution(level: PrismLevel, current: number[]): number[] | null {
-  return solvePrism(level, current).orients ?? solvePrism(level, level.pieces.map((p) => p.orient)).orients;
-}
-
-function rotatableUnlocked(level: PrismLevel, locked: Set<number>): number[] {
-  return level.pieces.map((p, i) => (p.rotatable && !locked.has(i) ? i : -1)).filter((i) => i >= 0);
-}
-
-// Tiers 1 and 2: lock one, then two more, correctly oriented pieces (prefer ones already right).
-export function lockClue(level: PrismLevel, current: number[], locked: Set<number>, count: number, seed: string): LockClue | null {
-  const solved = solution(level, current);
+export function stepClue(level: PrismLevel, current: number[], locked: ReadonlySet<number>, seed: string): PrismStep | null {
+  const solved = solvePrism(level, current, undefined, locked).orients;
   if (!solved) return null;
-  const rng = createRng(seed);
-  const candidates = rotatableUnlocked(level, locked);
-  const right = rng.shuffle(candidates.filter((i) => current[i] === solved[i]));
-  const wrong = rng.shuffle(candidates.filter((i) => current[i] !== solved[i]));
-  const pieces = [...right, ...wrong].slice(0, count);
-  return { pieces, orients: pieces.map((i) => solved[i]!) };
-}
-
-// Tier 3: the solved beam routes, drawn as dotted paths for a few seconds.
-export function routeClue(level: PrismLevel, current: number[]): Segment[] {
-  const solved = solution(level, current);
-  return solved ? trace(level, solved).segments : [];
-}
-
-// Tier 4: at most half of the rotatable pieces ghost their correct orientation.
-export function ghostClue(level: PrismLevel, current: number[], seed: string): LockClue | null {
-  const solved = solution(level, current);
-  if (!solved) return null;
-  const rng = createRng(seed);
-  const all = level.pieces.map((p, i) => (p.rotatable ? i : -1)).filter((i) => i >= 0);
-  const pieces = rng.shuffle(all).slice(0, Math.floor(all.length / 2));
-  return { pieces, orients: pieces.map((i) => solved[i]!) };
-}
-
-export function revealFraction(level: PrismLevel, clue: LockClue): number {
-  const total = level.pieces.filter((p) => p.rotatable).length;
-  return total === 0 ? 0 : clue.pieces.length / total;
+  const wrong = level.pieces.map((p, i) => (p.rotatable && !locked.has(i) && current[i] !== solved[i] ? i : -1)).filter((i) => i >= 0);
+  if (wrong.length <= 1) return null;
+  // touchedPieces lists pieces in the order the beams reach them.
+  const lit = [...touchedPieces(level, current)].find((i) => wrong.includes(i));
+  const piece = lit ?? createRng(seed).pick(wrong);
+  return { piece, orient: solved[piece]!, onBeam: lit !== undefined };
 }

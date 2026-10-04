@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import levelsJson from './levels.json';
 import {
+  type Placement,
   type StoneLevel,
   type Tri,
   canonical,
@@ -14,7 +15,7 @@ import {
   transform,
 } from './model';
 import { solveStone } from './solver';
-import { halfClue, pieceClue, revealFraction } from './clues';
+import { stepClue } from './clues';
 import { generateStoneLevel } from './generator';
 
 const levels = levelsJson as StoneLevel[];
@@ -75,9 +76,28 @@ describe('baked stonegarden levels', () => {
         expect(new Set(keys).size).toBe(keys.length);
       });
 
-      it('offers a piece clue and reveals at most half in tier 4', () => {
-        expect(pieceClue(level, new Map(), 'test')).not.toBeNull();
-        expect(revealFraction(level, halfClue(level, new Map(), 'test'))).toBeLessThanOrEqual(0.5);
+      it('hints settle one stone at a time and leave the last one to the player', () => {
+        const placed = new Map<number, Placement>();
+        level.pieces.forEach((p, i) => p.fixed && placed.set(i, { ...p.solution, rot: 0, flip: 0 }));
+        const movable = level.pieces.filter((p) => !p.fixed).length;
+        for (let step = stepClue(level, placed); step; step = stepClue(level, placed)) {
+          expect(step.kind).toBe('settle');
+          if (step.kind !== 'settle') break;
+          expect(placed.has(step.piece)).toBe(false);
+          placed.set(step.piece, step.placement);
+          expect(solveStone(level, placed).placements).not.toBeNull();
+        }
+        expect(placed.size).toBe(level.pieces.length - 1);
+        expect(movable).toBeGreaterThan(0);
+      });
+
+      it('a hint lifts a stone the player has put where no solution can keep it', () => {
+        const piece = level.pieces.findIndex((p) => !p.fixed);
+        const placed = new Map<number, Placement>();
+        level.pieces.forEach((p, i) => p.fixed && placed.set(i, { ...p.solution, rot: 0, flip: 0 }));
+        // Far outside the silhouette: no finished garden keeps it there.
+        placed.set(piece, { x: level.width + 5, y: level.height + 5, rot: 0, flip: 0 });
+        expect(stepClue(level, placed)).toEqual({ kind: 'lift', piece });
       });
 
       if (level.chapter === 2) {

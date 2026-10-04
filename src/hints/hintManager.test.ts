@@ -2,26 +2,32 @@ import { describe, expect, it } from 'vitest';
 import { HintManager, hintRules } from './hintManager';
 
 describe('HintManager', () => {
-  it('unlocks tiers at 3, 6, 10 and 15 units', () => {
+  it('fills the orb over three units of struggle, then stays ready', () => {
     const h = new HintManager();
-    const unlocked: number[] = [];
-    h.onTierAvailable((t) => unlocked.push(t));
-    for (let i = 0; i < 15; i++) h.recordAttempt();
-    expect(unlocked).toEqual([1, 2, 3, 4]);
-    expect(h.availableTier()).toBe(4);
+    expect(h.fill).toBe(0);
+    h.recordAttempt();
+    expect(h.fill).toBeCloseTo(1 / 3);
+    expect(h.ready).toBe(false);
+    h.recordRestart();
+    h.recordRestart();
+    expect(h.fill).toBe(1);
+    expect(h.ready).toBe(true);
+    h.addUnit(5);
+    expect(h.fill).toBe(1);
   });
 
-  it('reveals one tier at a time and never past what is available', () => {
+  it('tells listeners the new total every time struggle grows', () => {
     const h = new HintManager();
-    for (let i = 0; i < 6; i++) h.recordRestart();
-    expect(h.reveal()).toBe(1);
-    expect(h.reveal()).toBe(2);
-    expect(h.reveal()).toBeNull();
+    const seen: number[] = [];
+    h.onUnits((u) => seen.push(u));
+    h.recordAttempt();
+    h.addUnit(2);
+    expect(seen).toEqual([1, 3]);
   });
 
   it('counts one unit per 40 moves', () => {
     const h = new HintManager();
-    for (let i = 0; i < 39; i++) h.recordMove();
+    for (let i = 0; i < hintRules.movesPerUnit - 1; i++) h.recordMove();
     expect(h.state.units).toBe(0);
     h.recordMove();
     expect(h.state.units).toBe(1);
@@ -46,20 +52,10 @@ describe('HintManager', () => {
     expect(fresh.state.units).toBe(1);
   });
 
-  it('reports fill toward the next tier', () => {
-    const h = new HintManager();
-    expect(h.fill).toBe(0);
-    h.addUnit(); // 1 of 3
-    expect(h.fill).toBeCloseTo(1 / 3);
-    h.addUnit(2); // tier 1 waiting
-    expect(h.fill).toBe(1);
-    h.reveal();
-    expect(h.fill).toBe(0);
-  });
-
-  it('resumes from saved units and clues', () => {
+  it('resumes from saved units and hints used, and counts new hints', () => {
     const h = new HintManager(7, 2);
-    expect(h.availableTier()).toBe(2);
-    expect(h.hasUnrevealed).toBe(false);
+    expect(h.ready).toBe(true);
+    h.recordHint();
+    expect(h.state).toEqual({ units: 7, used: 3 });
   });
 });

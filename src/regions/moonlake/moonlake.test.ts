@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import levelsJson from './levels.json';
 import { type RippleLevel, affectLists, applyPresses, isLit, isSolutionValid, press, pressCount } from './model';
 import { solveRipple } from './solver';
-import { countClue, halfClue, nodeClue } from './clues';
+import { stepClue } from './clues';
 import { generateRippleLevel } from './generator';
 
 const levels = levelsJson as RippleLevel[];
@@ -82,12 +82,18 @@ describe('baked moonlake levels', () => {
         expect(pressCount(r.presses!)).toBeLessThanOrEqual(pressCount(level.solution));
       });
 
-      it('gives clues and reveals at most half in tier 4', () => {
-        expect(nodeClue(level, level.start, 1, new Set(), 'test').length).toBe(1);
-        expect(countClue(level, level.start)).toBeGreaterThan(0);
-        const half = halfClue(level, level.start, 'test');
-        const sites = level.solution.filter((c) => c > 0).length;
-        expect(half.length).toBeLessThanOrEqual(Math.floor(sites / 2));
+      it('hints glow pads of a shortest way, one at a time, never the last one', () => {
+        const hinted = new Set<number>();
+        for (let step = stepClue(level, level.start, hinted, `t${hinted.size}`); step; step = stepClue(level, level.start, hinted, `t${hinted.size}`)) {
+          expect(hinted.has(step.pad)).toBe(false);
+          expect(level.nodes[step.pad]!.frozen).toBeFalsy();
+          hinted.add(step.pad);
+        }
+        const sites = solveRipple(level, level.start).presses!.filter((c) => c > 0).length;
+        expect(hinted.size).toBe(Math.max(0, sites - 1));
+        // Pressing every glowing pad the number of times asked still leaves the lake unlit.
+        const presses = solveRipple(level, level.start).presses!.map((c, i) => (hinted.has(i) ? c : 0));
+        expect(isLit(level, applyPresses(level, level.start, presses))).toBe(false);
       });
 
       if (level.chapter === 2) {

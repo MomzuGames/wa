@@ -1,7 +1,10 @@
-import type { ClueTier } from '../regions/types';
+// Tracks how much the player is struggling with a level, in "units": a restart, a failed
+// stroke, 40 moves without solving, or 3 minutes of active play each add one. Units fill
+// the hint orb (it glows once a hint would likely help) and decide when gentle tips appear.
+// Hints themselves are always available from the bulb; each one is a single concrete step.
 
 export const hintRules = {
-  tierThresholds: [3, 6, 10, 15] as const,
+  readyUnits: 3, // the orb glows from here on
   movesPerUnit: 40,
   secondsPerUnit: 180,
   idleTimeoutSeconds: 60,
@@ -9,57 +12,44 @@ export const hintRules = {
 
 export interface HintState {
   units: number;
-  availableTier: number;
-  revealedTier: number;
+  used: number;
 }
 
 export class HintManager {
   private units = 0;
-  private revealed = 0;
+  private used = 0;
   private moves = 0;
   private activeSeconds = 0;
   private idleSeconds = 0;
   private hidden = false;
-  private listeners: Array<(tier: ClueTier) => void> = [];
+  private listeners: Array<(units: number) => void> = [];
 
-  constructor(initialUnits = 0, initialClues = 0) {
+  constructor(initialUnits = 0, initialUsed = 0) {
     this.units = initialUnits;
-    this.revealed = initialClues;
+    this.used = initialUsed;
   }
 
   get state(): HintState {
-    return { units: this.units, availableTier: this.availableTier(), revealedTier: this.revealed };
+    return { units: this.units, used: this.used };
   }
 
-  // 0..1 progress toward the next tier; 1 when a tier is waiting to be revealed.
+  // 0..1: how full the orb is; 1 once a hint would likely help.
   get fill(): number {
-    const available = this.availableTier();
-    if (available > this.revealed) return 1;
-    if (available >= hintRules.tierThresholds.length) return 1;
-    const floor = available === 0 ? 0 : hintRules.tierThresholds[available - 1]!;
-    const ceil = hintRules.tierThresholds[available]!;
-    return (this.units - floor) / (ceil - floor);
+    return Math.min(1, this.units / hintRules.readyUnits);
   }
 
-  availableTier(): number {
-    let tier = 0;
-    for (const threshold of hintRules.tierThresholds) if (this.units >= threshold) tier++;
-    return tier;
+  get ready(): boolean {
+    return this.units >= hintRules.readyUnits;
   }
 
-  get hasUnrevealed(): boolean {
-    return this.availableTier() > this.revealed;
-  }
-
-  onTierAvailable(cb: (tier: ClueTier) => void): void {
+  // Called with the new total every time struggle grows.
+  onUnits(cb: (units: number) => void): void {
     this.listeners.push(cb);
   }
 
   addUnit(count = 1): void {
-    const before = this.availableTier();
     this.units += count;
-    const after = this.availableTier();
-    for (let t = before + 1; t <= after; t++) this.listeners.forEach((l) => l(t as ClueTier));
+    this.listeners.forEach((l) => l(this.units));
   }
 
   recordAttempt(): void {
@@ -83,6 +73,11 @@ export class HintManager {
     this.idleSeconds = 0;
   }
 
+  // A hint was given.
+  recordHint(): void {
+    this.used++;
+  }
+
   setHidden(hidden: boolean): void {
     this.hidden = hidden;
   }
@@ -95,21 +90,5 @@ export class HintManager {
       this.activeSeconds -= hintRules.secondsPerUnit;
       this.addUnit();
     }
-  }
-
-  // Reveals the next unlocked tier, or null if none is waiting.
-  reveal(): ClueTier | null {
-    if (!this.hasUnrevealed) return null;
-    this.revealed++;
-    return this.revealed as ClueTier;
-  }
-
-  // Reveals the next tier regardless of attempts (the "ask for a hint" button).
-  // Once every tier has been shown, keeps handing out concrete steps (tier 2).
-  forceReveal(): ClueTier {
-    if (this.revealed >= hintRules.tierThresholds.length) return 2;
-    if (this.units < hintRules.tierThresholds[this.revealed]!) this.units = hintRules.tierThresholds[this.revealed]!;
-    this.revealed++;
-    return this.revealed as ClueTier;
   }
 }

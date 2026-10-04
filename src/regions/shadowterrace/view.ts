@@ -1,6 +1,6 @@
 import gsap from 'gsap';
 import { Container, type FederatedPointerEvent, Graphics } from 'pixi.js';
-import type { ClueTier, IntroPage, LevelScene, ShellContext } from '../types';
+import type { IntroPage, LevelScene, ShellContext, Tip } from '../types';
 import { alphas, palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
 import { isTouch, layout, puzzleArea } from '../../design/layout';
@@ -9,7 +9,7 @@ import { GhostHand } from '../../ui/ghostHand';
 import { holdAt, liftFinger, makeFinger, refuse, tapAt } from '../../ui/introGlyphs';
 import { events } from '../../core/events';
 import { type ShadowLevel, frontProfile, isSolved, sideProfile, startHeights, stoneCount } from './model';
-import { halfClue, stackClue } from './clues';
+import { stepClue } from './clues';
 import { createShadowVoice, type ShadowVoice } from './sound';
 
 const terraceStyle = {
@@ -31,7 +31,6 @@ const terraceStyle = {
   swipeQuarter: 220, // px of swipe for a quarter turn
   growSeconds: 0.28,
   longPressSeconds: 0.55,
-  clueSeconds: 3,
   tutorialDelay: 1.6,
   gaugeWidth: 6,
   shadowLength: 0.42, // ground shadow per stone, in cells
@@ -69,7 +68,8 @@ export class ShadowLevelScene implements LevelScene {
   // Dragging sideways across the terrace turns it; the drag starts as a possible tap.
   private press: { x: number; y: number; angle: number; swiping: boolean } | null = null;
   private ghostStacks = new Map<number, { height: number; until: number | null }>();
-  private glowLines: { until: number } | null = null;
+  // Stacks a hint built, so a restart can keep them.
+  private hintBuilt = new Map<number, number>();
   private brightUntil = 0;
   private unsubscribe: () => void;
   private screenWidth = 0;
@@ -300,18 +300,11 @@ export class ShadowLevelScene implements LevelScene {
     const g = this.floor;
     g.clear();
     const n = this.n;
-    const glow = this.glowLines && this.time < this.glowLines.until;
-    const castFront = frontProfile(n, this.heights);
-    const castSide = sideProfile(n, this.heights);
     for (let y = 0; y < n; y++) {
       for (let x = 0; x < n; x++) {
         const corners = [this.project(x, y, 0), this.project(x + 1, y, 0), this.project(x + 1, y + 1, 0), this.project(x, y + 1, 0)];
         this.poly(g, corners).fill({ color: palette.ink, alpha: terraceStyle.floorAlpha * 0.5 });
         this.poly(g, corners).stroke({ color: palette.dim, width: 1, alpha: terraceStyle.floorAlpha });
-        if (glow && (castFront[x] !== this.level.front[x] || castSide[y] !== this.level.side[y])) {
-          const pulse = 0.25 + 0.2 * Math.sin(this.time * 4 + x + y);
-          this.poly(g, corners).fill({ color: palette.pearl, alpha: pulse });
-        }
       }
     }
   }
@@ -568,6 +561,7 @@ export class ShadowLevelScene implements LevelScene {
     if (next < 0) next = cap;
     this.heights[i] = next;
     this.ghostStacks.delete(i);
+    this.hintBuilt.delete(i);
     this.emit('move');
     if (next > before) this.voice.place(next);
     else this.voice.remove();
@@ -595,8 +589,7 @@ export class ShadowLevelScene implements LevelScene {
 
   update(dt: number): void {
     this.time += dt;
-    if (this.ghostStacks.size || this.glowLines || this.time < this.brightUntil + 0.1) this.dirty = true;
-    if (this.glowLines && this.time > this.glowLines.until) this.glowLines = null;
+    if (this.ghostStacks.size || this.time < this.brightUntil + 0.1) this.dirty = true;
     for (const [i, g] of this.ghostStacks) if (g.until !== null && this.time > g.until) this.ghostStacks.delete(i);
     if (this.dirty) this.draw();
   }
@@ -605,45 +598,42 @@ export class ShadowLevelScene implements LevelScene {
     if (this.solved) return;
     this.stopTutorial();
     this.heights = startHeights(this.level);
+    // Stacks a hint built stay built: a restart never takes back a hint.
+    for (const [i, h] of this.hintBuilt) this.heights[i] = h;
     gsap.killTweensOf(this.shown);
     this.shown = this.heights.slice();
     this.ghostStacks.clear();
-    this.glowLines = null;
     this.dirty = true;
     if (this.isTutorial) this.scheduleTutorial();
   }
 
-  showClue(tier: ClueTier): string | void {
-    if (this.solved) return;
-    let caption: string | undefined;
-    switch (tier) {
-      case 1:
-      case 2: {
-        const exclude = new Set([...this.ghostStacks.keys()]);
-        const found = stackClue(this.level, this.heights, tier === 1 ? 1 : 2, exclude, `${this.level.seed}:clue${tier}:${exclude.size}`);
-        if (found.length === 0) return exclude.size ? 'Build the outlined stacks to the height of their outline.' : 'Every stack already matches a solution.';
-        for (const f of found) this.ghostStacks.set(f.cell, { height: f.height, until: null });
-        const removing = found.every((f) => f.height < this.heights[f.cell]!);
-        caption = removing
-          ? 'An outline marks a stack that is too tall. Take stones away until it matches.'
-          : found.length === 1
-            ? 'The pale outline shows how tall one stack should be. Build it to that height.'
-            : 'Two more outlines show the height of their stacks. Build each to its outline.';
-        break;
-      }
-      case 3:
-        this.glowLines = { until: this.time + terraceStyle.clueSeconds };
-        caption = 'For a moment, tiles in every row and column whose shadow is still wrong shimmer. Remember: no stack can rise above either of its shadows.';
-        break;
-      case 4:
-        for (const f of halfClue(this.level, this.heights, `${this.level.seed}:clue4`)) {
-          if (!this.ghostStacks.has(f.cell)) this.ghostStacks.set(f.cell, { height: f.height, until: this.time + terraceStyle.clueSeconds });
-        }
-        caption = 'For a moment, outlines show the right height of half the stacks.';
-        break;
-    }
+  hint(): string {
+    if (this.solved) return '';
+    const step = stepClue(this.level, this.heights, `${this.level.seed}:hint:${this.hintBuilt.size}`, this.hintBuilt);
+    if (!step) return 'Just one stack left to fix. Compare its row and column with their shadows.';
+    const before = this.heights[step.cell]!;
+    this.heights[step.cell] = step.height;
+    this.hintBuilt.set(step.cell, step.height);
+    this.ghostStacks.delete(step.cell);
+    if (step.height > before) this.voice.place(step.height);
+    else this.voice.remove();
+    gsap.to(this.shown, { [step.cell]: step.height, duration: scaled(terraceStyle.growSeconds), ease: easings.tileSnap, onUpdate: () => (this.dirty = true) });
     this.dirty = true;
-    return caption;
+    this.explainCount();
+    if (step.height < before) return 'That stack was too tall, so stones came off it. No stack can rise above the shadow of its row or its column.';
+    return this.hintBuilt.size === 1
+      ? 'One stack has risen to its right height. Tall shadows need a stack that reaches them, so start with those.'
+      : 'Another stack has risen to its right height. Check which shadows are still too short.';
+  }
+
+  tips(): Tip[] {
+    const tips: Tip[] = [
+      { id: 'shadow:cap', text: 'Tip: no stack can be taller than the shadow of its row or its column.', after: 1 },
+      { id: 'shadow:tall', text: 'Tip: start with the longest shadows. Something in that row has to reach them.', after: 2 },
+      { id: 'shadow:turn', text: 'Tip: swipe sideways to turn the terrace and see stones hidden behind others.', after: 3 },
+    ];
+    if (this.level.count !== null) tips.push({ id: 'shadow:count', text: 'Tip: the lantern counts stones. Fill it exactly, with every shadow matching.', after: 2 });
+    return tips;
   }
 
   private scheduleTutorial(): void {

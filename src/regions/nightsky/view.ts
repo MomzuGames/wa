@@ -1,13 +1,14 @@
 import gsap from 'gsap';
 import { Container, FederatedPointerEvent, Graphics } from 'pixi.js';
-import type { ClueTier, IntroPage, LevelScene, ShellContext } from '../types';
+import type { IntroPage, LevelScene, ShellContext, Tip } from '../types';
 import { alphas, palette } from '../../design/palette';
 import { durations, easings, reducedMotion, scaled } from '../../design/motion';
 import { isTouch, layout, puzzleArea } from '../../design/layout';
 import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
-import { type SkyLevel, type Star, type Stroke, beginStroke, isComplete, newStroke, slideAction, traverse, undo } from './model';
-import { halfPathClue, nextEdgesClue, oddStarsClue, startClue } from './clues';
+import { type SkyLevel, type Star, type Stroke, beginStroke, isComplete, newStroke, oddStars, slideAction, traverse, undo } from './model';
+import { events } from '../../core/events';
+import { guideClue } from './clues';
 import { createNightSkyVoice, type NightSkyVoice } from './sound';
 
 const skyStyle = {
@@ -24,7 +25,6 @@ const skyStyle = {
   driftSpeed: 0.35,
   unravelStep: 0.06,
   replayStep: 0.16,
-  clueGhostSeconds: 3,
   tutorialDelay: 1.6,
 } as const;
 
@@ -54,6 +54,7 @@ export class SkyLevelScene implements LevelScene {
   private pointer = { x: 0, y: 0 };
   private clueRings: number[] = [];
   private clueEdges: number[] = [];
+  private hintsGiven = 0;
   private tutorialTimer: gsap.core.Tween | null = null;
   private undoArmed = true;
 
@@ -240,9 +241,9 @@ export class SkyLevelScene implements LevelScene {
       this.dragging = false;
       this.voice.unravel();
       gsap.fromTo(this.starDots[star]!, { alpha: 0.3 }, { alpha: 1, duration: durations.microFeedback * 3 });
+      events.emit('level:tip', { id: 'sky:order', text: 'Stars with dots must be reached in order: one dot first, then two, then three.' });
       return;
     }
-    this.clueEdges = [];
     this.redrawAll();
   }
 
@@ -290,6 +291,7 @@ export class SkyLevelScene implements LevelScene {
     this.emit('attempt');
     this.voice.unravel();
     this.unravel();
+    events.emit('level:tip', { id: 'sky:keepdown', text: 'Keep your finger down: the whole drawing is one unbroken stroke. Slide back to undo a line.' });
   }
 
   // Failed strokes gently retreat back along the path and fade.
@@ -326,45 +328,41 @@ export class SkyLevelScene implements LevelScene {
     this.locked = false;
     this.dragging = false;
     this.stroke = newStroke(this.level);
-    this.clueEdges = [];
-    this.clueRings = [];
+    // The hint guide stays: a restart never takes back a hint.
     this.redrawAll();
     if (this.isTutorial) this.scheduleTutorial();
   }
 
-  showClue(tier: ClueTier): string | void {
-    if (this.solved) return;
-    let caption: string | undefined;
-    switch (tier) {
-      case 1: {
-        const star = startClue(this.level, this.stroke);
-        if (star === null) return;
-        const dot = this.starDots[star]!;
-        gsap.to(dot, { alpha: 0.3, duration: durations.microFeedback * 2, yoyo: true, repeat: 7, ease: easings.ambient });
-        caption = this.stroke.current === null ? 'Begin your stroke from the pulsing star.' : 'The pulsing star is where to continue from.';
-        break;
-      }
-      case 2:
-        this.clueEdges = nextEdgesClue(this.level, this.stroke);
-        caption = this.stroke.current === null ? 'Start at the shimmering lines and follow them.' : 'Follow the shimmering lines next.';
-        break;
-      case 3:
-        this.clueRings = oddStarsClue(this.level);
-        caption = this.clueRings.length ? 'Ringed stars have an odd number of lines: a stroke must start or end at one.' : 'Every star has an even number of lines: you can start anywhere.';
-        break;
-      case 4: {
-        const edges = halfPathClue(this.level, this.stroke);
-        this.clueEdges = edges;
-        gsap.delayedCall(skyStyle.clueGhostSeconds, () => {
-          this.clueEdges = this.clueEdges === edges ? [] : this.clueEdges;
-          this.redrawAll();
-        });
-        caption = 'For a moment, half of a working path shimmers.';
-        break;
-      }
-    }
+  hint(): string {
+    if (this.solved) return '';
+    const guide = guideClue(this.level, this.hintsGiven + 1);
+    if (!guide) return '';
+    const grew = guide.edges.length > this.clueEdges.length;
+    if (grew) this.hintsGiven++;
+    this.clueRings = [guide.start];
+    this.clueEdges = guide.edges;
     this.redrawAll();
-    return caption;
+    if (!grew) {
+      return oddStars(this.level).length
+        ? 'The rest of the path is yours. You will finish on the other star with an odd number of lines.'
+        : 'The rest of the path is yours. You will finish back where you started.';
+    }
+    return this.hintsGiven === 1
+      ? 'Start at the ringed star and trace the glowing lines in order, without lifting your finger.'
+      : 'More of the path glows. Trace the glowing lines first, then carry on.';
+  }
+
+  tips(): Tip[] {
+    const odd = oddStars(this.level).length;
+    const tips: Tip[] = [
+      odd
+        ? { id: 'sky:odd', text: 'Tip: count the lines at each star. Two stars have an odd number: start at one of them, and you will finish at the other.', after: 2 }
+        : { id: 'sky:even', text: 'Tip: every star here has an even number of lines, so you can start anywhere, and you will end where you began.', after: 2 },
+      { id: 'sky:strand', text: 'Tip: leave the line that leads back to unfinished stars for later, or you may get stranded.', after: 4 },
+    ];
+    if (this.level.edges.some((e) => e.oneWay)) tips.push({ id: 'sky:oneway', text: 'Tip: a shimmering line flows one way. Arrive at the end it flows from.', after: 1 });
+    if (this.level.edges.some((e) => e.required === 2)) tips.push({ id: 'sky:double', text: 'Tip: a bright double line is traced twice: across, and later back again.', after: 1 });
+    return tips;
   }
 
   private scheduleTutorial(): void {

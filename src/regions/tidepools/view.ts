@@ -1,6 +1,6 @@
 import gsap from 'gsap';
 import { Container, FederatedPointerEvent, Graphics } from 'pixi.js';
-import type { ClueTier, IntroPage, LevelScene, ShellContext } from '../types';
+import type { IntroPage, LevelScene, ShellContext, Tip } from '../types';
 import { palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
 import { isTouch, puzzleArea } from '../../design/layout';
@@ -27,7 +27,7 @@ import {
   rotateMask,
   tileKind,
 } from './model';
-import { forcedClue, ghostClue, lockClue } from './clues';
+import { stepClue } from './clues';
 import { createTidepoolsVoice, type TidepoolsVoice } from './sound';
 
 const loopStyle = {
@@ -40,7 +40,6 @@ const loopStyle = {
   rotateSeconds: 0.34,
   flowSpeed: 2.6,
   flowSpacing: 0.9,
-  clueGhostSeconds: 3,
   tutorialDelay: 1.6,
   shadowOffset: 4,
   shadowAlpha: 0.45,
@@ -55,8 +54,6 @@ interface TileView {
   base: Graphics;
   pipes: Graphics;
   lit: Graphics;
-  mark: Graphics;
-  ghost: Graphics;
   lockDot: Graphics;
   flowPhase: number;
   animating: boolean;
@@ -129,23 +126,18 @@ export class LoopLevelScene implements LevelScene {
       const shadow = new Graphics();
       const base = new Graphics();
       const pipes = new Graphics();
-      const mark = new Graphics();
       const lockDot = new Graphics();
       const lit = new Graphics();
-      const ghost = new Graphics();
-      mark.visible = false;
-      ghost.visible = false;
       lit.visible = false;
-      root.addChild(shadow, base, mark, pipes, lockDot);
+      root.addChild(shadow, base, pipes, lockDot);
       this.boardLayer.addChild(root);
       this.litLayer.addChild(lit);
-      this.ghostLayer.addChild(ghost);
       root.eventMode = 'static';
       root.cursor = tile.locked ? 'default' : 'pointer';
       root.on('pointerdown', (e: FederatedPointerEvent) => this.onPress(i, e));
       root.on('pointerup', () => this.onRelease(i));
       root.on('pointerupoutside', () => this.cancelPress());
-      this.views.push({ root, shadow, base, pipes, lit, mark, ghost, lockDot, flowPhase: 0, animating: false, spin: 0 });
+      this.views.push({ root, shadow, base, pipes, lit, lockDot, flowPhase: 0, animating: false, spin: 0 });
     });
   }
 
@@ -164,7 +156,6 @@ export class LoopLevelScene implements LevelScene {
       const y = this.origin.y + Math.floor(i / this.board.width) * cell;
       v.root.position.set(x, y);
       v.lit.position.set(x, y);
-      v.ghost.position.set(x, y);
       this.drawTile(i);
     });
   }
@@ -219,8 +210,6 @@ export class LoopLevelScene implements LevelScene {
         v.lockDot.circle(-half + gap * 2.4 + k * this.cell * 0.09, -half + gap * 2.2, this.cell * 0.03).fill({ color: palette.pearl, alpha: 0.7 });
       }
     }
-    v.mark.clear().roundRect(-half + gap * 1.6, -half + gap * 1.6, size - gap * 1.2, size - gap * 1.2, this.cell * loopStyle.cornerFraction * 0.8);
-    v.mark.stroke({ color: this.accent, width: 1, alpha: 0.35 });
   }
 
   // Click turns clockwise; right-click, shift-click or a long press turns the other way.
@@ -365,64 +354,44 @@ export class LoopLevelScene implements LevelScene {
     this.board.cells.forEach((tile, i) => {
       const original = this.level.cells[i];
       if (!tile || !original) return;
+      // Tiles a hint turned into place stay there: a restart never takes back a hint.
+      if (this.clueLocked.has(i)) return;
       tile.rotation = original.rotation;
-      if (this.clueLocked.has(i)) tile.locked = false;
       const v = this.views[i]!;
       gsap.killTweensOf(v.pipes);
       v.animating = false;
       v.root.cursor = tile.locked ? 'default' : 'pointer';
-      v.mark.visible = false;
-      v.ghost.visible = false;
       this.drawTile(i);
     });
-    this.clueLocked.clear();
     this.matchedCount = this.countMatched();
     this.completeCount = components(this.board).filter((c) => c.complete).length;
     this.refreshLit();
     if (this.isTutorial) this.scheduleTutorial();
   }
 
-  showClue(tier: ClueTier): string | void {
-    if (this.solved) return;
-    switch (tier) {
-      case 1:
-      case 2: {
-        const clue = lockClue(this.board, tier === 1 ? 1 : 2, `${this.level.seed}:clue${tier}:${this.clueLocked.size}`);
-        if (!clue || clue.cells.length === 0) return 'Every tile that can be fixed already is. The rest is yours.';
-        clue.cells.forEach((i, k) => this.lockTile(i, clue.rotations[k]!));
-        return clue.cells.length === 1 ? 'That tile has turned into place and will stay put.' : 'Two more tiles have turned into place and will stay put.';
-      }
-      case 3: {
-        for (const i of forcedClue(this.board).cells) {
-          const v = this.views[i]!;
-          v.mark.visible = true;
-          v.mark.alpha = 0;
-          gsap.to(v.mark, { alpha: 1, duration: scaled(durations.pieceMove) });
-        }
-        return 'Framed tiles sit against an edge: their lines can only face one way.';
-      }
-      case 4: {
-        const clue = ghostClue(this.board, `${this.level.seed}:clue4`);
-        if (!clue) return;
-        clue.cells.forEach((i, k) => {
-          const v = this.views[i]!;
-          this.drawPipes(v.ghost, clue.masks[k]!, this.accent, 0.4);
-          v.ghost.rotation = 0;
-          v.ghost.visible = true;
-          v.ghost.alpha = 0;
-          gsap.to(v.ghost, { alpha: 1, duration: scaled(durations.pieceMove) });
-          gsap.to(v.ghost, {
-            alpha: 0,
-            duration: scaled(durations.pieceMove) * 2,
-            delay: loopStyle.clueGhostSeconds,
-            onComplete: () => {
-              v.ghost.visible = false;
-            },
-          });
-        });
-        return 'For a moment, half the tiles show the shape they should make.';
-      }
+  hint(): string {
+    if (this.solved) return '';
+    const step = stepClue(this.board, `${this.level.seed}:hint:${this.clueLocked.size}`);
+    if (!step) return 'Just one tile left to turn. You can do this one!';
+    this.lockTile(step.cell, step.rotation);
+    switch (step.reason) {
+      case 'forced':
+        return 'This tile could only fit one way: no line may point off the board or into an empty space. It has turned into place.';
+      case 'neighbour':
+        return 'This tile turned to join the tiles beside it. Follow its lines: each one needs a partner.';
+      default:
+        return 'This tile turned into place and will stay put. Follow its lines to the next tile.';
     }
+  }
+
+  tips(): Tip[] {
+    const tips: Tip[] = [
+      { id: 'loop:edges', text: 'Tip: start at the edges and corners. A line can never point off the board.', after: 1 },
+      { id: 'loop:back', text: isTouch() ? 'Tip: hold a tile to turn it back the other way.' : 'Tip: right-click a tile to turn it back the other way.', after: 2 },
+      { id: 'loop:follow', text: 'Tip: once a tile is right, its lines tell its neighbours which way to face. Work outward from it.', after: 4 },
+    ];
+    if (this.level.links?.length) tips.push({ id: 'loop:links', text: 'Tip: tiles with matching dots always turn together. Set the harder one; the other follows.', after: 2 });
+    return tips;
   }
 
   private lockTile(i: number, rotation: number): void {
@@ -544,7 +513,7 @@ export class LoopLevelScene implements LevelScene {
     this.stopTutorial();
     this.pressTimer?.kill();
     this.voice.dispose();
-    this.views.forEach((v) => v && gsap.killTweensOf([v.pipes, v.root, v.lit, v.ghost, v.mark]));
+    this.views.forEach((v) => v && gsap.killTweensOf([v.pipes, v.root, v.lit]));
     this.container.destroy({ children: true });
   }
 
@@ -689,8 +658,10 @@ export class LoopLevelScene implements LevelScene {
     this.views.forEach((v, i) => {
       if (!v) return;
       const tile = this.board.cells[i]!;
-      this.drawPipes(v.ghost, rotateMask(tile.mask, this.level.solution[i]!), palette.pearl, 0.18);
-      v.ghost.visible = true;
+      const ghost = new Graphics();
+      ghost.position.copyFrom(v.root.position);
+      this.drawPipes(ghost, rotateMask(tile.mask, this.level.solution[i]!), palette.pearl, 0.18);
+      this.ghostLayer.addChild(ghost);
     });
   }
 }

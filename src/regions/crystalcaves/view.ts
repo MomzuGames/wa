@@ -1,14 +1,14 @@
 import gsap from 'gsap';
 import { Container, Graphics } from 'pixi.js';
-import type { ClueTier, IntroPage, LevelScene, ShellContext } from '../types';
-import { alphas, palette } from '../../design/palette';
+import type { IntroPage, LevelScene, ShellContext, Tip } from '../types';
+import { palette } from '../../design/palette';
 import { durations, easings, reducedMotion, scaled } from '../../design/motion';
 import { isTouch, layout, puzzleArea } from '../../design/layout';
 import { createGlow } from '../../fx/glow';
 import { GhostHand } from '../../ui/ghostHand';
 import { liftFinger, makeFinger, tapAt } from '../../ui/introGlyphs';
 import { COLOR_NAMES, DIR_DELTA, LEMON, ORIENTATIONS, type PieceKind, type PrismLevel, ROSE, SKY, type Segment, isSolved, trace } from './model';
-import { ghostClue, lockClue, routeClue } from './clues';
+import { stepClue } from './clues';
 import { createCrystalVoice, type CrystalVoice } from './sound';
 
 const prismStyle = {
@@ -19,7 +19,6 @@ const prismStyle = {
   flowSpeed: 3,
   ringAlpha: 0.35,
   turnSeconds: 0.3,
-  clueSeconds: 3,
   tutorialDelay: 1.6,
   glyphSize: 3.2,
 } as const;
@@ -43,7 +42,6 @@ export class PrismLevelScene implements LevelScene {
   readonly container = new Container();
   private grid = new Graphics();
   private beams = new Graphics();
-  private clueLayer = new Graphics();
   private piecesLayer = new Container();
   private views: PieceView[] = [];
   private orients: number[];
@@ -60,10 +58,6 @@ export class PrismLevelScene implements LevelScene {
   private voice: CrystalVoice;
   private hand: GhostHand | null = null;
   private tutorialTimer: gsap.core.Tween | null = null;
-  private routeUntil: number | null = null;
-  private routeSegments: Segment[] = [];
-  private ghostUntil: number | null = null;
-  private ghostPieces: Array<{ piece: number; orient: number }> = [];
 
   constructor(
     private ctx: ShellContext,
@@ -75,8 +69,7 @@ export class PrismLevelScene implements LevelScene {
     this.beams.filters = [createGlow(palette.pearl, { distance: 12, strength: 1.2, quality: 0.3 })];
     this.grid.eventMode = 'none';
     this.beams.eventMode = 'none';
-    this.clueLayer.eventMode = 'none';
-    this.container.addChild(this.grid, this.beams, this.clueLayer, this.piecesLayer);
+    this.container.addChild(this.grid, this.beams, this.piecesLayer);
     this.buildPieces();
     this.layout(ctx.width, ctx.height);
     this.retrace(true);
@@ -136,7 +129,6 @@ export class PrismLevelScene implements LevelScene {
       this.drawPiece(i);
     });
     this.drawBeams();
-    this.drawClues();
   }
 
   resize(width: number, height: number): void {
@@ -255,26 +247,6 @@ export class PrismLevelScene implements LevelScene {
     });
   }
 
-  private drawClues(): void {
-    const g = this.clueLayer;
-    g.clear();
-    if (this.routeUntil !== null) {
-      for (const seg of this.routeSegments) {
-        const c = this.cellCenter(seg.x, seg.y);
-        g.circle(c.x, c.y, 2).fill({ color: this.accent, alpha: alphas.hudIdle });
-      }
-    }
-    if (this.ghostUntil !== null) {
-      for (const ghost of this.ghostPieces) {
-        const p = this.level.pieces[ghost.piece]!;
-        const c = this.cellCenter(p.x, p.y);
-        const len = this.cell * 0.35;
-        const sign = ghost.orient === 0 ? -1 : 1;
-        g.moveTo(c.x - len, c.y - sign * len).lineTo(c.x + len, c.y + sign * len).stroke({ color: this.accent, width: 2, alpha: 0.4, cap: 'round' });
-      }
-    }
-  }
-
   private retrace(silent: boolean): void {
     const t = trace(this.level, this.orients);
     this.segments = t.segments;
@@ -324,69 +296,43 @@ export class PrismLevelScene implements LevelScene {
   update(dt: number): void {
     this.time += dt;
     if (this.segments.length && !reducedMotion()) this.drawBeams();
-    let changed = false;
-    if (this.routeUntil !== null && this.time > this.routeUntil) {
-      this.routeUntil = null;
-      changed = true;
-    }
-    if (this.ghostUntil !== null && this.time > this.ghostUntil) {
-      this.ghostUntil = null;
-      changed = true;
-    }
-    if (changed) this.drawClues();
   }
 
   restart(): void {
     if (this.solved) return;
     this.stopTutorial();
-    this.orients = this.level.pieces.map((p) => p.orient);
-    this.locked.clear();
-    this.routeUntil = null;
-    this.ghostUntil = null;
+    // Pieces a hint set stay at their angle: a restart never takes back a hint.
+    this.orients = this.level.pieces.map((p, i) => (this.locked.has(i) ? this.orients[i]! : p.orient));
     this.views.forEach((v, i) => {
       gsap.killTweensOf(v.body);
       v.animating = false;
       this.drawPiece(i);
     });
-    this.drawClues();
     this.retrace(true);
     if (this.isTutorial) this.scheduleTutorial();
   }
 
-  showClue(tier: ClueTier): string | void {
-    if (this.solved) return;
-    let caption: string | undefined;
-    switch (tier) {
-      case 1:
-      case 2: {
-        const clue = lockClue(this.level, this.orients, this.locked, tier === 1 ? 1 : 2, `${this.level.seed}:clue${tier}:${this.locked.size}`);
-        if (!clue || clue.pieces.length === 0) return 'Every piece that can be fixed already is.';
-        clue.pieces.forEach((i, k) => {
-          const target = clue.orients[k]!;
-          if (this.orients[i] !== target) this.turn(i, target);
-          this.locked.add(i);
-          if (this.orients[i] === target && !this.views[i]!.animating) this.drawPiece(i);
-          this.views[i]!.root.cursor = 'default';
-        });
-        caption = clue.pieces.length === 1 ? 'That piece has turned to its correct angle and will stay put.' : 'Two more pieces have turned to their correct angles and will stay put.';
-        break;
-      }
-      case 3:
-        this.routeSegments = routeClue(this.level, this.orients);
-        this.routeUntil = this.time + prismStyle.clueSeconds;
-        caption = 'For a moment, dots trace the path each beam should take.';
-        break;
-      case 4: {
-        const clue = ghostClue(this.level, this.orients, `${this.level.seed}:clue4`);
-        if (!clue) return;
-        this.ghostPieces = clue.pieces.map((piece, k) => ({ piece, orient: clue.orients[k]! }));
-        this.ghostUntil = this.time + prismStyle.clueSeconds;
-        caption = 'For a moment, half the pieces show the angle they should have.';
-        break;
-      }
-    }
-    this.drawClues();
-    return caption;
+  hint(): string {
+    if (this.solved) return '';
+    const step = stepClue(this.level, this.orients, this.locked, `${this.level.seed}:hint:${this.locked.size}`);
+    if (!step) return 'Just one piece left to turn. Watch where its beam lands.';
+    this.turn(step.piece, step.orient);
+    this.locked.add(step.piece);
+    this.views[step.piece]!.root.cursor = 'default';
+    return step.onBeam
+      ? 'The beam now travels further: the first wrong piece on its path has turned and will stay put. Follow the beam onward.'
+      : 'This piece has turned to its right angle and will stay put.';
+  }
+
+  tips(): Tip[] {
+    const tips: Tip[] = [
+      { id: 'prism:follow', text: 'Tip: follow each beam from where it starts. Turn the first ringed piece it meets, then follow it on.', after: 1 },
+      { id: 'prism:back', text: 'Tip: work backwards too. Ask which piece could send light into each crystal.', after: 3 },
+    ];
+    const mixes = this.level.pieces.some((p) => p.kind === 'target' && (p.color & (p.color - 1)) !== 0);
+    if (mixes) tips.push({ id: 'prism:mix', text: 'Tip: a crystal that needs a mixed colour must get both of its beams. The small mark on it shows which.', after: 2 });
+    if (this.level.pieces.some((p) => p.kind === 'splitter')) tips.push({ id: 'prism:split', text: 'Tip: a splitter sends light two ways at once: straight on, and to the side.', after: 2 });
+    return tips;
   }
 
   private scheduleTutorial(): void {

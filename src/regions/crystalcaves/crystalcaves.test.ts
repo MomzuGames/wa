@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import levelsJson from './levels.json';
 import { LEMON, type PrismLevel, ROSE, SKY, initialOrients, isSolutionValid, isSolved, reflect, trace } from './model';
 import { solvePrism } from './solver';
-import { ghostClue, lockClue, revealFraction } from './clues';
+import { stepClue } from './clues';
 import { generatePrismLevel } from './generator';
 
 const levels = levelsJson as PrismLevel[];
@@ -83,11 +83,17 @@ describe('baked crystalcaves levels', () => {
         expect(solvePrism(level, initialOrients(level)).orients).not.toBeNull();
       });
 
-      it('offers a lock clue and reveals at most half in tier 4', () => {
-        expect(lockClue(level, initialOrients(level), new Set(), 1, 'test')).not.toBeNull();
-        const ghost = ghostClue(level, initialOrients(level), 'test');
-        expect(ghost).not.toBeNull();
-        expect(revealFraction(level, ghost!)).toBeLessThanOrEqual(0.5);
+      it('hints turn a wrong piece each time and leave the last one to the player', () => {
+        const orients = initialOrients(level);
+        const locked = new Set<number>();
+        let steps = 0;
+        for (let step = stepClue(level, orients, locked, `t${steps}`); step; step = stepClue(level, orients, locked, `t${++steps}`)) {
+          expect(orients[step.piece]).not.toBe(step.orient);
+          orients[step.piece] = step.orient;
+          locked.add(step.piece);
+          expect(solvePrism(level, orients, undefined, locked).orients).not.toBeNull();
+        }
+        expect(isSolved(level, orients)).toBe(false);
       });
 
       it('has every target requiring some colour', () => {

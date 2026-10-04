@@ -7,8 +7,8 @@ export interface PrismSolveResult {
 
 // Rotatable pieces have at most four orientations, so a depth-first search over them
 // is exact. Orders each piece's current orientation first so solutions stay close to
-// the player's state.
-export function solvePrism(level: PrismLevel, current: number[], maxNodes = 200_000): PrismSolveResult {
+// the player's state. Locked pieces (set by hints) keep their current orientation.
+export function solvePrism(level: PrismLevel, current: number[], maxNodes = 200_000, locked: ReadonlySet<number> = new Set()): PrismSolveResult {
   const rotatable = level.pieces.map((p, i) => (p.rotatable ? i : -1)).filter((i) => i >= 0);
   const orients = current.slice();
   let nodes = 0;
@@ -17,10 +17,10 @@ export function solvePrism(level: PrismLevel, current: number[], maxNodes = 200_
     if (nodes > maxNodes) return false;
     if (k === rotatable.length) return isSolved(level, orients);
     const i = rotatable[k]!;
-    const count = ORIENTATIONS[level.pieces[i]!.kind];
+    const count = locked.has(i) ? 1 : ORIENTATIONS[level.pieces[i]!.kind];
     const start = current[i]!;
     for (let step = 0; step < count; step++) {
-      orients[i] = (start + step) % count;
+      orients[i] = (start + step) % ORIENTATIONS[level.pieces[i]!.kind];
       if (search(k + 1)) return true;
       if (nodes > maxNodes) return false;
     }

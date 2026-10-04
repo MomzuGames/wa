@@ -15,17 +15,18 @@ The feeling to aim for: **meditative focus**. Think soft glowing light on black,
 ### Character
 - **The light** is the player's companion: a small creature with a blinking face (`ui/face.ts`). On the title it hops up onto the letters; the title click makes it burst with joy and loop once (`spirit:joy`), and then it roams the map from region to region forever (`spirit:tour`), each region's name and aura brightening as it comes near (`spirit:at` is broadcast every frame). Choosing a region or a level makes it leap into the figure and vanish in a burst (`spirit:dive`); it emerges again in the next scene. On the trail it roams the open levels the same way; in a level it sits by the level name, does little antics when idle, flinches on a mistake and spins with sparks on a solve. Scenes talk to it only through `spirit:*` events (`ui/spirit.ts`).
 - **The studio card** (`ui/studioCard.ts`): the game opens on the MomoGames logo, a punk baby with a pastel mohawk, pacifier and hoop earring holding a game controller, drawn as inline SVG from palette colours. Its mohawk sways, it blinks and the controller buttons twinkle; it holds about 2 s while the game loads (a tap skips it) and fades into the title. Dev level jumps skip it. The studio name lives in `STUDIO_NAME` (`config/game.ts`).
-- **Every hint explains itself.** `showClue` returns a caption shown in a toast (`ui/toast.ts`); hints are one concrete thing at a time and region-specific (a tile turns into place; a start star pulses; a stone outline appears; a mirror locks; one pad glows). After all four tiers, the hint button keeps giving concrete steps.
+- **Every hint is one real step and explains itself.** `hint()` makes one visible move toward a solution from the player's current state and returns a caption saying what changed and why (shown in `ui/toast.ts`). See §7.
+- **Tips teach strategy without interrupting.** `tips()` lists one-line tips that appear as quiet, non-blocking captions once the player has struggled enough, plus situational ones sent with `level:tip`. Each shows once per player, ever (`seenTips` in the save).
 - **Depth and scenery:** a spotlight under every puzzle, shadows under tiles, stones and pads, a colour wash and region-specific backdrop (`fx/atmosphere.ts`: caustics, star field, raked sand, crystal facets, waves and fireflies) plus a night landscape per region (`fx/scenery.ts`: headland and shore with rolling waves; mountain ranges with pines; rolling hills with bamboo; a cave with stalactites and a glowing stream; hills over a lake with the moon's reflection), all with pointer parallax, plants swaying in the wind and silhouette birds passing now and then. The map shows each region's name and colour pool on hover/focus.
 - **Nothing is static.** The map drifts and leans toward the pointer (parallax, with the star field further back), every region figure itself moves (rings breathe, stars drift, stones rock, crystals grow, the moon sways, the terrace bobs) with clear ripples, twinkles and glints on top, region names are always shown and light up as the companion passes, light pulses travel along completed trails, and every region has an atmosphere layer (`fx/atmosphere.ts`) behind its trail and puzzles.
-- **Instruction cards** (`ui/levelIntro.ts`) are paged: one page per mechanic present in that level (`LevelScene.introPages`), each with its own looping animated demonstration and a short caption. Pages turn with the arrows, a swipe or the arrow keys; page dots show where you are; the play button (or Enter) closes the card. Never teach a mechanic the level does not use. A card opens by itself on the first page the player has not seen in that region (tracked in the save); the `?` button reopens it any time. Shared demo pieces (finger taps, holds, mini buttons) live in `ui/introGlyphs.ts`; `src/regions/introPages.test.ts` builds every page of every level headlessly. The bulb button asks "Would you like a hint?" and reveals the next clue tier on yes, even before it is earned.
+- **Instruction cards** (`ui/levelIntro.ts`) are paged: one page per mechanic present in that level (`LevelScene.introPages`), each with its own looping animated demonstration and a short caption. Pages turn with the arrows, a swipe or the arrow keys; page dots show where you are; the play button (or Enter) closes the card. Never teach a mechanic the level does not use. A card opens by itself on the first page the player has not seen in that region (tracked in the save); the `?` button reopens it any time. Shared demo pieces (finger taps, holds, mini buttons) live in `ui/introGlyphs.ts`; `src/regions/introPages.test.ts` builds every page of every level headlessly. The bulb button asks "Would you like a hint?" and gives one step on yes (§7).
 - **Music:** the drone plays on the title screen, the map is quiet, and each region has its own generative bed (`audio/beds.ts`) that plays on its trail and in its levels, cross-faded by `AudioEngine.setScene`. Map audio layering is intentionally not implemented.
 
 ### Non-negotiable principles
 1. **No word puzzles.** The UI uses icons and motion, not text. Text is allowed only for the title logo, region and level names (`LEVEL_NAMES` in `regions/catalog.ts`: ten named places per region instead of numbers), the small move counter, and the short captions on each level's instruction card (the owner asked for clearer instructions).
 2. **Black and light pastel only.** Use near-black backgrounds with soft pastel light. No saturated colours, and no pure white except as a tiny highlight.
 3. **Nothing harsh.** No red error flashes, buzzers, shaking screens, timers or countdowns. Failure is shown as a gentle unravel or fade.
-4. **The answer is never shown in full.** Clues unlock progressively after failed attempts (see §7).
+4. **The answer is never shown in full.** Hints take one step at a time and never the last one (see §7).
 5. **Animation quality is a feature.** Everything eases smoothly, nothing snaps, and the game holds 60fps.
 6. **Every level must be provably solvable.** Generators are verified by solvers in automated tests.
 7. **Teach by showing.** The first level of each region is trivially easy, with a soft ghost-hand demonstration and no text.
@@ -96,7 +97,7 @@ Game/
     │   ├── ambient.ts           # generative drones/pads
     │   └── instruments.ts       # per-region voices
     ├── hints/
-    │   ├── hintManager.ts       # attempt tracking + tier unlocking
+    │   ├── hintManager.ts       # attempt units (orb fill, tip timing) + hints used
     │   └── hintOrb.ts           # the clue orb UI
     ├── map/
     │   ├── worldMap.ts
@@ -122,13 +123,13 @@ Every region plugs into the shared shell through one interface. The shell never 
 
 ```ts
 export type RegionId = 'tidepools' | 'nightsky' | 'stonegarden' | 'crystalcaves' | 'moonlake' | 'shadowterrace';
-export type ClueTier = 1 | 2 | 3 | 4;
 
 export interface LevelScene {
   container: import('pixi.js').Container;
   on(event: 'attempt' | 'solved' | 'move', cb: () => void): void;
   restart(): void;
-  showClue(tier: ClueTier): void;        // must never reveal the complete solution
+  hint(): string;                        // one visible step + caption; never the final step
+  tips?(): Tip[];                        // { id, text, after } strategy tips, shown once each
   playCompletion(): Promise<void>;       // the region's signature solve animation
   update?(dt: number): void;             // ticked every frame by the shell (ripples, drift, timed clues)
   introPages?(): IntroPage[];            // { caption, glyph: () => Container } per mechanic in this level
@@ -216,7 +217,7 @@ Quicksand, light weight, generous letter-spacing. It is used only for the title 
 - **Interaction sounds** are always pentatonic notes, so there are no "wrong" notes.
 - **Failure:** a soft descending 3-note breath, very quiet.
 - **Solve:** the region voice plays a short phrase; in Night Sky it replays the player's own path as a melody.
-- **Clue unlock:** a single wind-chime tone.
+- **Hint orb filled:** a single wind-chime tone.
 - **World map:** layers the ambient beds of all completed regions, so a fully completed map plays a full harmony.
 - **Settings:** music volume, effects volume, mute. The `M` key toggles mute.
 
@@ -254,21 +255,28 @@ Resetting progress requires a press-and-hold to confirm; there is no text dialog
 
 ---
 
-## 7. Hint / Clue System (shared by every region)
+## 7. Hints and Tips (shared by every region)
 
-The **clue orb** sits dim in a corner of the level HUD and slowly fills with light as attempt units accumulate.
+The owner asked for hints that "get me to the next step a little easier" and for instructions that are never intrusive.
 
-| Attempt units | Tier unlocked | Meaning (each region implements it concretely) |
-|---|---|---|
-| 3 | Tier 1 | **Where to begin**: one correct starting point or piece |
-| 6 | Tier 2 | **A piece of the path**: a small correct fragment |
-| 10 | Tier 3 | **The principle**: highlight the underlying rule |
-| 15 | Tier 4 | **A glimpse**: about half the solution shimmers for 3 s, then fades |
+### Hints
+- The **bulb** (top) and the **orb** (bottom) both ask "Would you like a hint?"; `H` gives one straight away. Hints are always available.
+- **Each hint is one concrete, visible step** computed by the solver from the player's **current state**, kept consistent with earlier hints, with a caption that says what changed and why. Hints stay through a restart.
+- **Never the final step.** When only one move remains, the hint encourages instead of acting. Tests check, for every level, that repeated hints never finish it.
+- The **orb** fills as attempt units build up (it glows and chimes at 3 units) to suggest a hint might help.
 
-### Rules
-- Clues are optional. The orb chimes softly when a tier becomes available, and the player clicks it (or presses `H`) to reveal the next unlocked tier.
-- **Never reveal the full solution.** Tier 4 must show at most 50% of the solution, temporarily.
-- Where possible, compute clues from the player's **current state** using the solver, not only the stored solution.
+| Region | One hint does |
+|---|---|
+| Tidepools | Turns one wrong tile into place and locks it: edge-forced tiles first, then tiles touching ones already right. |
+| Night Sky | Grows a guide: the start star is ringed and the next two lines of a working stroke glow; it stays while drawing. The last two lines are never shown. |
+| Stone Garden | Settles the biggest waiting stone into its place, or lifts a stone resting where no solution can keep it back to the tray. |
+| Crystal Caves | Turns one wrong piece and locks it, preferring the first wrong piece a beam reaches now. |
+| Moon Lake | Makes one pad of a shortest way glow (with "twice" when it needs two presses); glows that stop being useful go dark. |
+| Shadow Terrace | Builds (or takes down) one stack to its height, tallest first. |
+
+### Tips
+- Each region's `tips()` gives strategy tips (start at the edges, count odd stars, biggest stone first, follow the beam, order never matters, no stack above its shadows) with an `after` threshold in attempt units. Situational tips arrive as `level:tip` events (a stroke let go too soon, an ordered star refused).
+- Tips are quiet captions that never block input, never appear over the instruction card, keep 25 s apart, and are shown once per player per region.
 
 ### What counts as an attempt unit
 - **Night Sky:** each failed stroke.
@@ -299,10 +307,7 @@ For every region:
   4. 7×7 to 9×9 grids, where multiple separate loops are required
 - **Signature twist — linked tiles:** from chapter 3 some tiles are tied in pairs (marked with matching dots on their top edge). Turning one turns its partner too, and locking one locks both. The solver keeps all rotations for linked cells and propagates each choice to the partner.
 - **Clues:**
-  1. Lock one correctly rotated tile, shown with a mint shimmer.
-  2. Lock 2 more tiles.
-  3. Softly mark every tile whose connectors are forced (determined by the board edges).
-  4. Half the tiles briefly ghost their correct rotation.
+  One wrong tile turns into place and locks (see §7).
 - **Feel:** closed loops fill with flowing light as you connect them.
 - **Solve animation:** light flows through every loop, a ripple radiates outward, and the tiles gently bob like water.
 
@@ -324,10 +329,7 @@ For every region:
   4. Double edges (brighter until traced twice), plus slow star drift in the final levels
 - **Signature twist — ordered stars:** from chapter 3 a few stars carry small dots beneath them (one, two, three). They must be reached in that order; starting on or moving to one out of turn is refused with a flash and the unravel sound. The generator picks them from the walk's first visits so the stored walk still works, and the solver filters options by `orderAllows`.
 - **Clues:**
-  1. A valid starting star pulses.
-  2. The first 2 edges of a valid path shimmer.
-  3. Stars with an odd number of lines get a soft ring.
-  4. Half the path shimmers for 3 s.
+  A growing guide of a working stroke, two lines per hint (see §7).
 - **Solve animation:** the constellation brightens, the path replays as a melody, and the figure drifts upward among the stars.
 
 ### Region 3 — Stone Garden (Silhouette) · accent `peach`
@@ -346,10 +348,7 @@ For every region:
   3. Flipping is required
   4. 7–9 pieces including look-alike pieces
 - **Clues:**
-  1. A faint ghost outline shows where one piece belongs.
-  2. One piece settles into place by itself.
-  3. The internal seams of the silhouette appear faintly for 3 s.
-  4. Ghosts of half the pieces appear for 3 s.
+  The biggest waiting stone settles, or a misplaced one returns to the tray (see §7).
 - **Solve animation:** the seams dissolve into one smooth shape, and sand-rake lines ripple outward around it.
 
 ### Region 4 — Crystal Caves (Prism light) · accent `sky`
@@ -378,10 +377,7 @@ For every region:
   3. Colour mixing at targets
   4. Filters, blockers and dense boards
 - **Clues:**
-  1. Lock one correct piece.
-  2. Lock 2 more pieces.
-  3. For 3 s, show a faint dotted route from each emitter to the target it should feed.
-  4. Half the rotatable pieces ghost their correct orientation.
+  One wrong piece turns and locks, following the beam (see §7).
 - **Solve animation:** targets bloom into crystals, the beams shimmer, and refraction sparkles drift up.
 
 ### Region 5 — Moon Lake (Ripple / Lights-Out) · accent `rose`
@@ -397,11 +393,8 @@ For every region:
   3. Three-state nodes
   4. Wide-ripple nodes (affect neighbours 2 steps away), plus larger boards
 - **Signature twist — stone pads:** from chapter 3 some pads are grey stone. They cannot be pressed, only changed by their neighbours' ripples, and they still have to end up lit. The solver drops their press variable.
-- **Clues:** computed from the current state.
-  1. One node from the minimum solution glows softly.
-  2. 2 more nodes glow.
-  3. The number of presses still needed appears as small dots, not digits.
-  4. Half the remaining presses shimmer for 3 s.
+- **Clues:**
+  One pad of a shortest way glows (see §7).
 - **Solve animation:** the whole lake lights up, concentric ripples spread across it, and a moon reflection rises.
 
 ### Region 6 — Shadow Terrace (Shadows, three-dimensional) · accent `sage`
@@ -417,10 +410,7 @@ For every region:
   4. 4×4, heights to 4, the **minimum** count (kept at 4×4: the search grows fast with size)
 - **Signature twist — the lantern gauge:** a vertical gauge with one tick per stone fills as stones are placed; it must be exactly full. Spilling over shows in pearl above the gauge.
 - **Clues:**
-  1. One stack's correct height appears as a pale outline (a cross on the floor means "take these away").
-  2. Two more outlines.
-  3. For 3 s, tiles in rows and columns whose shadow is still wrong shimmer.
-  4. Outlines for half the stacks, for 3 s.
+  One stack is built to its height, tallest first (see §7).
 - **Solve animation:** the terrace turns slowly once while a moon climbs behind it and sparks rise from the stones.
 
 ---
@@ -435,7 +425,7 @@ For every region:
   - it is solvable by the solver
   - it is not solved at its start state
   - its stored solution is valid
-  - clue tier 4 never reveals more than 50% of the solution
+  - repeated hints always make progress and never finish the level
 - The game never runs the generators at runtime; it only loads the JSON.
 
 ---

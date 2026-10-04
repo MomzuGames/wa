@@ -1,43 +1,32 @@
-import { createRng } from '../../core/rng';
 import { type Placement, type StoneLevel } from './model';
 import { solveStone } from './solver';
 
-export interface PieceGhost {
-  piece: number;
-  placement: Placement;
-}
+// A hint either settles one stone into its place in a solution that keeps every stone the
+// player has placed, or, when no solution can keep them all, lifts one misplaced stone
+// back to the tray. The last stone is always the player's to place.
+export type StoneStep =
+  | { kind: 'settle'; piece: number; placement: Placement; biggest: boolean }
+  | { kind: 'lift'; piece: number };
 
-// A full solution that keeps the player's placed pieces where they are when possible.
-export function solutionFor(level: StoneLevel, placed: Map<number, Placement>): Map<number, Placement> | null {
-  const kept = solveStone(level, placed).placements;
-  if (kept) return kept;
-  return solveStone(level).placements;
-}
+const size = (level: StoneLevel, i: number) => level.pieces[i]!.tris.length;
 
-function unplacedGhosts(level: StoneLevel, placed: Map<number, Placement>, seed: string): PieceGhost[] {
-  const solution = solutionFor(level, placed);
-  if (!solution) return [];
-  const rng = createRng(seed);
-  // Stones still in the tray, plus any resting somewhere the solution does not want them.
-  const wanted = (i: number) => {
-    const here = placed.get(i);
-    const there = solution.get(i)!;
-    return !here || here.x !== there.x || here.y !== there.y || here.rot !== there.rot || here.flip !== there.flip;
-  };
-  const candidates = level.pieces.map((_, i) => i).filter((i) => !level.pieces[i]!.fixed && wanted(i));
-  return rng.shuffle(candidates).map((piece) => ({ piece, placement: solution.get(piece)! }));
-}
-
-// Tier 1: where one piece belongs. Tier 2: the same, to be settled automatically.
-export function pieceClue(level: StoneLevel, placed: Map<number, Placement>, seed: string): PieceGhost | null {
-  return unplacedGhosts(level, placed, seed)[0] ?? null;
-}
-
-// Tier 4: ghosts for at most half of all pieces.
-export function halfClue(level: StoneLevel, placed: Map<number, Placement>, seed: string): PieceGhost[] {
-  return unplacedGhosts(level, placed, seed).slice(0, Math.floor(level.pieces.length / 2));
-}
-
-export function revealFraction(level: StoneLevel, ghosts: PieceGhost[]): number {
-  return level.pieces.length === 0 ? 0 : ghosts.length / level.pieces.length;
+export function stepClue(level: StoneLevel, placed: Map<number, Placement>): StoneStep | null {
+  const movable = level.pieces.map((_, i) => i).filter((i) => !level.pieces[i]!.fixed);
+  const solution = solveStone(level, placed).placements;
+  if (!solution) {
+    // Lift the stone whose removal opens a way to finish, biggest first.
+    const resting = movable.filter((i) => placed.has(i)).sort((a, b) => size(level, b) - size(level, a));
+    for (const piece of resting) {
+      const without = new Map(placed);
+      without.delete(piece);
+      if (solveStone(level, without).placements) return { kind: 'lift', piece };
+    }
+    return resting.length ? { kind: 'lift', piece: resting[0]! } : null;
+  }
+  const waiting = movable.filter((i) => !placed.has(i));
+  if (waiting.length <= 1) return null;
+  const largest = Math.max(...waiting.map((i) => size(level, i)));
+  const piece = waiting.find((i) => size(level, i) === largest)!;
+  const biggest = Math.max(...movable.map((i) => size(level, i))) === largest;
+  return { kind: 'settle', piece, placement: solution.get(piece)!, biggest };
 }

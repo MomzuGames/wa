@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import levelsJson from './levels.json';
 import { type ShadowLevel, ceiling, frontProfile, isSolutionValid, isSolved, sideProfile, startHeights } from './model';
 import { minimumStones, solveShadow } from './solver';
-import { halfClue, stackClue } from './clues';
+import { stepClue } from './clues';
 import { generateShadowLevel } from './generator';
 import { paramsForChapter } from './levelSpec';
 
@@ -102,7 +102,7 @@ describe('shadow solver', () => {
 });
 
 describe('shadow clues', () => {
-  it('points at stacks that differ from a nearby solution and never fixed ones', () => {
+  it('builds one stack at a time, never a fixed one, and leaves the last to the player', () => {
     const level = make(
       [
         [1, 2, 3],
@@ -112,11 +112,14 @@ describe('shadow clues', () => {
       { fixed: [-1, -1, 3, -1, -1, -1, -1, -1, -1] },
     );
     const heights = startHeights(level);
-    const clues = stackClue(level, heights, 2, new Set(), 's');
-    expect(clues.length).toBe(2);
-    for (const c of clues) expect(level.fixed[c.cell]).toBe(-1);
-    const half = halfClue(level, heights, 's');
-    expect(half.length).toBeLessThanOrEqual(4);
+    const built = new Map<number, number>();
+    for (let step = stepClue(level, heights, 's', built); step; step = stepClue(level, heights, `s${built.size}`, built)) {
+      expect(level.fixed[step.cell]).toBe(-1);
+      expect(heights[step.cell]).not.toBe(step.height);
+      heights[step.cell] = step.height;
+      built.set(step.cell, step.height);
+    }
+    expect(isSolved(level, heights)).toBe(false);
   });
 });
 
@@ -140,10 +143,15 @@ describe('baked shadow terrace levels', () => {
     }
   });
 
-  it('clue tier 4 never reveals more than half of the stacks', () => {
+  it('hints build stacks toward a solution and never finish a level', () => {
     for (const level of levels) {
-      const ghosts = halfClue(level, startHeights(level), 'q');
-      expect(ghosts.length).toBeLessThanOrEqual(Math.floor((level.size * level.size) / 2));
+      const heights = startHeights(level);
+      const built = new Map<number, number>();
+      for (let step = stepClue(level, heights, 'q', built); step; step = stepClue(level, heights, `q${built.size}`, built)) {
+        heights[step.cell] = step.height;
+        built.set(step.cell, step.height);
+      }
+      expect(isSolved(level, heights), level.seed).toBe(false);
     }
   });
 

@@ -1,17 +1,17 @@
 import { Container, FederatedPointerEvent, FillGradient, Graphics, Text } from 'pixi.js';
 import type { Scene } from '../core/sceneManager';
-import type { ClueTier, LevelScene, PuzzleModule, RegionId, ShellContext } from '../regions/types';
+import type { LevelScene, PuzzleModule, RegionId, ShellContext } from '../regions/types';
 import { alphas, palette, rgba } from '../design/palette';
-import { durations, easings } from '../design/motion';
+import { durations, easings, tipTiming } from '../design/motion';
 import { headerBand, hud, layout, safeArea } from '../design/layout';
 import { createRng } from '../core/rng';
 import { events } from '../core/events';
-import { getRegion, markIntroSeen } from '../core/save';
+import { getRegion, markIntroSeen, markTipSeen } from '../core/save';
 import { LEVEL_NAMES } from '../regions/catalog';
 import { ConfirmCard } from '../ui/confirm';
 import { Toast } from '../ui/toast';
 import { markSolved, recordAttempts } from '../core/progress';
-import { HintManager } from '../hints/hintManager';
+import { HintManager, hintRules } from '../hints/hintManager';
 import { HintOrb } from '../hints/hintOrb';
 import { IconButton } from '../ui/iconButton';
 import type { AudioEngine } from '../audio/engine';
@@ -24,6 +24,7 @@ import { haptic } from '../core/native';
 
 // Room kept for the light to the left of the level name.
 const SPIRIT_SPACE = 34;
+
 
 export interface LevelShellDeps {
   audio: AudioEngine;
@@ -55,6 +56,9 @@ export class LevelShellScene implements Scene {
   private stage = new Container();
   private parallax = { x: 0, y: 0 };
   private intro: LevelIntro | null = null;
+  private begun = false;
+  private tipClock = 0;
+  private lastToastAt = 0;
   private toast: Toast;
   private width: number;
   private height: number;
@@ -83,7 +87,11 @@ export class LevelShellScene implements Scene {
     this.atmosphere = new Atmosphere(module.id, createRng(`${module.id}:atmosphere:${levelIndex}`));
     const saved = getRegion(module.id);
     this.hints = new HintManager(saved.attempts[levelIndex] ?? 0, saved.cluesUsed[levelIndex] ?? 0);
-    this.hints.onTierAvailable(() => deps.audio.chime());
+    this.hints.onUnits((units) => {
+      // A soft chime the moment the orb fills, and a tip if one fits how stuck the player is.
+      if (units === hintRules.readyUnits) deps.audio.chime();
+      this.offerTip();
+    });
 
     this.level = module.createLevel(ctx, levelIndex);
     this.level.on('attempt', () => {
@@ -98,7 +106,7 @@ export class LevelShellScene implements Scene {
     this.level.on('solved', () => void this.solved());
 
     const accent = palette[module.accent];
-    this.orb = new HintOrb(accent, () => this.revealClue());
+    this.orb = new HintOrb(accent, () => this.askHint());
     this.restartButton = new IconButton('restart', () => this.restart());
     this.label = new Text({
       text: LEVEL_NAMES[module.id][levelIndex] ?? String(levelIndex + 1),
@@ -130,7 +138,8 @@ export class LevelShellScene implements Scene {
       events.on('input:key', (key) => {
         if (key === 'Backspace' && this.level.usesRotateKey) this.restart();
       }),
-      events.on('input:hint', () => this.revealClue()),
+      events.on('input:hint', () => this.giveHint()),
+      events.on('level:tip', ({ id, text }) => this.showTip(id, text)),
       events.on('input:key', () => this.hints.recordInput()),
     );
     document.addEventListener('visibilitychange', this.onVisibility);
@@ -156,7 +165,7 @@ export class LevelShellScene implements Scene {
     const pages = this.level.introPages?.() ?? [];
     const firstNew = markIntroSeen(this.module.id, pages.map((p) => p.caption));
     if (firstNew >= 0) this.showInstructions(true, firstNew);
-    else this.level.begin?.();
+    else this.startPlay();
   }
 
   // Opens the instruction card; the ? button uses this at any time.
@@ -164,23 +173,29 @@ export class LevelShellScene implements Scene {
     if (this.intro || this.finished) return;
     const pages = this.level.introPages?.() ?? [];
     if (pages.length === 0) {
-      if (first) this.level.begin?.();
+      if (first) this.startPlay();
       return;
     }
     this.intro = new LevelIntro(LEVEL_NAMES[this.module.id][this.levelIndex] ?? String(this.levelIndex + 1), palette[this.module.accent], pages, startPage);
     this.container.addChild(this.intro);
     void this.intro.play(this.width, this.height).then(() => {
       this.intro = null;
-      if (first) this.level.begin?.();
+      if (first) this.startPlay();
     });
   }
 
-  // The hint button asks first, then reveals the next tier even if it is not earned yet.
+  // Play begins once the instruction card (if any) is closed; a first tip may follow shortly.
+  private startPlay(): void {
+    this.level.begin?.();
+    this.begun = true;
+    this.lastToastAt = performance.now() - (tipTiming.gap - tipTiming.firstDelay) * 1000;
+  }
+
+  // The bulb and the orb ask first; H gives a hint straight away.
   askHint(): void {
     if (this.finished || this.intro) return;
     const card = new ConfirmCard('Would you like a hint?', palette[this.module.accent], (yes) => {
-      if (!yes) return;
-      this.applyClue(this.hints.forceReveal());
+      if (yes) this.giveHint();
     });
     this.container.addChild(card);
     card.open(this.width, this.height);
@@ -194,7 +209,12 @@ export class LevelShellScene implements Scene {
 
   update(dt: number): void {
     this.hints.tick(dt);
-    this.orb.setFill(this.hints.fill, this.hints.hasUnrevealed);
+    this.orb.setFill(this.hints.fill, this.hints.ready);
+    this.tipClock += dt;
+    if (this.tipClock >= tipTiming.retry) {
+      this.tipClock = 0;
+      this.offerTip();
+    }
     this.atmosphere.update(dt);
     this.level.update?.(dt);
     // The puzzle itself leans very slightly toward the pointer: the opposite of the backdrop.
@@ -251,23 +271,41 @@ export class LevelShellScene implements Scene {
     this.hints.recordRestart();
   }
 
-  private revealClue(): void {
-    if (this.finished) return;
-    const tier = this.hints.reveal();
-    if (tier) this.applyClue(tier);
+  // One concrete step forward, with a caption saying what changed and why.
+  private giveHint(): void {
+    if (this.finished || this.intro) return;
+    const caption = this.level.hint();
+    this.hints.recordHint();
+    this.lastToastAt = performance.now();
+    this.toast.show(caption, this.width, this.height);
+    events.emit('spirit:react', 'move');
   }
 
-  private applyClue(tier: ClueTier): void {
-    const caption = this.level.showClue(tier);
-    if (caption) this.toast.show(caption, this.width, this.height);
-    events.emit('spirit:react', 'move');
+  // Tips wait their turn: never over the instruction card, and never hard on the heels of
+  // another caption. Each is shown once per player, ever.
+  private offerTip(): void {
+    if (this.finished || this.intro || !this.begun) return;
+    if (performance.now() - this.lastToastAt < tipTiming.gap * 1000) return;
+    const units = this.hints.state.units;
+    const tip = (this.level.tips?.() ?? []).find((t) => t.after <= units && markTipSeen(this.module.id, t.id));
+    if (tip) this.showCaption(tip.text);
+  }
+
+  private showTip(id: string, text: string): void {
+    if (this.finished || !markTipSeen(this.module.id, id)) return;
+    this.showCaption(text);
+  }
+
+  private showCaption(text: string): void {
+    this.lastToastAt = performance.now();
+    this.toast.show(text, this.width, this.height);
   }
 
   private async solved(): Promise<void> {
     if (this.finished) return;
     this.finished = true;
     const state = this.hints.state;
-    recordAttempts(this.module.id, this.levelIndex, state.units, state.revealedTier);
+    recordAttempts(this.module.id, this.levelIndex, state.units, state.used);
     const completedRegion = markSolved(this.module.id, this.levelIndex);
     events.emit('spirit:react', 'solved');
     haptic('light');

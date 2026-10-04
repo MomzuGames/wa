@@ -25,6 +25,7 @@ export interface SaveData {
   settings: Settings;
   // Instruction lines already shown, per region, so cards appear once per new idea.
   seenIntros: Partial<Record<RegionId, string[]>>;
+  seenTips?: Partial<Record<RegionId, string[]>>;
 }
 
 
@@ -147,6 +148,7 @@ export function load(): SaveData {
         regions: { ...fresh.regions, ...parsed.regions },
         settings: { ...fresh.settings, ...parsed.settings },
         seenIntros: { ...(parsed.seenIntros ?? {}) },
+        seenTips: { ...(parsed.seenTips ?? {}) },
       };
       // Regions used to have more levels; drop progress that no longer exists.
       for (const id of REGION_IDS) current.regions[id].solved = current.regions[id].solved.filter((i) => i < LEVELS_PER_REGION);
@@ -184,6 +186,7 @@ export function resetProgress(): void {
   const data = load();
   for (const id of REGION_IDS) data.regions[id] = emptyRegion();
   data.seenIntros = {};
+  data.seenTips = {};
   persist();
 }
 
@@ -199,6 +202,16 @@ export function markIntroSeen(id: RegionId, lines: string[]): number {
     events.emit('progress:changed');
   }
   return first;
+}
+
+// True the first time a tip is shown to this player (and records it); false ever after.
+export function markTipSeen(id: RegionId, tip: string): boolean {
+  const data = load();
+  const seen = (data.seenTips ??= {})[id] ?? [];
+  if (seen.includes(tip)) return false;
+  data.seenTips[id] = [...seen, tip];
+  persist();
+  return true;
 }
 
 // ----- Backup codes: everything on this device as one pasteable string -----
@@ -249,6 +262,7 @@ export function importBackup(code: string): number {
       for (const [k, v] of Object.entries(theirs.attempts ?? {})) mine.regions[id].attempts[Number(k)] = Math.max(mine.regions[id].attempts[Number(k)] ?? 0, v);
       for (const [k, v] of Object.entries(theirs.cluesUsed ?? {})) mine.regions[id].cluesUsed[Number(k)] = Math.max(mine.regions[id].cluesUsed[Number(k)] ?? 0, v);
       mine.seenIntros[id] = [...new Set([...(mine.seenIntros[id] ?? []), ...(incoming.seenIntros?.[id] ?? [])])];
+      (mine.seenTips ??= {})[id] = [...new Set([...(mine.seenTips[id] ?? []), ...(incoming.seenTips?.[id] ?? [])])];
     }
     writeJson(saveKeyFor(p.id), mine);
   }
