@@ -16,7 +16,7 @@ describe('instruction pages', () => {
     const ctx = {
       palette,
       motion: { durations, easings },
-      audio: { onReady: () => {}, sfx: {} } as never,
+      audio: { onReady: () => {}, sfx: {}, guard: <T,>(v: T) => v } as never,
       particles: { emit: () => {}, container: {} } as never,
       rng: createRng('intro'),
       width: 1200,
