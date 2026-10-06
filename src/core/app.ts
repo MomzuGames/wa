@@ -2,6 +2,9 @@ import gsap from 'gsap';
 import { Application, Container, type DestroyOptions } from 'pixi.js';
 import { palette } from '../design/palette';
 import { readSafeArea } from '../design/layout';
+import { dlog } from './debugLog';
+
+const resumeChecks = [0, 250, 700, 1500];
 
 export async function createApp(mount: HTMLElement): Promise<Application> {
   const app = new Application();
@@ -56,11 +59,14 @@ export function installResumeGuard(app: Application, cancel: () => void): void {
       return;
     }
     if (lost || gl?.isContextLost()) {
+      dlog('reload-after-lost-context');
       location.reload();
       return;
     }
     app.ticker.start();
-    app.resize();
+    // iOS can report a passing size while the lock screen slides away: measure again a few
+    // times over the next moments, so the game and the glass agree on where things are.
+    for (const ms of resumeChecks) setTimeout(() => app.resize(), ms);
   });
   window.addEventListener('pageshow', (e) => {
     if ((e as PageTransitionEvent).persisted && (lost || gl?.isContextLost())) location.reload();

@@ -1,6 +1,7 @@
 import './style.css';
 import '@fontsource/quicksand/300.css';
 import { createApp, installResumeGuard, installTweenSafety, onResize } from './core/app';
+import { installDebugLog } from './core/debugLog';
 import { SceneManager } from './core/sceneManager';
 import { installKeyboard } from './core/input';
 import { createRng } from './core/rng';
@@ -39,6 +40,10 @@ async function main() {
   if (!IS_APP) installUpdates();
   const app = await createApp(document.querySelector<HTMLDivElement>('#app')!);
   installResumeGuard(app, () => events.emit('input:cancel'));
+  installDebugLog(app, () => {
+    const scene = scenes.scene as unknown as { constructor: { name: string }; regionId?: string; levelIndex?: number } | null;
+    return scene ? `${scene.constructor.name}${scene.regionId ? `:${scene.regionId}:${(scene.levelIndex ?? -1) + 1}` : ''}` : 'none';
+  });
   const rng = createRng('chowa');
   const audio = new AudioEngine();
 
