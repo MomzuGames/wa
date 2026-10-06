@@ -19,47 +19,13 @@ const poolStyle = {
   maxCell: 74,
   pointRadius: 2.2,
   lineWidth: 0.13, // of a cell
-  clueRadius: 0.3, // of a cell
+  clueRadius: 0.27, // of a cell
   snap: 0.42, // of a cell: how close the finger must come to a point
   flowSpeed: 0.9, // segments per second: the light moving along the drawn water
   flowSpacing: 0.85, // segments between two glints
   flowDash: 0.3, // of a segment
   sandSpecks: 0.9, // per square of pool
 } as const;
-
-// A scallop shell, upright, centred on (x, y): a fan with a scalloped rim and ridges.
-export function drawShell(g: Graphics, x: number, y: number, r: number, alpha = 1): void {
-  const bumps = 5;
-  const hinge = { x, y: y + r * 0.78 };
-  const rim: Array<{ x: number; y: number }> = [];
-  for (let i = 0; i <= bumps * 4; i++) {
-    const t = i / (bumps * 4);
-    const a = Math.PI * (1.08 + t * 0.84); // a wide fan, opening upward
-    const wave = 1 + 0.07 * Math.cos(t * bumps * Math.PI * 2);
-    rim.push({ x: x + Math.cos(a) * r * wave, y: y + r * 0.3 + Math.sin(a) * r * 1.05 * wave });
-  }
-  // Two small ears at the hinge, then the fan.
-  g.poly([hinge.x - r * 0.38, hinge.y - r * 0.02, hinge.x - r * 0.2, hinge.y - r * 0.26, hinge.x + r * 0.2, hinge.y - r * 0.26, hinge.x + r * 0.38, hinge.y - r * 0.02, hinge.x, hinge.y + r * 0.08]).fill({ color: palette.peach, alpha: 0.85 * alpha });
-  g.moveTo(hinge.x, hinge.y);
-  for (const p of rim) g.lineTo(p.x, p.y);
-  g.closePath().fill({ color: palette.peach, alpha: 0.95 * alpha }).stroke({ color: palette.pearl, width: Math.max(1, r * 0.07), alpha: 0.55 * alpha, join: 'round' });
-  // Ridges fan out from the hinge.
-  for (let i = 1; i < bumps; i++) {
-    const p = rim[Math.round((i / bumps) * (rim.length - 1))]!;
-    g.moveTo(hinge.x, hinge.y - r * 0.1).lineTo(hinge.x + (p.x - hinge.x) * 0.9, hinge.y + (p.y - hinge.y) * 0.9);
-  }
-  g.stroke({ color: palette.rose, width: Math.max(0.8, r * 0.08), alpha: 0.75 * alpha, cap: 'round' });
-}
-
-// A smooth pebble with a soft shine, centred on (x, y).
-export function drawPebble(g: Graphics, x: number, y: number, r: number, alpha = 1): void {
-  g.ellipse(x + r * 0.08, y + r * 0.16, r * 1.02, r * 0.82).fill({ color: palette.shadow, alpha: 0.35 * alpha });
-  g.ellipse(x, y, r * 1.02, r * 0.84).fill({ color: palette.dim, alpha: alpha }).ellipse(x, y, r * 1.02, r * 0.84).fill({ color: palette.lavender, alpha: 0.78 * alpha });
-  g.ellipse(x + r * 0.1, y + r * 0.22, r * 0.8, r * 0.5).fill({ color: palette.shadow, alpha: 0.12 * alpha });
-  g.ellipse(x, y, r * 1.02, r * 0.84).stroke({ color: palette.pearl, width: Math.max(1, r * 0.06), alpha: 0.35 * alpha });
-  g.ellipse(x - r * 0.35, y - r * 0.32, r * 0.32, r * 0.16).fill({ color: palette.pearl, alpha: 0.6 * alpha });
-}
-
 
 type Handler = () => void;
 
@@ -79,8 +45,6 @@ export class ShellPoolScene implements LevelScene {
   private glow = new Graphics();
   private lines = new Graphics();
   private flow = new Graphics();
-  private halos = new Graphics();
-  private broken = new Graphics();
   private clueLayer = new Graphics();
   // The drawn water as runs of points (open streams and closed loops), for the moving light.
   private runs: Array<Array<{ x: number; y: number }>> = [];
@@ -121,14 +85,14 @@ export class ShellPoolScene implements LevelScene {
   ) {
     this.voice = createTidepoolsVoice(ctx.audio);
     this.logic = solveByLogic(level).deductions;
-    for (const g of [this.water, this.points, this.glow, this.lines, this.flow, this.halos, this.broken, this.clueLayer]) g.eventMode = 'none';
+    for (const g of [this.water, this.points, this.glow, this.lines, this.flow, this.clueLayer]) g.eventMode = 'none';
     this.hintLayer.eventMode = 'none';
     this.hit.eventMode = 'static';
     this.hit.on('pointerdown', (e: FederatedPointerEvent) => this.onDown(e));
     this.hit.on('globalpointermove', (e: FederatedPointerEvent) => this.onMove(e));
     this.hit.on('pointerup', () => this.onUp());
     this.hit.on('pointerupoutside', () => this.onUp());
-    this.container.addChild(this.hit, this.water, this.points, this.halos, this.broken, this.glow, this.lines, this.flow, this.clueLayer, this.hintLayer);
+    this.container.addChild(this.hit, this.water, this.points, this.glow, this.lines, this.flow, this.clueLayer, this.hintLayer);
     this.layout(ctx.width, ctx.height);
   }
 
@@ -230,19 +194,19 @@ export class ShellPoolScene implements LevelScene {
   private drawClues(): void {
     const g = this.clueLayer;
     g.clear();
-    this.halos.clear();
-    this.broken.clear();
     const r = this.cell * poolStyle.clueRadius;
-    // Each clue answers as the tide is drawn: a mint glow once met, a slow rose pulse as
-    // soon as a line breaks its rule.
+    // Each clue answers as the tide is drawn: mint once met, peach as soon as a line breaks it.
     for (const c of this.level.clues) {
       const state = clueState(this.level, this.drawn, c);
+      const color = state === 'met' ? this.accent : state === 'broken' ? palette.peach : palette.pearl;
       const x = this.px(c.x);
       const y = this.py(c.y);
-      if (state === 'met') for (const k of [2.1, 1.6, 1.25]) this.halos.circle(x, y, r * k).fill({ color: this.accent, alpha: 0.09 });
-      if (state === 'broken') this.broken.circle(x, y, r * 1.7).fill({ color: palette.rose, alpha: 0.2 }).circle(x, y, r * 1.7).stroke({ color: palette.rose, width: 1.5, alpha: 0.7 });
-      if (c.kind === 'shell') drawShell(g, x, y - r * 0.08, r);
-      else drawPebble(g, x, y, r * 0.95);
+      if (state !== 'open') g.circle(x, y, r * 1.6).fill({ color, alpha: 0.16 });
+      if (c.kind === 'shell') {
+        g.circle(x, y, r).fill({ color: palette.ink }).stroke({ color, width: 2.4, alpha: 0.95 });
+      } else {
+        g.circle(x, y, r).fill({ color, alpha: 0.9 });
+      }
     }
   }
 
@@ -472,7 +436,6 @@ export class ShellPoolScene implements LevelScene {
   update(dt: number): void {
     this.time += dt;
     this.drawFlow();
-    this.broken.alpha = 0.55 + 0.45 * Math.sin(this.time * 2.2);
   }
 
   // ----- hints -----
@@ -644,8 +607,8 @@ export class ShellPoolScene implements LevelScene {
         for (let k = 1; k < e.path.length; k++) panel.moveTo(ox + e.path[k - 1]![0] * step, oy + e.path[k - 1]![1] * step).lineTo(ox + e.path[k]![0] * step, oy + e.path[k]![1] * step);
         panel.stroke({ color: this.accent, width: 3.5, alpha: 0.95, cap: 'round', join: 'round' });
         for (const [cx, cy, kind] of e.clues) {
-          if (kind === 'shell') drawShell(panel, ox + cx * step, oy + cy * step - 0.5, 6.5);
-          else drawPebble(panel, ox + cx * step, oy + cy * step, 6);
+          if (kind === 'shell') panel.circle(ox + cx * step, oy + cy * step, 6).fill({ color: palette.ink }).stroke({ color: palette.pearl, width: 2 });
+          else panel.circle(ox + cx * step, oy + cy * step, 6).fill({ color: palette.pearl, alpha: 0.9 });
         }
         // The verdict under the example.
         const mx = ox + ((e.w - 1) * step) / 2;
@@ -661,7 +624,7 @@ export class ShellPoolScene implements LevelScene {
     };
     const pages: IntroPage[] = [
       {
-        caption: 'Draw one closed loop of water that passes through every shell and every stone. Drag from point to point. It does not have to touch every point.',
+        caption: 'Draw one closed loop that passes through every ○ and every ●. Drag from point to point. It does not have to touch every point.',
         glyph: exampleGlyph([
           { w: 3, h: 3, path: [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1], [0, 0]], clues: [[0, 0, 'stone'], [1, 2, 'shell']], ok: true },
           { w: 3, h: 3, path: [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]], clues: [[0, 0, 'stone'], [1, 2, 'shell']], ok: false },
@@ -671,7 +634,7 @@ export class ShellPoolScene implements LevelScene {
     const has = (k: ClueKind) => this.level.clues.some((c) => c.kind === k);
     if (has('shell')) {
       pages.push({
-        caption: 'Shell: go straight through it, then turn at the very next point, on at least one side.',
+        caption: '○  Go straight through it, then turn at the very next point, on at least one side.',
         glyph: exampleGlyph([
           { w: 4, h: 3, path: [[1, 2], [1, 1], [2, 1], [3, 1]], clues: [[2, 1, 'shell']], ok: true },
           { w: 3, h: 3, path: [[0, 1], [1, 1], [1, 2]], clues: [[1, 1, 'shell']], ok: false },
@@ -681,7 +644,7 @@ export class ShellPoolScene implements LevelScene {
     }
     if (has('stone')) {
       pages.push({
-        caption: 'Stone: turn on it, then go straight for two steps both ways.',
+        caption: '●  Turn on it, then go straight for two steps both ways.',
         glyph: exampleGlyph([
           { w: 3, h: 3, path: [[2, 0], [1, 0], [0, 0], [0, 1], [0, 2]], clues: [[0, 0, 'stone']], ok: true },
           { w: 3, h: 3, path: [[0, 1], [1, 1], [2, 1]], clues: [[1, 1, 'stone']], ok: false },
@@ -690,7 +653,7 @@ export class ShellPoolScene implements LevelScene {
       });
     }
     pages.push({
-      caption: 'To erase, drag back over a line, or tap a point to clear the lines there. A shell or stone glows mint when it is right, and pulses pink when a line breaks its rule.',
+      caption: 'To erase, drag back over a line, or tap a point to clear the lines there. A ○ or ● turns mint when it is right, and peach when a line breaks its rule.',
       glyph: () => {
         // Draw two steps to the right, then slide back: each line vanishes under the finger.
         const root = new Container();

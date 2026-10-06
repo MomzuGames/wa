@@ -10,6 +10,7 @@ import { events } from '../../core/events';
 import { type LanternLevel, STEPS, allLit, cellCount, clashing, isRock, isSolved, isWater, lightCounts, rockCount, rockState, sightLines } from './model';
 import { type Deduction, type Reason, solveByLogic } from './solver';
 import { createMoonVoice, type MoonVoice } from './sound';
+import { lanternBody, softGlow } from './lanternArt';
 
 // Lanterns on the lake: tap the water to float a paper lantern, tap it again to take it
 // away. Warm light runs straight across the water from every lantern; the lake is done
@@ -90,10 +91,13 @@ function drawRock(g: Graphics, size: number, seed: number, count: number | null,
 
 interface LanternView {
   root: Container;
-  body: Graphics;
+  body: Container; // bobs and sways inside root
   glow: Container; // fades in and out as a whole
-  flame: Graphics; // inside it, flickers
-  reflection: Graphics;
+  halo: Container; // the wide warm glow around the lantern
+  flame: Container; // the bright heart of the glow; flickers like a candle
+  flameBase: number;
+  reflection: Container; // the lantern's wavering reflection and its pool of light on the water
+  mirror: Container;
   phase: number;
 }
 
@@ -140,7 +144,7 @@ export class LanternLakeScene implements LevelScene {
   private logic: Deduction[];
   private hintTarget: { cell: number; on: boolean; at: number; reason: Reason | 'wrong' } | null = null;
   private nudge: { g: Graphics; tween: gsap.core.Tween } | null = null;
-  private ghosts = new Map<number, Graphics>();
+  private ghosts = new Map<number, Container>();
   private demo: { layer: Container; tl: gsap.core.Timeline } | null = null;
 
   constructor(
@@ -264,9 +268,11 @@ export class LanternLakeScene implements LevelScene {
     const c = this.cell;
     for (let i = 0; i < lit.length; i++) {
       if (!lit[i]) continue;
-      g.roundRect(this.cx(i) - c * 0.47, this.cy(i) - c * 0.47, c * 0.94, c * 0.94, c * 0.2).fill({ color: palette.lemon, alpha: lakeStyle.lightAlpha });
+      g.roundRect(this.cx(i) - c * 0.48, this.cy(i) - c * 0.48, c * 0.96, c * 0.96, c * 0.28).fill({ color: palette.lemon, alpha: lakeStyle.lightAlpha * 0.6 });
+      g.roundRect(this.cx(i) - c * 0.36, this.cy(i) - c * 0.36, c * 0.72, c * 0.72, c * 0.3).fill({ color: palette.lemon, alpha: lakeStyle.lightAlpha * 0.5 });
     }
     // A soft beam from each lantern to the end of its light, in all four directions.
+    const beams: Array<[number, number, number, number]> = [];
     for (const l of this.lanterns) {
       for (const [dx, dy] of STEPS) {
         let x = l % this.level.width;
@@ -276,10 +282,18 @@ export class LanternLakeScene implements LevelScene {
           y += dy;
         }
         const end = y * this.level.width + x;
-        if (end !== l) g.moveTo(this.cx(l), this.cy(l)).lineTo(this.cx(end), this.cy(end));
+        if (end !== l) beams.push([this.cx(l), this.cy(l), this.cx(end), this.cy(end)]);
       }
     }
-    g.stroke({ color: palette.lemon, width: c * lakeStyle.beamWidth, alpha: lakeStyle.beamAlpha, cap: 'round' });
+    // Each beam is a soft band: wide and faint outside, narrower and warmer within.
+    for (const [k, a] of [
+      [1.8, 0.35],
+      [1, 0.55],
+      [0.4, 0.8],
+    ] as const) {
+      for (const [x1, y1, x2, y2] of beams) g.moveTo(x1, y1).lineTo(x2, y2);
+      g.stroke({ color: palette.lemon, width: c * lakeStyle.beamWidth * k, alpha: lakeStyle.beamAlpha * a, cap: 'round' });
+    }
     gsap.killTweensOf(old);
     gsap.killTweensOf(g);
     if (fade) {
@@ -320,26 +334,25 @@ export class LanternLakeScene implements LevelScene {
   }
 
   private makeView(i: number): LanternView {
-    const h = this.cell * lakeStyle.lanternHeight;
+    const h = this.cell * lakeStyle.lanternHeight * (0.96 + ((i * 7) % 5) * 0.02);
+    const variant = (i * 5 + 1) % 7;
     const root = new Container();
-    const body = new Graphics();
-    drawLantern(body, h);
+    const body = lanternBody(h, variant, drawLantern);
     root.addChild(body);
+    // Light: a wide soft warm halo, and a brighter heart that flickers.
     const glow = new Container();
-    const flame = new Graphics();
-    for (const [k, a, color] of [
-      [0.95, 0.05, palette.peach],
-      [0.7, 0.07, palette.lemon],
-      [0.45, 0.1, palette.lemon],
-    ] as const) {
-      flame.circle(0, 0, this.cell * k).fill({ color, alpha: a });
-    }
-    glow.addChild(flame);
-    const reflection = new Graphics();
-    reflection.ellipse(0, 0, h * 0.24, h * 0.16).fill({ color: palette.lemon, alpha: 0.14 });
-    for (const k of [-0.08, 0.02, 0.12]) reflection.moveTo(-h * 0.2, k * h).lineTo(h * 0.2, k * h);
-    reflection.stroke({ color: palette.lemon, width: 1, alpha: 0.12 });
-    const view = { root, body, glow, flame, reflection, phase: (i * 2.399) % (Math.PI * 2) };
+    const halo = softGlow(this.cell * 3, palette.peach, 0.32);
+    const flame = softGlow(this.cell * 1.3, palette.lemon, 0.55);
+    glow.addChild(halo, flame);
+    // On the water: a pool of warm light, and the lantern upside down, faint and wavering.
+    const reflection = new Container();
+    const pool = softGlow(this.cell * 1.7, palette.lemon, 0.3);
+    pool.scale.y *= 0.42;
+    const mirror = lanternBody(h, variant, drawLantern);
+    mirror.scale.set(1, -0.7);
+    mirror.alpha = 0.2;
+    reflection.addChild(pool, mirror);
+    const view = { root, body, glow, halo, flame, flameBase: flame.scale.x, reflection, mirror, phase: (i * 2.399) % (Math.PI * 2) };
     this.lanternsLayer.addChild(root);
     this.glows.addChild(glow);
     this.reflections.addChild(reflection);
@@ -350,7 +363,7 @@ export class LanternLakeScene implements LevelScene {
   private placeView(v: LanternView, i: number): void {
     v.root.position.set(this.cx(i), this.cy(i) - this.cell * 0.04);
     v.glow.position.set(this.cx(i), this.cy(i));
-    v.reflection.position.set(this.cx(i), this.cy(i) + this.cell * 0.36);
+    v.reflection.position.set(this.cx(i), this.cy(i) + this.cell * 0.3);
   }
 
   // ----- play -----
@@ -450,10 +463,16 @@ export class LanternLakeScene implements LevelScene {
     // Lanterns bob on the water, sway a little, and their light breathes like a flame.
     for (const v of this.views.values()) {
       const t = this.time + v.phase;
+      // A candle never burns evenly: a few slow and quick wavers, different for every lantern.
+      const flicker = 0.86 + 0.07 * Math.sin(t * 2.3) + 0.045 * Math.sin(t * 5.9 + v.phase) + 0.025 * Math.sin(t * 13.7 + v.phase * 2);
       v.body.y = Math.sin(t * 1.2) * lakeStyle.bob - this.rise;
-      v.body.rotation = Math.sin(t * 0.8) * 0.045;
-      v.flame.alpha = 0.88 + 0.08 * Math.sin(t * 3.1) + 0.04 * Math.sin(t * 7.3);
-      v.reflection.scale.set(1 + 0.08 * Math.sin(t * 1.6), 1);
+      v.body.rotation = Math.sin(t * 0.8) * 0.045 + Math.sin(t * 0.31 + v.phase) * 0.02;
+      v.flame.alpha = 0.55 * flicker;
+      v.flame.scale.set(v.flameBase * (0.94 + 0.08 * flicker));
+      v.halo.alpha = 0.32 * (0.9 + 0.1 * flicker);
+      v.mirror.skew.x = Math.sin(t * 1.7) * 0.08;
+      v.mirror.alpha = 0.16 + 0.05 * Math.sin(t * 2.1 + v.phase);
+      v.reflection.scale.x = 1 + 0.06 * Math.sin(t * 1.6);
     }
     this.clash.alpha = 0.55 + 0.45 * Math.sin(this.time * 2.4);
     this.over.alpha = 0.55 + 0.45 * Math.sin(this.time * 2.4);
@@ -478,8 +497,7 @@ export class LanternLakeScene implements LevelScene {
     const layer = new Container();
     const finger = makeFinger();
     const ghosts = this.level.solution.map((i) => {
-      const g = new Graphics();
-      drawLantern(g, this.cell * lakeStyle.lanternHeight, 0.4);
+      const g = lanternBody(this.cell * lakeStyle.lanternHeight, i, drawLantern);
       g.position.set(this.cx(i), this.cy(i));
       g.alpha = 0;
       layer.addChild(g);
@@ -490,7 +508,7 @@ export class LanternLakeScene implements LevelScene {
     const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
     this.level.solution.forEach((i, k) => {
       tapAt(tl, finger, this.cx(i), this.cy(i), k === 0 ? 0.3 : 0.45);
-      tl.to(ghosts[k]!, { alpha: 1, duration: 0.3 });
+      tl.to(ghosts[k]!, { alpha: 0.45, duration: 0.3 });
     });
     liftFinger(tl, finger);
     tl.to(ghosts, { alpha: 0, duration: 0.6 });
@@ -560,9 +578,8 @@ export class LanternLakeScene implements LevelScene {
   }
 
   private addGhost(i: number, on: boolean): void {
-    const g = new Graphics();
-    if (on) drawLantern(g, this.cell * lakeStyle.lanternHeight, 0.35);
-    else g.circle(0, 0, this.cell * 0.48).stroke({ color: palette.rose, width: 2, alpha: 0.9 });
+    const g = on ? lanternBody(this.cell * lakeStyle.lanternHeight, i, drawLantern) : new Graphics().circle(0, 0, this.cell * 0.48).stroke({ color: palette.rose, width: 2, alpha: 0.9 });
+    if (on) g.alpha = 0.38;
     g.position.set(this.cx(i), this.cy(i));
     this.hintLayer.addChild(g);
     if (!on) gsap.fromTo(g, { alpha: 0.2 }, { alpha: 0.9, duration: 0.7, yoyo: true, repeat: -1, ease: easings.ambient });
@@ -696,9 +713,8 @@ export class LanternLakeScene implements LevelScene {
         top.addChild(g);
       }
       for (const l of set) {
-        const g = new Graphics();
-        g.circle(0, 0, s * 0.6).fill({ color: palette.lemon, alpha: 0.08 });
-        drawLantern(g, s * 0.66);
+        const g = new Container();
+        g.addChild(softGlow(s * 1.8, palette.peach, 0.3), softGlow(s * 0.9, palette.lemon, 0.45), lanternBody(s * 0.66, l, drawLantern));
         g.position.copyFrom(at(l));
         top.addChild(g);
       }
