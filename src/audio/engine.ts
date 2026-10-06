@@ -15,6 +15,7 @@ export const audioConfig = {
   lowCutHz: 60,
   highCutHz: 8000,
   minSliderDb: -36,
+  resumeChecks: [0, 300, 900, 1800, 3000], // ms after coming back
 } as const;
 
 // iOS mutes Web Audio when the ringer switch is on silent, unless the page has played
@@ -104,19 +105,32 @@ export class AudioEngine {
   // up again on return; iOS may have interrupted the audio context in between.
   private followingVisibility = false;
 
+  // Sound across the app going to the background and back.
+  // - Website: pause on leaving, resume on return (a tap may be needed, as browsers require).
+  // - App: never pause it ourselves. iOS silences a backgrounded app anyway, and it only
+  //   brings back audio that iOS itself interrupted; a context the page suspended stays
+  //   suspended. On return, check a few times over the next seconds (iOS reactivates the
+  //   app's sound a moment after the page becomes visible) and resume if needed.
   private followVisibility(): void {
     if (this.followingVisibility) return;
     this.followingVisibility = true;
     document.addEventListener('visibilitychange', () => {
       const context = Tone.getContext().rawContext as AudioContext;
-      if (document.hidden) void context.suspend().catch(() => undefined);
-      else
-        void context
-          .resume()
-          .catch(() => undefined)
-          .then(() => dlog('audio-resume', { state: context.state }));
+      if (document.hidden) {
+        if (!IS_APP) void context.suspend().catch(() => undefined);
+        return;
+      }
+      for (const ms of audioConfig.resumeChecks) {
+        setTimeout(() => {
+          if (context.state === 'running') return;
+          void context
+            .resume()
+            .catch(() => undefined)
+            .then(() => dlog('audio-resume', { after: ms, state: context.state }));
+        }, ms);
+      }
     });
-    // iOS often refuses that resume until the player touches the screen: try again then.
+    // A tap is always a good moment to try again, should the checks above not take.
     const retry = () => {
       if (this.started && Tone.getContext().state !== 'running') void Tone.getContext().resume().catch(() => undefined);
     };
