@@ -1,5 +1,5 @@
 import { createRng, type Rng } from '../../../core/rng';
-import { type Clue, DIRS, type Dir, STEP, type ShellLevel, edgeAt, edgeCount, edgeEnds, exits, opposite } from './model';
+import { type Clue, type ClueKind, DIRS, type Dir, STEP, type ShellLevel, edgeAt, edgeCount, edgeEnds, exits, opposite } from './model';
 import { countSolutions, solveByLogic } from './solver';
 
 export interface ShellParams {
@@ -8,6 +8,7 @@ export interface ShellParams {
   fill: [number, number]; // share of the pool's squares inside the loop
   keepExtra: number; // 0..1: clues kept beyond the fewest needed (gentler levels keep more)
   needsInsight: boolean; // require the "no small loop" realisation at least once
+  kinds?: ClueKind[]; // only these clues (early pools teach one at a time)
 }
 
 // The loop is the outline of a region of squares (the pool's squares lie between its
@@ -121,7 +122,7 @@ export function generateShellLevel(seed: string, chapter: number, params: ShellP
   const loop = growLoop(rng, w, h, params.fill[0] + rng.next() * (params.fill[1] - params.fill[0]));
   if (!loop) return null;
   const solution = [...loop].sort((a, b) => a - b);
-  let clues = candidateClues(w, h, loop);
+  let clues = candidateClues(w, h, loop).filter((c) => !params.kinds || params.kinds.includes(c.kind));
   const level = (cs: Clue[]): ShellLevel => ({ seed, chapter, width: w, height: h, clues: cs, solution, difficulty: 0 });
   const fair = (cs: Clue[]) => countSolutions(level(cs), 2) === 1 && solveByLogic(level(cs)).solved;
   if (!fair(clues)) return null;

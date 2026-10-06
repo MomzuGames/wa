@@ -89,6 +89,33 @@ export function clueMet(level: Pick<ShellLevel, 'width' | 'height'>, on: Readonl
   });
 }
 
+// The drawn lines make one closed loop (clues aside): used to say "closed, but not right yet".
+export function isClosedLoop(level: Pick<ShellLevel, 'width' | 'height'>, on: ReadonlySet<number>): boolean {
+  if (on.size < 4) return false;
+  const { width: w, height: h } = level;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const n = exits(level, on, x, y).length;
+      if (n !== 0 && n !== 2) return false;
+    }
+  }
+  const start = [...on][0]!;
+  const seen = new Set<number>([start]);
+  const queue = [start];
+  while (queue.length) {
+    for (const p of edgeEnds(w, h, queue.pop()!)) {
+      for (const d of DIRS) {
+        const n = edgeAt(w, h, p.x, p.y, d);
+        if (n >= 0 && on.has(n) && !seen.has(n)) {
+          seen.add(n);
+          queue.push(n);
+        }
+      }
+    }
+  }
+  return seen.size === on.size;
+}
+
 // One closed loop, every point visited in and out once, every clue met.
 export function isSolved(level: ShellLevel, on: ReadonlySet<number>): boolean {
   if (on.size === 0) return false;

@@ -6,7 +6,8 @@ import { durations, easings, scaled } from '../../../design/motion';
 import { puzzleArea } from '../../../design/layout';
 import { liftFinger, makeFinger } from '../../../ui/introGlyphs';
 import { createTidepoolsVoice, type TidepoolsVoice } from '../sound';
-import { type ClueKind, DIRS, type ShellLevel, clueMet, edgeAt, edgeEnds, exits, isSolved } from './model';
+import { type ClueKind, DIRS, type ShellLevel, clueMet, edgeAt, edgeEnds, exits, isClosedLoop, isSolved } from './model';
+import { events } from '../../../core/events';
 import { type Deduction, type Reason, solveByLogic } from './solver';
 
 // Shells and stones: the player draws one closed loop of tide through the pool's points.
@@ -58,9 +59,14 @@ export class ShellPoolScene implements LevelScene {
   private ghosts = new Map<number, Graphics>();
   private hintCount = 0;
 
+  // Level 1: a faint loop and a finger show how to draw, until the first line is drawn.
+  private demo: { line: Graphics; finger: Graphics; tl: gsap.core.Timeline } | null = null;
+  private closedNote = '';
+
   constructor(
     ctx: ShellContext,
     private level: ShellLevel,
+    private tutorial = false,
   ) {
     this.voice = createTidepoolsVoice(ctx.audio);
     this.logic = solveByLogic(level).deductions;
@@ -220,6 +226,7 @@ export class ShellPoolScene implements LevelScene {
   }
 
   private changed(): void {
+    this.stopDemo();
     this.emit('move');
     this.redraw();
     this.settleHints();
@@ -227,7 +234,95 @@ export class ShellPoolScene implements LevelScene {
       this.solved = true;
       this.voice.loopClosed(this.drawn.size);
       this.emit('solved');
+      return;
     }
+    // A closed loop that is not right yet: say which clues it misses, gently, once per loop.
+    if (isClosedLoop(this.level, this.drawn)) {
+      const key = [...this.drawn].sort((a, b) => a - b).join(',');
+      if (key === this.closedNote) return;
+      this.closedNote = key;
+      this.pulseUnmet();
+      const outside = this.level.clues.filter((c) => exits(this.level, this.drawn, c.x, c.y).length === 0).length;
+      events.emit(
+        'level:note',
+        outside > 0
+          ? 'The loop is closed, but it must pass through every shell and every stone. The pulsing ones are left out.'
+          : 'The loop is closed, but the pulsing clues are not satisfied yet. Check how the loop passes them.',
+      );
+    }
+  }
+
+  // Unsatisfied clues pulse for a moment.
+  private pulseUnmet(): void {
+    const r = this.cell * poolStyle.clueRadius;
+    for (const c of this.level.clues) {
+      if (clueMet(this.level, this.drawn, c)) continue;
+      const g = new Graphics().circle(0, 0, r * 1.7).stroke({ color: palette.peach, width: 2, alpha: 0.9 });
+      g.position.set(this.px(c.x), this.py(c.y));
+      this.hintLayer.addChild(g);
+      gsap.fromTo(g, { alpha: 0 }, { alpha: 1, duration: 0.45, yoyo: true, repeat: 3, ease: easings.ambient, onComplete: () => g.destroy() });
+    }
+  }
+
+  // ----- the level 1 demonstration -----
+
+  begin(): void {
+    if (this.tutorial && this.drawn.size === 0) gsap.delayedCall(0.6, () => this.startDemo());
+  }
+
+  private loopPoints(): Array<{ x: number; y: number }> {
+    const { width: w, height: h } = this.level;
+    const sol = new Set(this.level.solution);
+    const start = edgeEnds(w, h, this.level.solution[0]!)[0];
+    const order = [start];
+    let prev: { x: number; y: number } | null = null;
+    let cur = start;
+    for (let i = 0; i < sol.size; i++) {
+      const nextDir = DIRS.find((d) => {
+        const e = edgeAt(w, h, cur.x, cur.y, d);
+        if (e < 0 || !sol.has(e)) return false;
+        const [a, b] = edgeEnds(w, h, e);
+        const other = a.x === cur.x && a.y === cur.y ? b : a;
+        return !prev || other.x !== prev.x || other.y !== prev.y;
+      })!;
+      const [a, b] = edgeEnds(w, h, edgeAt(w, h, cur.x, cur.y, nextDir));
+      const other = a.x === cur.x && a.y === cur.y ? b : a;
+      prev = cur;
+      cur = other;
+      order.push(cur);
+    }
+    return order;
+  }
+
+  private startDemo(): void {
+    if (this.demo || this.drawn.size > 0 || this.solved) return;
+    const pts = this.loopPoints();
+    // The whole loop shows faintly at once; the finger then traces it.
+    const line = new Graphics();
+    const whole = new Graphics();
+    for (let i = 1; i < pts.length; i++) whole.moveTo(this.px(pts[i - 1]!.x), this.py(pts[i - 1]!.y)).lineTo(this.px(pts[i]!.x), this.py(pts[i]!.y));
+    whole.stroke({ color: palette.pearl, width: this.cell * poolStyle.lineWidth * 0.8, alpha: 0.16, cap: 'round', join: 'round' });
+    line.addChild(whole);
+    const finger = makeFinger();
+    this.hintLayer.addChild(line, finger);
+    const draw = (upTo: number) => {
+      line.clear();
+      for (let i = 1; i <= upTo; i++) line.moveTo(this.px(pts[i - 1]!.x), this.py(pts[i - 1]!.y)).lineTo(this.px(pts[i]!.x), this.py(pts[i]!.y));
+      line.stroke({ color: palette.pearl, width: this.cell * poolStyle.lineWidth * 0.8, alpha: 0.45, cap: 'round', join: 'round' });
+    };
+    const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
+    tl.call(() => draw(0)).set(finger, { x: this.px(pts[0]!.x), y: this.py(pts[0]!.y) }).to(finger, { alpha: 1, duration: 0.25 });
+    for (let i = 1; i < pts.length; i++) tl.to(finger, { x: this.px(pts[i]!.x), y: this.py(pts[i]!.y), duration: 0.35, ease: 'none', onComplete: () => draw(i) });
+    tl.to(finger, { alpha: 0, duration: 0.3, delay: 0.3 }).to(line, { alpha: 0, duration: 0.6 }).set(line, { alpha: 1 });
+    this.demo = { line, finger, tl };
+  }
+
+  private stopDemo(): void {
+    if (!this.demo) return;
+    this.demo.tl.kill();
+    this.demo.line.destroy();
+    this.demo.finger.destroy();
+    this.demo = null;
   }
 
   restart(): void {
@@ -419,23 +514,53 @@ export class ShellPoolScene implements LevelScene {
       root.on('destroyed', () => tl.kill());
       return root;
     };
-    return [
+    const pages: IntroPage[] = [
       {
-        caption: 'Drag from point to point to draw one closed loop of tide. Drag back over a line to erase it.',
-        glyph: demo([[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]], [], 3),
-      },
-      {
-        caption: 'A shell: the tide passes straight through it, and turns just before or just after it.',
-        glyph: demo([[-1.5, 1], [-1.5, 0], [-0.5, 0], [0.5, 0], [1.5, 0], [1.5, -1]], [[-0.5, 0, 'shell']], 1),
-      },
-      {
-        caption: 'A stone: the tide turns on it, and runs straight on for one more step on both sides.',
-        glyph: demo([[1, -1], [0, -1], [-1, -1], [-1, 0], [-1, 1]], [[-1, -1, 'stone']], 1),
+        caption: 'Draw one closed loop of tide that passes through every shell and every stone. Drag from point to point. It does not need to touch every point.',
+        glyph: demo([[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]], [[-1, -1, 'stone'], [0, 1, 'shell']], 3),
       },
     ];
+    const has = (k: ClueKind) => this.level.clues.some((c) => c.kind === k);
+    if (has('shell')) {
+      pages.push({
+        caption: 'A shell (hollow ring): the loop goes straight through it, and turns at the very next point on at least one side.',
+        glyph: demo([[-1.5, 1], [-1.5, 0], [-0.5, 0], [0.5, 0], [1.5, 0], [1.5, -1]], [[-0.5, 0, 'shell']], 1),
+      });
+    }
+    if (has('stone')) {
+      pages.push({
+        caption: 'A stone (solid): the loop turns on it, then goes straight on for at least two steps in both directions.',
+        glyph: demo([[1, -1], [0, -1], [-1, -1], [-1, 0], [-1, 1]], [[-1, -1, 'stone']], 1),
+      });
+    }
+    pages.push({
+      caption: 'To erase, drag back over a line, or tap a point to clear the lines there. Shells and stones glow when the loop passes them correctly.',
+      glyph: () => {
+        // Draw two steps to the right, then slide back: each line vanishes under the finger.
+        const root = new Container();
+        const dots = new Graphics();
+        grid(dots, 3);
+        const line = new Graphics();
+        const finger = makeFinger();
+        root.addChild(dots, line, finger);
+        const pts: Array<[number, number]> = [[-1, 0], [0, 0], [1, 0]];
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
+        tl.call(() => path(line, pts, 0)).set(finger, { x: -s, y: 0 }).to(finger, { alpha: 1, duration: 0.2 });
+        tl.to(finger, { x: 0, duration: 0.35, ease: 'none', onComplete: () => path(line, pts, 1) });
+        tl.to(finger, { x: s, duration: 0.35, ease: 'none', onComplete: () => path(line, pts, 2) });
+        tl.to({}, { duration: 0.5 });
+        tl.to(finger, { x: 0, duration: 0.35, ease: 'none', onComplete: () => path(line, pts, 1) });
+        tl.to(finger, { x: -s, duration: 0.35, ease: 'none', onComplete: () => path(line, pts, 0) });
+        liftFinger(tl, finger);
+        root.on('destroyed', () => tl.kill());
+        return root;
+      },
+    });
+    return pages;
   }
 
   destroy(): void {
+    this.stopDemo();
     this.clearHints();
     this.voice.dispose();
     this.container.destroy({ children: true });

@@ -175,7 +175,10 @@ export class LevelShellScene implements Scene {
     }
     this.intro = new LevelIntro(LEVEL_NAMES[this.module.id][this.levelIndex] ?? String(this.levelIndex + 1), palette[this.module.accent], pages, startPage);
     this.container.addChild(this.intro);
+    // The board rests out of sight behind the card, so its pieces never mix with the demos.
+    this.stage.visible = false;
     void this.intro.play(this.width, this.height).then(() => {
+      this.stage.visible = true;
       this.intro = null;
       if (first) this.startPlay();
     });
