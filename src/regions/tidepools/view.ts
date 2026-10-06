@@ -48,6 +48,12 @@ const loopStyle = {
 
 type Handler = () => void;
 
+// One colour per linked pair (never the land's own mint, which lights finished loops).
+const LINK_COLORS = [palette.lavender, palette.peach, palette.sky, palette.rose, palette.lemon] as const;
+function linkColor(group: number): number {
+  return LINK_COLORS[group % LINK_COLORS.length]!;
+}
+
 interface TileView {
   root: Container;
   shadow: Graphics;
@@ -212,16 +218,28 @@ export class LoopLevelScene implements LevelScene {
     this.drawPipes(v.lit, tile.mask, this.accent, 1);
     v.lit.rotation = v.spin;
     v.lockDot.clear();
+    // A tile that cannot turn wears a small hollow ring in its corner.
     if (tile.locked) {
-      v.lockDot.circle(half - gap * 2.2, -half + gap * 2.2, this.cell * 0.035).fill({ color: this.accent, alpha: 0.6 });
+      v.lockDot.circle(half - gap * 2.4, -half + gap * 2.4, this.cell * 0.05).stroke({ color: palette.pearl, width: 1.5, alpha: 0.6 });
     }
-    // Linked tiles carry the same number of small dots along their top edge.
+    // Linked tiles share a coloured border, one colour per pair, so a pair is easy to spot.
     const group = linkGroup(this.board, i);
     if (group >= 0) {
-      for (let k = 0; k <= group; k++) {
-        v.lockDot.circle(-half + gap * 2.4 + k * this.cell * 0.09, -half + gap * 2.2, this.cell * 0.03).fill({ color: palette.pearl, alpha: 0.7 });
-      }
+      v.lockDot.roundRect(-half + gap, -half + gap, size, size, this.cell * loopStyle.cornerFraction).stroke({ color: linkColor(group), width: 2.5, alpha: 0.9 });
     }
+  }
+
+  // When one of a linked pair turns, its partner's border flashes as it turns too.
+  private flashLink(i: number): void {
+    const group = linkGroup(this.board, i);
+    if (group < 0) return;
+    const half = this.cell / 2;
+    const gap = this.cell * loopStyle.gapFraction;
+    const size = this.cell - gap * 2;
+    const flash = new Graphics().roundRect(-half + gap, -half + gap, size, size, this.cell * loopStyle.cornerFraction).fill({ color: linkColor(group), alpha: 0.3 });
+    flash.position.copyFrom(this.views[i]!.root.position);
+    this.ghostLayer.addChild(flash);
+    gsap.to(flash, { alpha: 0, duration: scaled(durations.pieceMove) * 3, ease: easings.ambient, onComplete: () => flash.destroy() });
   }
 
   // Click turns clockwise; right-click, shift-click or a long press turns the other way.
@@ -262,7 +280,10 @@ export class LoopLevelScene implements LevelScene {
     this.voice.rotate(i % this.board.width);
     this.spin(i, direction);
     const partner = linkPartner(this.board, i);
-    if (partner !== null && !this.board.cells[partner]!.locked) this.spin(partner, direction);
+    if (partner !== null && !this.board.cells[partner]!.locked) {
+      this.spin(partner, direction);
+      this.flashLink(partner);
+    }
   }
 
   // Turns one tile's model and animates it; linked partners are spun by the caller.
@@ -471,7 +492,7 @@ export class LoopLevelScene implements LevelScene {
       { id: 'loop:back', text: isTouch() ? 'Tip: hold a tile to turn it back the other way.' : 'Tip: right-click a tile to turn it back the other way.', after: 2 },
       { id: 'loop:follow', text: 'Tip: once a tile is right, its lines tell its neighbours which way to face. Work outward from it.', after: 4 },
     ];
-    if (this.level.links?.length) tips.push({ id: 'loop:links', text: 'Tip: tiles with matching dots always turn together. Set the harder one; the other follows.', after: 2 });
+    if (this.level.links?.length) tips.push({ id: 'loop:links', text: 'Tip: tiles with the same coloured border always turn together. Set the harder one; the other follows.', after: 2 });
     return tips;
   }
 
@@ -577,8 +598,8 @@ export class LoopLevelScene implements LevelScene {
     this.cell = savedCell;
     lit.alpha = 0;
     root.addChild(base, pipes, lit);
-    if (opts.locked) root.addChild(new Graphics().circle(cell / 2 - 9, -cell / 2 + 9, 2).fill({ color: this.accent, alpha: 0.6 }));
-    if (opts.links) for (let k = 0; k < opts.links; k++) root.addChild(new Graphics().circle(-cell / 2 + 10 + k * 6, -cell / 2 + 9, 1.8).fill({ color: palette.pearl, alpha: 0.7 }));
+    if (opts.locked) root.addChild(new Graphics().circle(cell / 2 - 11, -cell / 2 + 11, 3).stroke({ color: palette.pearl, width: 1.5, alpha: 0.6 }));
+    if (opts.links) root.addChild(new Graphics().roundRect(-cell / 2 + 4, -cell / 2 + 4, cell - 8, cell - 8, cell * loopStyle.cornerFraction).stroke({ color: linkColor(opts.links - 1), width: 2.5, alpha: 0.9 }));
     return { root, pipes, lit };
   }
 
@@ -631,7 +652,7 @@ export class LoopLevelScene implements LevelScene {
     // 3. Locked tiles.
     if (this.level.chapter >= 2 && this.level.cells.some((c) => c?.locked)) {
       pages.push({
-        caption: 'A tile with a small dot is already correct and cannot turn.',
+        caption: 'A tile with a small ring in its corner is already correct and cannot turn.',
         glyph: () => {
           const root = new Container();
           const tile = this.miniTile(cell, N | S, { locked: true });
@@ -649,7 +670,7 @@ export class LoopLevelScene implements LevelScene {
     // 4. Linked tiles.
     if (this.level.links?.length) {
       pages.push({
-        caption: 'Two tiles marked with the same dots are linked: turning one turns the other as well.',
+        caption: 'Two tiles with the same coloured border are linked: turning one turns the other as well.',
         glyph: () => {
           const root = new Container();
           const a = this.miniTile(cell, N | E, { links: 1 });

@@ -309,7 +309,7 @@ For every region:
   2. 5×5 to 6×6 grids
   3. Irregular board shapes plus locked (pre-set) tiles
   4. 7×7 to 9×9 grids, where multiple separate loops are required
-- **Signature twist — linked tiles:** from chapter 3 some tiles are tied in pairs (marked with matching dots on their top edge). Turning one turns its partner too, and locking one locks both. The solver keeps all rotations for linked cells and propagates each choice to the partner.
+- **Signature twist — linked tiles:** from chapter 3 some tiles are tied in pairs, each pair marked by a coloured border of its own (lavender, peach, sky…); when one turns, its partner's border flashes as it turns too. Tiles that cannot turn wear a small hollow ring in a corner, so the two marks never look alike. Turning one turns its partner too, and locking one locks both. The solver keeps all rotations for linked cells and propagates each choice to the partner.
 - **Clues:**
   One wrong tile turns into place and locks (see §7).
 - **Feel:** closed loops fill with flowing light as you connect them.
