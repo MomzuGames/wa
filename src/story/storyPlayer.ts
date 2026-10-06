@@ -104,8 +104,8 @@ export class StoryPlayer extends Container {
     this.current.root.alpha = 0;
     this.line.text = line;
     this.line.alpha = 0;
-    if (finale && art.kind === 'harmony') this.audio.solvePhrase();
-    else this.audio.chime();
+    // The score turns toward this beat's mood (the whole world singing at the very end).
+    this.audio.storyMood(finale && art.kind === 'harmony' ? 'finale' : art.kind);
     gsap.to(this.current.root, { alpha: 1, duration: scaled(storyTiming.fadeIn) });
     gsap.to(this.line, { alpha: 0.92, duration: scaled(storyTiming.fadeIn), delay: storyTiming.lineDelay });
     // Hold for the beat, or until a tap once it has had a moment to land.

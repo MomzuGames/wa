@@ -311,8 +311,57 @@ function shadowterrace(destination: Tone.ToneAudioNode): Bed {
   return finish(p);
 }
 
-export function createBed(id: RegionId, destination: Tone.ToneAudioNode): Bed {
+// The world map: the journey's own theme. A warm, slow pad moving between open chords, a
+// soft low drone, and a gentle music-box tune that wanders and rests, calm enough to sit
+// under the light's tour of the lands.
+function map(destination: Tone.ToneAudioNode): Bed {
+  const p = frame(destination);
+  const pad = new Tone.PolySynth(Tone.AMSynth, {
+    harmonicity: 1.5,
+    oscillator: { type: 'sine' },
+    modulation: { type: 'sine' },
+    envelope: { attack: 4, decay: 2, sustain: 0.6, release: 6 },
+    modulationEnvelope: { attack: 3, decay: 1.5, sustain: 0.4, release: 4 },
+    volume: -27,
+  });
+  const padFilter = new Tone.Filter({ type: 'lowpass', frequency: 1100, Q: 0.4 }).connect(p.out);
+  pad.connect(padFilter);
+  const chords = [
+    [note(0, 3), note(2, 3), note(3, 3), note(0, 4)],
+    [note(4, 2), note(0, 3), note(2, 3), note(4, 3)],
+    [note(3, 2), note(0, 3), note(1, 3), note(3, 3)],
+    [note(1, 3), note(3, 3), note(4, 3)],
+  ];
+  let c = 0;
+  const swell = new Tone.Loop((time) => {
+    pad.triggerAttackRelease(chords[c % chords.length]!, 10, time, 0.55);
+    c += Math.random() < 0.25 ? 2 : 1;
+  }, 12);
+  const ground = new Tone.Gain(0.5).connect(p.out);
+  const groundLfo = new Tone.LFO({ frequency: 0.037, min: 0.25, max: 0.6 }).connect(ground.gain);
+  const groundOsc = new Tone.Oscillator({ frequency: 'D2', type: 'sine', volume: -27 }).connect(ground);
+  // Melody: a music box, unhurried, like a path unfolding between the lands.
+  const box = new Tone.FMSynth({
+    harmonicity: 4.01,
+    modulationIndex: 1.1,
+    envelope: { attack: 0.012, decay: 1.5, sustain: 0, release: 1.8 },
+    modulationEnvelope: { attack: 0.01, decay: 0.3, sustain: 0, release: 0.4 },
+    volume: -20,
+  });
+  const echo = new Tone.FeedbackDelay({ delayTime: 0.66, feedback: 0.28, wet: 0.28 }).connect(p.out);
+  box.connect(p.out);
+  box.connect(echo);
+  melody(p, box, 4, [[0, 2, 3, 4, 3, 2], [5, 4, 3, 2, 3], [3, 4, 5, 7, 5, 4, 3], [2, 3, 2, 0]], 0.6, [6, 10], 0.5);
+  p.sources.push(groundOsc, groundLfo);
+  p.loops.push(swell);
+  p.disposables.push(pad, padFilter, ground, groundLfo, groundOsc, box, echo);
+  return finish(p);
+}
+
+export function createBed(id: RegionId | 'map', destination: Tone.ToneAudioNode): Bed {
   switch (id) {
+    case 'map':
+      return map(destination);
     case 'tidepools':
       return tidepools(destination);
     case 'nightsky':

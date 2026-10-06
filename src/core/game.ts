@@ -40,6 +40,7 @@ export interface GameDeps {
 
 export class Game {
   private storyPlaying = false;
+  private holdingScore = false; // a replay keeps one score going across its parts
   private previewingStory = false;
   private inOpening = false;
 
@@ -118,7 +119,7 @@ export class Game {
     this.deps.hud.setBackVisible(true);
     this.deps.hud.setLevelButtons(null);
     this.deps.hud.setAccountButton(() => this.deps.openAccount());
-    this.deps.audio.setScene('quiet');
+    this.deps.audio.setScene('map');
     this.showFamily(true);
     // A new light's journey opens with the story of how it began; the map waits, dreaming.
     const opening = !reveal && !seenStory().has('prologue') && !this.previewingStory;
@@ -225,10 +226,15 @@ export class Game {
   // into the lands once more, then every later chapter reached.
   private async replay(ids: SceneId[]): Promise<void> {
     if (this.storyPlaying || this.inOpening) return;
+    // One score carries through the whole replay, the lights falling into the lands included.
+    this.holdingScore = true;
+    this.deps.audio.storyStart();
     await this.playStory(['prologue'], false);
     const map = this.deps.scenes.scene;
     if (map instanceof WorldMapScene) await map.playArrival(this.hue());
     await this.playStory(ids.filter((id) => id !== 'prologue'), false);
+    this.holdingScore = false;
+    this.deps.audio.storyEnd();
   }
 
   private hue(): PaletteToken {
@@ -254,6 +260,7 @@ export class Game {
     this.storyPlaying = true;
     if (remember) ids.forEach((id) => markStorySeen(id));
     const player = new StoryPlayer(this.deps.app, this.hue(), this.deps.audio);
+    this.deps.audio.storyStart();
     const stage = this.deps.app.stage;
     // The scene, the light and the HUD rest out of sight while the story plays; only the
     // drifting dust of the background (the stage's first layer) stays behind it.
@@ -263,6 +270,7 @@ export class Game {
     resting.forEach((c) => (c.visible = false));
     await player.play(ids);
     resting.forEach((c) => (c.visible = true));
+    if (!this.holdingScore) this.deps.audio.storyEnd();
     await player.fadeOut();
     player.destroy();
     this.storyPlaying = false;

@@ -3,6 +3,9 @@ import { events } from '../core/events';
 import { getSettings, type Settings } from '../core/save';
 import { Ambient } from './ambient';
 import { createBed, type Bed } from './beds';
+import { StoryScore, type StoryMood } from './storyScore';
+
+export type MusicScene = 'title' | 'map' | 'quiet' | RegionId;
 import type { RegionId } from '../regions/types';
 import { note } from './scale';
 import { IS_APP } from '../config/platform';
@@ -99,8 +102,11 @@ export class AudioEngine {
   }
 
   private ambientWanted = false;
-  private scene: 'title' | 'quiet' | RegionId = 'quiet';
-  private beds = new Map<RegionId, Bed>();
+  private scene: MusicScene = 'quiet';
+  private beds = new Map<RegionId | 'map', Bed>();
+  // The story's score; while it plays, the scene's own music rests.
+  private score: StoryScore | null = null;
+  private storyOn = false;
 
   // Silence while the game is in the background (another app, the lock screen) and pick
   // up again on return; iOS may have interrupted the audio context in between.
@@ -204,7 +210,8 @@ export class AudioEngine {
 
     this.ambient = new Ambient(this.musicBus);
     if (this.ambientWanted) this.ambient.start();
-    if (this.scene !== 'title' && this.scene !== 'quiet') this.bedFor(this.scene).start();
+    if (this.scene !== 'title' && this.scene !== 'quiet' && !this.storyOn) this.bedFor(this.scene).start();
+    if (this.storyOn) this.scoreFor().start();
 
     this.uiVoice = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: 'sine' },
@@ -229,7 +236,7 @@ export class AudioEngine {
     else this.ambient.stop();
   }
 
-  private bedFor(id: RegionId): Bed {
+  private bedFor(id: RegionId | 'map'): Bed {
     let bed = this.beds.get(id);
     if (!bed) {
       bed = createBed(id, this.musicBus);
@@ -238,15 +245,47 @@ export class AudioEngine {
     return bed;
   }
 
-  // Which music plays: the title drone, a region's bed, or nothing (the map). Cross-fades.
-  setScene(scene: 'title' | 'quiet' | RegionId): void {
+  // Which music plays: the title drone, the map's theme, a region's bed, or nothing.
+  // Cross-fades. While the story plays its score, the scene's music waits.
+  setScene(scene: MusicScene): void {
     if (scene === this.scene) return;
     const previous = this.scene;
     this.scene = scene;
+    if (this.storyOn) return;
     this.setAmbient(scene === 'title');
     if (!this.started) return;
     if (previous !== 'title' && previous !== 'quiet') this.beds.get(previous)?.stop();
     if (scene !== 'title' && scene !== 'quiet') this.bedFor(scene).start();
+  }
+
+  private scoreFor(): StoryScore {
+    this.score ??= new StoryScore(this.musicBus);
+    return this.score;
+  }
+
+  // The story begins: the scene's music fades out and the story's score fades in.
+  storyStart(): void {
+    if (this.storyOn) return;
+    this.storyOn = true;
+    this.setAmbient(false);
+    if (!this.started) return;
+    if (this.scene !== 'title' && this.scene !== 'quiet') this.beds.get(this.scene)?.stop();
+    this.scoreFor().start();
+  }
+
+  // Each beat of the story turns the score toward its mood.
+  storyMood(mood: StoryMood): void {
+    if (!this.started) return;
+    this.scoreFor().setMood(mood);
+  }
+
+  // The story ends: the score fades and the scene's music comes back.
+  storyEnd(): void {
+    if (!this.storyOn) return;
+    this.storyOn = false;
+    this.score?.stop();
+    this.setAmbient(this.scene === 'title');
+    if (this.started && this.scene !== 'title' && this.scene !== 'quiet') this.bedFor(this.scene).start();
   }
 
   // A single soft pentatonic tone for UI feedback.
