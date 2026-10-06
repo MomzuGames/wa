@@ -2,7 +2,7 @@ import { cssHex, rgba } from '../design/palette';
 import { studioCard as timing } from '../design/motion';
 import { STUDIO_NAME } from '../config/game';
 
-// The MomoGames card shown while the game loads: a punk baby with a pastel mohawk, a
+// The MomzuGames card shown while the game loads: a punk baby with a pastel mohawk, a
 // pacifier and a safety-pin earring, gripping a game controller. Drawn as inline SVG so it
 // is crisp on every screen and on screen before the game's renderer has started.
 

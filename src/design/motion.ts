@@ -33,7 +33,7 @@ export const storyTiming = {
   fadeOut: 0.6,
 } as const;
 
-// The MomoGames studio card shown at launch.
+// The MomzuGames studio card shown at launch.
 export const studioCard = {
   fadeIn: 0.8,
   hold: 1.6, // shortest time the logo stays before it may fade (a tap skips the rest)
