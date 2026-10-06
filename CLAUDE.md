@@ -464,6 +464,7 @@ Dev features are stripped from production builds with `import.meta.env.DEV` guar
 5. Prefer clarity over cleverness: small files and typed interfaces.
 6. If a design decision here seems wrong in practice (feel, difficulty, performance), explain it and propose an alternative instead of silently deviating.
 7. The owner is not a programmer. Explain things in plain language and give copy-pasteable commands.
+8. Commit messages carry no "Co-Authored-By: Claude" (or any AI attribution) line: the owner asked for none.
 
 ---
 
