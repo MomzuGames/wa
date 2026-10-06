@@ -35,7 +35,7 @@ export function createShadowVoice(audio: AudioEngine): ShadowVoice {
     }).connect(audio.sfx);
   });
 
-  return {
+  return audio.guard({
     place(height) {
       wood?.triggerAttackRelease(note(1 + height, 4), '16n', undefined, 0.45);
     },
@@ -61,5 +61,5 @@ export function createShadowVoice(audio: AudioEngine): ShadowVoice {
       wood?.dispose();
       pad?.dispose();
     },
-  };
+  });
 }

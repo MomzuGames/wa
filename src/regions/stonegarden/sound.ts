@@ -30,7 +30,7 @@ export function createStoneVoice(audio: AudioEngine): StoneVoice {
     }).connect(audio.sfx);
   });
 
-  return {
+  return audio.guard({
     lift() {
       kalimba?.triggerAttackRelease(note(4, 4), '16n', undefined, 0.35);
     },
@@ -52,5 +52,5 @@ export function createStoneVoice(audio: AudioEngine): StoneVoice {
       kalimba?.dispose();
       wood?.dispose();
     },
-  };
+  });
 }

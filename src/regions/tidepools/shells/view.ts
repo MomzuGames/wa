@@ -8,6 +8,7 @@ import { liftFinger, makeFinger } from '../../../ui/introGlyphs';
 import { createTidepoolsVoice, type TidepoolsVoice } from '../sound';
 import { type ClueKind, DIRS, type ShellLevel, clueMet, clueState, edgeAt, edgeEnds, exits, isClosedLoop, isSolved } from './model';
 import { events } from '../../../core/events';
+import { dlog } from '../../../core/debugLog';
 import { type Deduction, type Reason, solveByLogic } from './solver';
 
 // Shells and stones: the player draws one closed loop of tide through the pool's points.
@@ -58,8 +59,12 @@ export class ShellPoolScene implements LevelScene {
   private nudge: { g: Graphics; tween: gsap.core.Tween } | null = null;
   private ghosts = new Map<number, Graphics>();
   private hintCount = 0;
+  private moveCount = 0;
   // A touch cut short ends the drawing stroke where it was, and is never read as a tap.
-  private offCancel = events.on('input:cancel', () => (this.dragging = null));
+  private offCancel = events.on('input:cancel', () => {
+    dlog('pool-cancel', { dragging: !!this.dragging });
+    this.dragging = null;
+  });
 
   // Level 1: a faint loop and a finger show how to draw, until the first line is drawn.
   private demo: { line: Graphics; finger: Graphics; tl: gsap.core.Timeline } | null = null;
@@ -177,11 +182,13 @@ export class ShellPoolScene implements LevelScene {
   private onDown(e: FederatedPointerEvent): void {
     if (this.solved) return;
     const p = this.pointNear(e.global.x, e.global.y);
+    dlog('pool-down', { at: [Math.round(e.global.x), Math.round(e.global.y)], point: p, dragging: !!this.dragging });
     if (!p) return;
     this.dragging = { last: p, mode: null, changed: false, start: p };
   }
 
   private onMove(e: FederatedPointerEvent): void {
+    this.moveCount++;
     const drag = this.dragging;
     if (!drag || this.solved) return;
     const p = this.pointNear(e.global.x, e.global.y);
@@ -218,6 +225,8 @@ export class ShellPoolScene implements LevelScene {
   private onUp(): void {
     const drag = this.dragging;
     this.dragging = null;
+    dlog('pool-up', { had: !!drag, changed: drag?.changed ?? null, gameMoves: this.moveCount });
+    this.moveCount = 0;
     if (!drag || this.solved || drag.changed) return;
     // A tap on a point clears the lines that meet there.
     const { x, y } = drag.start;

@@ -29,7 +29,7 @@ export function createTidepoolsVoice(audio: AudioEngine): TidepoolsVoice {
     }).connect(audio.sfx);
   });
 
-  return {
+  return audio.guard({
     rotate(column) {
       droplet?.triggerAttackRelease(note(column % 5, 5), '16n');
     },
@@ -51,5 +51,5 @@ export function createTidepoolsVoice(audio: AudioEngine): TidepoolsVoice {
       droplet?.dispose();
       marimba?.dispose();
     },
-  };
+  });
 }

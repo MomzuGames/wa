@@ -74,6 +74,19 @@ export function installDebugLog(app: Application, sceneName: () => string): void
     },
     { capture: true },
   );
-  window.addEventListener('pointerup', (e) => dlog('up', { id: e.pointerId }), { capture: true });
+  // How many movement signals each touch brings, native and as the game sees them.
+  const moves = new Map<number, number>();
+  window.addEventListener('pointermove', (e) => moves.set(e.pointerId, (moves.get(e.pointerId) ?? 0) + 1), { capture: true });
+  window.addEventListener(
+    'pointerup',
+    (e) => {
+      dlog('up', { id: e.pointerId, nativeMoves: moves.get(e.pointerId) ?? 0 });
+      moves.delete(e.pointerId);
+    },
+    { capture: true },
+  );
   window.addEventListener('pointercancel', (e) => dlog('cancel', { id: e.pointerId }), { capture: true });
+  // Any error that escapes, with where it came from: the unlock bug was one of these.
+  window.addEventListener('error', (e) => dlog('error', { message: e.message, at: `${e.filename?.split('/').pop()}:${e.lineno}` }));
+  window.addEventListener('unhandledrejection', (e) => dlog('rejection', { message: String((e.reason as Error)?.message ?? e.reason) }));
 }

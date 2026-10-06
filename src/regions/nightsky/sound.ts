@@ -32,7 +32,7 @@ export function createNightSkyVoice(audio: AudioEngine): NightSkyVoice {
     }).connect(audio.sfx);
   });
 
-  return {
+  return audio.guard({
     step(index) {
       celesta?.triggerAttackRelease(note(degreeFor(index), 5), '8n', undefined, 0.5);
     },
@@ -52,5 +52,5 @@ export function createNightSkyVoice(audio: AudioEngine): NightSkyVoice {
     dispose() {
       celesta?.dispose();
     },
-  };
+  });
 }

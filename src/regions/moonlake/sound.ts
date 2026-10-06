@@ -23,7 +23,7 @@ export function createMoonVoice(audio: AudioEngine): MoonVoice {
     }).connect(audio.sfx);
   });
 
-  return {
+  return audio.guard({
     press(index) {
       piano?.triggerAttackRelease(note(index % 5, 4), '8n', undefined, 0.5);
     },
@@ -36,5 +36,5 @@ export function createMoonVoice(audio: AudioEngine): MoonVoice {
     dispose() {
       piano?.dispose();
     },
-  };
+  });
 }

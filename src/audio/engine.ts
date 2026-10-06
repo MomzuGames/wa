@@ -51,6 +51,32 @@ export class AudioEngine {
 
   private readyCallbacks: Array<() => void> = [];
 
+  // Whether sound can play right now. After the phone was locked iOS keeps the audio clock
+  // frozen until the next tap; scheduling notes then throws ("start time must be strictly
+  // greater than previous start time"), which used to break the move that played them.
+  get running(): boolean {
+    return this.started && Tone.getContext().state === 'running';
+  }
+
+  // Region voices go through this: sound must never interrupt play. While the audio clock is
+  // not running, notes are skipped; any other sound error is swallowed.
+  guard<T extends object>(voice: T): T {
+    return new Proxy(voice, {
+      get: (target, key) => {
+        const value = Reflect.get(target, key) as unknown;
+        if (typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          if (key !== 'dispose' && !this.running) return undefined;
+          try {
+            return (value as (...a: unknown[]) => unknown).apply(target, args);
+          } catch {
+            return undefined;
+          }
+        };
+      },
+    });
+  }
+
   get isStarted(): boolean {
     return this.started;
   }
@@ -81,6 +107,11 @@ export class AudioEngine {
       if (document.hidden) void context.suspend().catch(() => undefined);
       else void context.resume().catch(() => undefined);
     });
+    // iOS often refuses that resume until the player touches the screen: try again then.
+    const retry = () => {
+      if (this.started && Tone.getContext().state !== 'running') void Tone.getContext().resume().catch(() => undefined);
+    };
+    for (const type of ['touchend', 'click', 'keydown']) window.addEventListener(type, retry);
   }
 
   async start(): Promise<void> {
@@ -165,11 +196,13 @@ export class AudioEngine {
 
   // A single soft pentatonic tone for UI feedback.
   pluck(noteName: string, velocity = 0.8): void {
+    if (!this.running) return;
     this.uiVoice?.triggerAttackRelease(noteName, '8n', undefined, velocity);
   }
 
   // A quiet descending three-note breath.
   failure(): void {
+    if (!this.running) return;
     if (!this.uiVoice) return;
     const now = Tone.now();
     this.uiVoice.triggerAttackRelease(note(3, 4), '8n', now, 0.25);
@@ -179,6 +212,7 @@ export class AudioEngine {
 
   // A single wind-chime tone for a newly available clue.
   chime(): void {
+    if (!this.running) return;
     if (!this.uiVoice) return;
     const now = Tone.now();
     this.uiVoice.triggerAttackRelease(note(4, 5), '2n', now, 0.35);
@@ -187,6 +221,7 @@ export class AudioEngine {
 
   // A short rising phrase for a solved level.
   solvePhrase(): void {
+    if (!this.running) return;
     if (!this.uiVoice) return;
     const now = Tone.now();
     [0, 2, 4, 5].forEach((degree, i) => {

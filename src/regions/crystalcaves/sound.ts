@@ -27,7 +27,7 @@ export function createCrystalVoice(audio: AudioEngine): CrystalVoice {
     }).connect(audio.sfx);
   });
 
-  return {
+  return audio.guard({
     turn(index) {
       tick?.triggerAttackRelease(note(index % 5, 5), '32n');
     },
@@ -43,5 +43,5 @@ export function createCrystalVoice(audio: AudioEngine): CrystalVoice {
       bowl?.dispose();
       tick?.dispose();
     },
-  };
+  });
 }
