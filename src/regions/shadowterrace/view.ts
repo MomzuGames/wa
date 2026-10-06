@@ -65,6 +65,8 @@ export class ShadowLevelScene implements LevelScene {
   private pressTimer: gsap.core.Tween | null = null;
   private pressHandled = false;
   private pressedCell = -1;
+  // A touch cut short (phone locked, app in the background) ends the press cleanly.
+  private offCancel = events.on('input:cancel', () => this.onRelease(null));
   // Dragging sideways across the terrace turns it; the drag starts as a possible tap.
   private press: { x: number; y: number; angle: number; swiping: boolean } | null = null;
   private ghostStacks = new Map<number, { height: number; until: number | null }>();
@@ -1008,6 +1010,7 @@ export class ShadowLevelScene implements LevelScene {
   }
 
   destroy(): void {
+    this.offCancel();
     this.stopTutorial();
     this.pressTimer?.kill();
     this.unsubscribe();

@@ -6,7 +6,7 @@ import { durations, easings, scaled } from '../../../design/motion';
 import { puzzleArea } from '../../../design/layout';
 import { liftFinger, makeFinger } from '../../../ui/introGlyphs';
 import { createTidepoolsVoice, type TidepoolsVoice } from '../sound';
-import { type ClueKind, DIRS, type ShellLevel, clueMet, edgeAt, edgeEnds, exits, isClosedLoop, isSolved } from './model';
+import { type ClueKind, DIRS, type ShellLevel, clueMet, clueState, edgeAt, edgeEnds, exits, isClosedLoop, isSolved } from './model';
 import { events } from '../../../core/events';
 import { type Deduction, type Reason, solveByLogic } from './solver';
 
@@ -58,6 +58,8 @@ export class ShellPoolScene implements LevelScene {
   private nudge: { g: Graphics; tween: gsap.core.Tween } | null = null;
   private ghosts = new Map<number, Graphics>();
   private hintCount = 0;
+  // A touch cut short ends the drawing stroke where it was, and is never read as a tap.
+  private offCancel = events.on('input:cancel', () => (this.dragging = null));
 
   // Level 1: a faint loop and a finger show how to draw, until the first line is drawn.
   private demo: { line: Graphics; finger: Graphics; tl: gsap.core.Timeline } | null = null;
@@ -146,15 +148,17 @@ export class ShellPoolScene implements LevelScene {
     const g = this.clueLayer;
     g.clear();
     const r = this.cell * poolStyle.clueRadius;
+    // Each clue answers as the tide is drawn: mint once met, peach as soon as a line breaks it.
     for (const c of this.level.clues) {
-      const met = clueMet(this.level, this.drawn, c);
+      const state = clueState(this.level, this.drawn, c);
+      const color = state === 'met' ? this.accent : state === 'broken' ? palette.peach : palette.pearl;
       const x = this.px(c.x);
       const y = this.py(c.y);
-      if (met) g.circle(x, y, r * 1.6).fill({ color: this.accent, alpha: 0.14 });
+      if (state !== 'open') g.circle(x, y, r * 1.6).fill({ color, alpha: 0.16 });
       if (c.kind === 'shell') {
-        g.circle(x, y, r).fill({ color: palette.ink }).stroke({ color: met ? this.accent : palette.pearl, width: 2.2, alpha: 0.95 });
+        g.circle(x, y, r).fill({ color: palette.ink }).stroke({ color, width: 2.4, alpha: 0.95 });
       } else {
-        g.circle(x, y, r).fill({ color: met ? this.accent : palette.pearl, alpha: met ? 0.9 : 0.85 });
+        g.circle(x, y, r).fill({ color, alpha: 0.9 });
       }
     }
   }
@@ -487,54 +491,69 @@ export class ShellPoolScene implements LevelScene {
       for (let i = 1; i <= upTo && i < pts.length; i++) g.moveTo(pts[i - 1]![0] * s, pts[i - 1]![1] * s).lineTo(pts[i]![0] * s, pts[i]![1] * s);
       g.stroke({ color, width: 4, alpha: 0.95, cap: 'round', join: 'round' });
     };
-    const clue = (g: Graphics, x: number, y: number, kind: ClueKind) => {
-      if (kind === 'shell') g.circle(x * s, y * s, s * 0.27).fill({ color: palette.ink }).stroke({ color: palette.pearl, width: 2 });
-      else g.circle(x * s, y * s, s * 0.27).fill({ color: palette.pearl, alpha: 0.85 });
-    };
-    const demo = (pts: Array<[number, number]>, kinds: Array<[number, number, ClueKind]>, n: number) => () => {
+    // Example pools, right and wrong side by side, each with a soft tick or cross below.
+    type Example = { w: number; h: number; path: Array<[number, number]>; clues: Array<[number, number, ClueKind]>; ok: boolean };
+    const exampleGlyph = (examples: Example[]) => () => {
       const root = new Container();
-      const dots = new Graphics();
-      grid(dots, n);
-      const line = new Graphics();
-      const marks = new Graphics();
-      kinds.forEach(([x, y, k]) => clue(marks, x, y, k));
-      const finger = makeFinger();
-      root.addChild(dots, line, marks, finger);
-      const state = { k: 0 };
-      const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
-      tl.set(finger, { x: pts[0]![0] * s, y: pts[0]![1] * s })
-        .set(state, { k: 0 })
-        .call(() => path(line, pts, 0))
-        .to(finger, { alpha: 1, duration: 0.2 });
-      for (let i = 1; i < pts.length; i++) {
-        tl.to(finger, { x: pts[i]![0] * s, y: pts[i]![1] * s, duration: 0.32, ease: 'none', onComplete: () => path(line, pts, i) });
-      }
-      liftFinger(tl, finger);
-      tl.to({}, { duration: 1.2 });
-      root.on('destroyed', () => tl.kill());
+      const step = 18;
+      const gap = 26;
+      const widths = examples.map((e) => (e.w - 1) * step);
+      let x0 = -(widths.reduce((a, w) => a + w, 0) + gap * (examples.length - 1)) / 2;
+      examples.forEach((e, i) => {
+        const panel = new Graphics();
+        const ox = x0;
+        const oy = -((e.h - 1) * step) / 2 - 10;
+        for (let y = 0; y < e.h; y++) for (let x = 0; x < e.w; x++) panel.circle(ox + x * step, oy + y * step, 2).fill({ color: palette.pearl, alpha: 0.3 });
+        for (let k = 1; k < e.path.length; k++) panel.moveTo(ox + e.path[k - 1]![0] * step, oy + e.path[k - 1]![1] * step).lineTo(ox + e.path[k]![0] * step, oy + e.path[k]![1] * step);
+        panel.stroke({ color: this.accent, width: 3.5, alpha: 0.95, cap: 'round', join: 'round' });
+        for (const [cx, cy, kind] of e.clues) {
+          if (kind === 'shell') panel.circle(ox + cx * step, oy + cy * step, 6).fill({ color: palette.ink }).stroke({ color: palette.pearl, width: 2 });
+          else panel.circle(ox + cx * step, oy + cy * step, 6).fill({ color: palette.pearl, alpha: 0.9 });
+        }
+        // The verdict under the example.
+        const mx = ox + ((e.w - 1) * step) / 2;
+        const my = oy + (e.h - 1) * step + 24;
+        if (e.ok) panel.moveTo(mx - 7, my).lineTo(mx - 2, my + 5).lineTo(mx + 8, my - 6).stroke({ color: palette.mint, width: 2.5, cap: 'round', join: 'round' });
+        else panel.moveTo(mx - 6, my - 6).lineTo(mx + 6, my + 6).moveTo(mx + 6, my - 6).lineTo(mx - 6, my + 6).stroke({ color: palette.peach, width: 2.5, cap: 'round' });
+        panel.alpha = 0;
+        root.addChild(panel);
+        gsap.to(panel, { alpha: 1, duration: 0.5, delay: i * 0.35 });
+        x0 += widths[i]! + gap;
+      });
       return root;
     };
     const pages: IntroPage[] = [
       {
-        caption: 'Draw one closed loop of tide that passes through every shell and every stone. Drag from point to point. It does not need to touch every point.',
-        glyph: demo([[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]], [[-1, -1, 'stone'], [0, 1, 'shell']], 3),
+        caption: 'Draw one closed loop that passes through every ○ and every ●. Drag from point to point. It does not have to touch every point.',
+        glyph: exampleGlyph([
+          { w: 3, h: 3, path: [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1], [0, 0]], clues: [[0, 0, 'stone'], [1, 2, 'shell']], ok: true },
+          { w: 3, h: 3, path: [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]], clues: [[0, 0, 'stone'], [1, 2, 'shell']], ok: false },
+        ]),
       },
     ];
     const has = (k: ClueKind) => this.level.clues.some((c) => c.kind === k);
     if (has('shell')) {
       pages.push({
-        caption: 'A shell (hollow ring): the loop goes straight through it, and turns at the very next point on at least one side.',
-        glyph: demo([[-1.5, 1], [-1.5, 0], [-0.5, 0], [0.5, 0], [1.5, 0], [1.5, -1]], [[-0.5, 0, 'shell']], 1),
+        caption: '○  Go straight through it, then turn at the very next point, on at least one side.',
+        glyph: exampleGlyph([
+          { w: 4, h: 3, path: [[1, 2], [1, 1], [2, 1], [3, 1]], clues: [[2, 1, 'shell']], ok: true },
+          { w: 3, h: 3, path: [[0, 1], [1, 1], [1, 2]], clues: [[1, 1, 'shell']], ok: false },
+          { w: 5, h: 3, path: [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1]], clues: [[2, 1, 'shell']], ok: false },
+        ]),
       });
     }
     if (has('stone')) {
       pages.push({
-        caption: 'A stone (solid): the loop turns on it, then goes straight on for at least two steps in both directions.',
-        glyph: demo([[1, -1], [0, -1], [-1, -1], [-1, 0], [-1, 1]], [[-1, -1, 'stone']], 1),
+        caption: '●  Turn on it, then go straight for two steps both ways.',
+        glyph: exampleGlyph([
+          { w: 3, h: 3, path: [[2, 0], [1, 0], [0, 0], [0, 1], [0, 2]], clues: [[0, 0, 'stone']], ok: true },
+          { w: 3, h: 3, path: [[0, 1], [1, 1], [2, 1]], clues: [[1, 1, 'stone']], ok: false },
+          { w: 3, h: 3, path: [[1, 1], [1, 0], [0, 0], [0, 1], [0, 2]], clues: [[0, 0, 'stone']], ok: false },
+        ]),
       });
     }
     pages.push({
-      caption: 'To erase, drag back over a line, or tap a point to clear the lines there. Shells and stones glow when the loop passes them correctly.',
+      caption: 'To erase, drag back over a line, or tap a point to clear the lines there. A ○ or ● turns mint when it is right, and peach when a line breaks its rule.',
       glyph: () => {
         // Draw two steps to the right, then slide back: each line vanishes under the finger.
         const root = new Container();
@@ -560,6 +579,7 @@ export class ShellPoolScene implements LevelScene {
   }
 
   destroy(): void {
+    this.offCancel();
     this.stopDemo();
     this.clearHints();
     this.voice.dispose();

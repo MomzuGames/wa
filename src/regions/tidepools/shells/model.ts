@@ -116,6 +116,30 @@ export function isClosedLoop(level: Pick<ShellLevel, 'width' | 'height'>, on: Re
   return seen.size === on.size;
 }
 
+// How a clue stands right now, for live feedback while drawing: met, broken (the lines
+// already drawn cannot be part of an answer that meets it), or still open.
+export function clueState(level: Pick<ShellLevel, 'width' | 'height'>, on: ReadonlySet<number>, clue: Clue): 'met' | 'broken' | 'open' {
+  if (clueMet(level, on, clue)) return 'met';
+  const here = exits(level, on, clue.x, clue.y);
+  const beyondOn = (d: Dir) => {
+    const { dx, dy } = STEP[d];
+    const e = edgeAt(level.width, level.height, clue.x + dx, clue.y + dy, d);
+    return e >= 0 && on.has(e);
+  };
+  const neighbourTurns = (d: Dir) => {
+    const { dx, dy } = STEP[d];
+    return exits(level, on, clue.x + dx, clue.y + dy).some((k) => horizontal(k) !== horizontal(d));
+  };
+  if (clue.kind === 'shell') {
+    if (turnsAt(here)) return 'broken';
+    if (straightThrough(here) && here.every((d) => beyondOn(d))) return 'broken';
+    return 'open';
+  }
+  if (straightThrough(here)) return 'broken';
+  if (here.some((d) => neighbourTurns(d))) return 'broken';
+  return 'open';
+}
+
 // One closed loop, every point visited in and out once, every clue met.
 export function isSolved(level: ShellLevel, on: ReadonlySet<number>): boolean {
   if (on.size === 0) return false;

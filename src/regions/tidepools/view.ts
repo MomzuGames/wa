@@ -1,4 +1,5 @@
 import gsap from 'gsap';
+import { events } from '../../core/events';
 import { Container, FederatedPointerEvent, Graphics } from 'pixi.js';
 import type { IntroPage, LevelScene, ShellContext, Tip } from '../types';
 import { palette } from '../../design/palette';
@@ -89,6 +90,8 @@ export class LoopLevelScene implements LevelScene {
   private nudge: { cell: number; g: Graphics; tween: gsap.core.Tween } | null = null;
   private ghosts = new Map<number, { rotation: number; g: Graphics }>();
   private hintCount = 0;
+  // A touch cut short never turns a tile by itself.
+  private offCancel = events.on('input:cancel', () => this.cancelPress());
   private voice: TidepoolsVoice;
   private tutorialTimer: gsap.core.Tween | null = null;
   private pressTimer: gsap.core.Tween | null = null;
@@ -573,6 +576,7 @@ export class LoopLevelScene implements LevelScene {
   }
 
   destroy(): void {
+    this.offCancel();
     this.stopTutorial();
     this.pressTimer?.kill();
     this.voice.dispose();

@@ -35,6 +35,38 @@ export function installTweenSafety(): void {
   };
 }
 
+// Coming back after the phone was locked or the app was in the background:
+// - every drag still in progress is cancelled, so the next touch starts fresh;
+// - if iOS threw away the game's graphics memory meanwhile (the screen would stay frozen
+//   and taps would seem to do nothing), the game reloads into the same place: saves are
+//   kept on every change, so nothing is lost but an unfinished drawing.
+export function installResumeGuard(app: Application, cancel: () => void): void {
+  const canvas = app.canvas;
+  let lost = false;
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    lost = true;
+  });
+  const gl = (app.renderer as unknown as { gl?: WebGLRenderingContext }).gl;
+  window.addEventListener('pointercancel', cancel);
+  window.addEventListener('blur', cancel);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      cancel();
+      return;
+    }
+    if (lost || gl?.isContextLost()) {
+      location.reload();
+      return;
+    }
+    app.ticker.start();
+    app.resize();
+  });
+  window.addEventListener('pageshow', (e) => {
+    if ((e as PageTransitionEvent).persisted && (lost || gl?.isContextLost())) location.reload();
+  });
+}
+
 export function onResize(app: Application, handler: (width: number, height: number) => void): () => void {
   const fire = () => {
     readSafeArea();

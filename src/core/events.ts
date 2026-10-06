@@ -27,6 +27,9 @@ export interface GameEvents {
   'input:mute': void;
   'input:hint': void;
   'input:restart': void;
+  // A touch was cut short (the phone locked, the app went to the background, iOS cancelled it):
+  // any drag in progress must end, or the next touches are read as part of it.
+  'input:cancel': void;
   'input:key': string;
   // A level explaining something about the current state (shown as a toast by the shell).
   'level:note': string;

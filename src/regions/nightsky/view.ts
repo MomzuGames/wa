@@ -279,6 +279,15 @@ export class SkyLevelScene implements LevelScene {
     }
   }
 
+  // A touch cut short: the stroke gently unravels, without counting as an attempt.
+  private offCancel = events.on('input:cancel', () => {
+    if (!this.dragging || this.solved) return;
+    this.dragging = false;
+    this.rubber.clear();
+    if (this.stroke.path.length) this.unravel();
+    else this.stroke.current = null;
+  });
+
   private onUp(): void {
     if (!this.dragging || this.solved) return;
     this.dragging = false;
@@ -442,6 +451,7 @@ export class SkyLevelScene implements LevelScene {
   }
 
   destroy(): void {
+    this.offCancel();
     this.stopTutorial();
     this.voice.dispose();
     this.container.destroy({ children: true });

@@ -1,6 +1,6 @@
 import './style.css';
 import '@fontsource/quicksand/300.css';
-import { createApp, installTweenSafety, onResize } from './core/app';
+import { createApp, installResumeGuard, installTweenSafety, onResize } from './core/app';
 import { SceneManager } from './core/sceneManager';
 import { installKeyboard } from './core/input';
 import { createRng } from './core/rng';
@@ -38,6 +38,7 @@ async function main() {
   installTweenSafety();
   if (!IS_APP) installUpdates();
   const app = await createApp(document.querySelector<HTMLDivElement>('#app')!);
+  installResumeGuard(app, () => events.emit('input:cancel'));
   const rng = createRng('chowa');
   const audio = new AudioEngine();
 

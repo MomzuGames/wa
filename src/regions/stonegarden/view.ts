@@ -136,6 +136,7 @@ export class StoneLevelScene implements LevelScene {
     );
     window.addEventListener('wheel', this.onWheel, { passive: true });
     window.addEventListener('pointercancel', this.onCancel);
+    this.unsubscribe.push(events.on('input:cancel', this.onCancel));
     window.addEventListener('blur', this.onCancel);
   }
 
