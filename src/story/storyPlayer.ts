@@ -5,7 +5,7 @@ import { scaled, storyTiming } from '../design/motion';
 import { hud, safeArea } from '../design/layout';
 import type { AudioEngine } from '../audio/engine';
 import { buildArt, type Vignette } from './art';
-import { scene, type Art, type SceneId } from './script';
+import { scene, type SceneId } from './script';
 
 // Plays story scenes over whatever is on screen: the world dims, a small animation plays,
 // one short line fades in beneath it. Nothing moves on by itself: once the line has landed
@@ -84,15 +84,12 @@ export class StoryPlayer extends Container {
   // Resolves once the dark backdrop has faded in over the screen.
   readonly fadedIn: Promise<void>;
 
-  // `interlude` runs after a beat of the given kind, with the story out of the way (for the
-  // map's own moment, such as the colour draining when the Silence falls).
-  async play(ids: SceneId[], interlude?: { after: Art['kind']; run: () => Promise<void> }): Promise<void> {
+  async play(ids: SceneId[]): Promise<void> {
     await this.fadedIn;
     for (const id of ids) {
       for (const beat of scene(id)) {
         if (this.skipped) break;
         await this.beat(beat.line, beat.art, id === 'finale');
-        if (interlude && beat.art.kind === interlude.after && !this.skipped) await interlude.run();
       }
     }
   }

@@ -1,4 +1,5 @@
 import type { RegionId } from '../regions/types';
+import { openingLines } from '../map/openingLines';
 
 // The story of Chōwa. A family of lights sang the world together. One night a great
 // Silence fell and the lands began to fade; to save them the family flew out, one light to
@@ -51,13 +52,15 @@ const HOME_LINE: Record<RegionId, string> = {
 
 export function scene(id: SceneId): Beat[] {
   if (id === 'prologue') {
+    // The opening is told on the world map itself (map/opening.ts uses these lines); the
+    // drawn beats here stand in wherever there is no map.
     return [
-      { line: 'Once, a family of lights sang the whole world together.', art: { kind: 'harmony' } },
-      { line: 'One night, a great Silence fell, and the lands began to fade.', art: { kind: 'silence' } },
-      { line: 'To save them, the family flew out, one light to each land.', art: { kind: 'depart' } },
-      { line: 'They sang until they fell asleep, deep inside the lands.', art: { kind: 'sleeping' } },
-      { line: 'The smallest was too young to go. It slept on the shore.', art: { kind: 'shore' } },
-      { line: 'When it woke, the world was quiet.', art: { kind: 'wake' } },
+      { line: openingLines[0], art: { kind: 'harmony' } },
+      { line: openingLines[1], art: { kind: 'silence' } },
+      { line: openingLines[2], art: { kind: 'silence' } },
+      { line: openingLines[3], art: { kind: 'depart' } },
+      { line: openingLines[4], art: { kind: 'wake' } },
+      { line: openingLines[5], art: { kind: 'wake' } },
     ];
   }
   if (id === 'waiting') return [{ line: 'They are all still here, waiting to be woken.', art: { kind: 'waiting' } }];

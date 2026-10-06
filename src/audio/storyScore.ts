@@ -7,7 +7,7 @@ import { note } from './scale';
 // The Silence darkens and hushes it; departures, homecomings and the finale lift it. Every
 // note is from the pentatonic scale, every attack is soft, and nothing loops audibly.
 
-export type StoryMood = 'harmony' | 'silence' | 'depart' | 'sleeping' | 'shore' | 'wake' | 'asleep' | 'waiting' | 'home' | 'together' | 'finale' | 'returning' | 'lifting' | 'chorus' | 'ending';
+export type StoryMood = 'harmony' | 'silence' | 'panic' | 'depart' | 'sleeping' | 'shore' | 'wake' | 'asleep' | 'waiting' | 'home' | 'together' | 'finale' | 'returning' | 'lifting' | 'chorus' | 'ending';
 
 interface Mood {
   chords: number[][]; // pentatonic degrees from D3 (5 is the D above)
@@ -24,8 +24,11 @@ interface Mood {
 const MOODS: Record<StoryMood, Mood> = {
   // Seven lights singing: warm, open, the family's theme.
   harmony: { chords: [[0, 2, 3, 5], [4, 5, 7, 9], [3, 5, 6, 8], [0, 2, 3, 5]], bright: 1900, level: 0.75, drone: 0.5, tune: [7, 6, 5, 3, 5, 4, 3, 2], pace: 0.95, harp: true, boom: false },
-  // The Silence falls: the chords thin to bare fifths, the light closes, a deep drum.
-  silence: { chords: [[0, 3], [-1, 3], [0, 3], [-2, 1]], bright: 520, level: 0.4, drone: 1, tune: [9, 8, 7], pace: 2.4, harp: false, boom: true },
+  // After the Silence falls: almost nothing, bare fifths far away, a faint drone (the boom
+  // itself comes from hush()).
+  silence: { chords: [[0, 3], [-1, 3], [0, 3], [-2, 1]], bright: 420, level: 0.07, drone: 0.12, tune: [9, 8, 7], pace: 3, harp: false, boom: false, soft: 0.25 },
+  // Panic: a low, tense pulse on two close notes, the drum again.
+  panic: { chords: [[-1, 0], [0, 1], [-1, 0]], bright: 650, level: 0.45, drone: 1, tune: [1, 0, 1, 0, 2, 1], pace: 0.32, harp: false, boom: true, soft: 0.5 },
   // The family flies out: rising, wider, hopeful but brave.
   depart: { chords: [[0, 2, 3, 5], [1, 3, 4, 6], [3, 5, 6, 8], [4, 5, 7, 9]], bright: 2300, level: 0.85, drone: 0.6, tune: [5, 6, 7, 9, 8, 7], pace: 0.7, harp: true, boom: true },
   // They sing until they fall asleep: a lullaby, slow and low.
@@ -76,6 +79,7 @@ export class StoryScore {
   private celesta: Tone.FMSynth;
   private drum: Tone.MembraneSynth;
   private air: Tone.Noise;
+  private impact: Tone.MembraneSynth; // outside the score's own level, so it sounds when all else stops
   private airFilter: Tone.Filter;
   private airLevel: Tone.Gain;
   private echo: Tone.FeedbackDelay;
@@ -128,6 +132,13 @@ export class StoryScore {
       envelope: { attack: 0.02, decay: 2.6, sustain: 0, release: 2 },
       volume: -18,
     }).connect(this.out);
+    // The Silence's boom: a deep drum heard even as the music cuts out.
+    this.impact = new Tone.MembraneSynth({
+      pitchDecay: 0.8,
+      octaves: 1.5,
+      envelope: { attack: 0.015, decay: 3.2, sustain: 0, release: 2.5 },
+      volume: -2,
+    }).connect(destination);
     // Air: filtered noise that swells as each beat turns, like a breath before a line.
     this.airLevel = new Tone.Gain(0).connect(this.out);
     this.airFilter = new Tone.Filter({ type: 'bandpass', frequency: 900, Q: 0.7 }).connect(this.airLevel);
@@ -164,6 +175,18 @@ export class StoryScore {
     }, scoreConfig.fadeOutSeconds * 1000);
   }
 
+  // The Silence falls: the music stops at once, and a single deep boom rolls away.
+  hush(): void {
+    if (!this.playing) return;
+    const now = Tone.now();
+    this.out.gain.cancelScheduledValues(now);
+    this.out.gain.setValueAtTime(this.out.gain.value, now);
+    this.out.gain.linearRampToValueAtTime(0, now + 0.18);
+    this.pad.releaseAll(now);
+    this.held = [];
+    this.impact.triggerAttackRelease('D2', 3, now + 0.05, 1);
+  }
+
   // A new beat of the story: the music turns toward its mood with a breath of air.
   setMood(kind: StoryMood): void {
     this.mood = MOODS[kind];
@@ -171,6 +194,9 @@ export class StoryScore {
     const now = Tone.now();
     const m = this.mood;
     const settle = scoreConfig.moodSeconds;
+    this.out.gain.cancelScheduledValues(now);
+    this.out.gain.setValueAtTime(this.out.gain.value, now);
+    this.out.gain.linearRampToValueAtTime(1, now + settle);
     this.padFilter.frequency.rampTo(m.bright, settle, now);
     this.padLevel.gain.rampTo(m.level, settle, now);
     this.droneLevel.gain.rampTo(m.drone * 0.8, settle, now);
@@ -221,6 +247,6 @@ export class StoryScore {
 
   dispose(): void {
     if (this.timer) clearInterval(this.timer);
-    [this.pad, this.padFilter, this.padLevel, ...this.drone, this.droneLevel, this.harp, this.celesta, this.drum, this.air, this.airFilter, this.airLevel, this.echo, this.out].forEach((n) => n.dispose());
+    [this.pad, this.padFilter, this.padLevel, ...this.drone, this.droneLevel, this.harp, this.celesta, this.drum, this.impact, this.air, this.airFilter, this.airLevel, this.echo, this.out].forEach((n) => n.dispose());
   }
 }

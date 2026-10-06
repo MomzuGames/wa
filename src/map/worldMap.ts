@@ -3,12 +3,10 @@ import { Container, type FederatedPointerEvent, Graphics } from 'pixi.js';
 import type { Scene } from '../core/sceneManager';
 import type { RegionId } from '../regions/types';
 import { REGION_ORDER } from '../regions/catalog';
-import { familyColor } from '../story/family';
-import { alphas, palette, type PaletteToken } from '../design/palette';
+import { alphas, palette } from '../design/palette';
 import { durations, easings, scaled } from '../design/motion';
 import { spiritStyle } from '../ui/spirit';
 import { isRegionComplete, regionUnlocked, solvedCount } from '../core/progress';
-import { createGlow } from '../fx/glow';
 import { hud, isCompact } from '../design/layout';
 import { RegionNode, type RegionState, regionNodeStyle } from './regionNode';
 import { events } from '../core/events';
@@ -40,9 +38,7 @@ const mapStyle = {
   fallRadius: 6,
   landRipple: 46,
   // The Silence on the map: the colour drains out of the lands, one after another.
-  drainSeconds: 1.8,
-  drainStagger: 0.35,
-  silenceHold: 1.2, // seconds the bright world shows before the colour drains (book replay)
+  silenceSeconds: 0.7, // the opening's Silence: how fast the colour goes
   colourReturnSeconds: 2.2, // a finished land's colour washing back
   // The world come alive, once every land is finished.
   aliveFadeSeconds: 4,
@@ -77,6 +73,7 @@ export class WorldMapScene implements Scene {
   private aurora = new Graphics();
   private sparks = new Graphics();
   private alive = { v: 0 };
+  starDim = 1; // the stars dim when the Silence falls
   private waves: Array<{ x: number; y: number; p: number; color: number }> = [];
   private paths = new Graphics();
   private litPaths = new Graphics();
@@ -118,7 +115,7 @@ export class WorldMapScene implements Scene {
     this.applyStates();
     if (dreaming) {
       // The opening begins on the world as it was: every land bright and in colour, until
-      // the Silence falls in the story (drainColour).
+      // the Silence falls in the opening (drainNow).
       for (const node of this.nodes.values()) {
         node.eventMode = 'none';
         void node.setColour(1);
@@ -177,85 +174,94 @@ export class WorldMapScene implements Scene {
     events.emit('spirit:tour', { points, pause: mapStyle.tourPause, start: REGION_ORDER.indexOf(startAt) });
   }
 
-  // The night the family left, as the smallest light remembers it: six lights fall out of
-  // the sky, each into its own land, and sink into it with a ripple.
-  async playArrival(player: PaletteToken): Promise<void> {
-    const layer = new Container();
-    layer.eventMode = 'none';
-    this.world.addChild(layer);
-    const rng = createRng('arrival');
-    await Promise.all(
-      REGION_ORDER.map(
-        (id, i) =>
-          new Promise<void>((resolve) => {
-            const p = this.position(id);
-            const accent = palette[familyColor(id, player)];
-            const light = new Graphics().circle(0, 0, mapStyle.fallRadius * 2.6).fill({ color: accent, alpha: 0.16 }).circle(0, 0, mapStyle.fallRadius).fill({ color: accent });
-            light.filters = [createGlow(accent, { distance: 12, strength: 1.2 })];
-            light.position.set(p.x + (rng.next() - 0.5) * 120, -this.world.y - 30);
-            const ripple = new Graphics();
-            layer.addChild(ripple, light);
-            const delay = i * mapStyle.fallStagger;
-            gsap.to(light, { x: p.x, duration: scaled(mapStyle.fallSeconds), delay, ease: 'sine.out' });
-            gsap.to(light, {
-              y: p.y,
-              duration: scaled(mapStyle.fallSeconds),
-              delay,
-              ease: 'power2.in',
-              onComplete: () => {
-                const r = { p: 0 };
-                gsap.to(r, {
-                  p: 1,
-                  duration: scaled(durations.completion) * 0.4,
-                  ease: easings.response,
-                  onUpdate: () => ripple.clear().circle(p.x, p.y, 8 + r.p * mapStyle.landRipple).stroke({ color: accent, width: 1.5, alpha: 0.6 * (1 - r.p) }),
-                });
-                const node = this.nodes.get(id)!;
-                if (this.dreaming) gsap.to(node, { alpha: mapStyle.landedAlpha, duration: scaled(durations.pieceMove) * 3 });
-                gsap.to(light, { alpha: 0, duration: scaled(durations.pieceMove) * 2, onComplete: () => resolve() });
-                gsap.to(light.scale, { x: 0.3, y: 0.3, duration: scaled(durations.pieceMove) * 2 });
-              },
-            });
-          }),
-      ),
-    );
-    layer.destroy({ children: true });
+  // ----- the opening, told on the map (see opening.ts) -----
+
+  // The middle of the screen, in the map's own coordinates and on the screen.
+  centreLocal(): { x: number; y: number } {
+    return { x: this.width / 2 - this.world.x, y: this.height * 0.48 - this.world.y };
   }
 
-  // The Silence falls on the map: the colour drains out of every land, one after another
-  // (during the opening the lands also dim, as the world goes quiet).
-  async drainColour(): Promise<void> {
-    await Promise.all(
-      REGION_ORDER.map(
-        (id, i) =>
-          new Promise<void>((resolve) => {
-            gsap.delayedCall(i * mapStyle.drainStagger, () => {
-              const node = this.nodes.get(id)!;
-              if (this.dreaming) {
-                gsap.to(node, { alpha: mapStyle.dreamAlpha, duration: scaled(mapStyle.drainSeconds), ease: easings.ambient });
-                gsap.to(this.paths, { alpha: mapStyle.dreamAlpha, duration: scaled(mapStyle.drainSeconds) });
-              }
-              void node.setColour(0, mapStyle.drainSeconds).then(resolve);
-            });
-          }),
-      ),
-    );
+  centreScreen(): { x: number; y: number } {
+    return { x: this.width / 2, y: this.height * 0.48 };
   }
 
-  // The world as it was: every land in its full colour (and full brightness) again.
-  async brighten(): Promise<void> {
-    await Promise.all(REGION_ORDER.map((id) => this.nodes.get(id)!.setColour(1, mapStyle.drainSeconds * 0.6)));
+  landLocal(id: RegionId): { x: number; y: number } {
+    return this.position(id);
   }
 
-  // For the book's replay: the world shows its colour again for a moment, then the Silence
-  // drains it away as it did that night.
-  async playSilence(): Promise<void> {
-    await Promise.all(REGION_ORDER.map((id) => this.nodes.get(id)!.setColour(1, mapStyle.drainSeconds * 0.6)));
-    await new Promise((r) => gsap.delayedCall(scaled(mapStyle.silenceHold), r));
-    await this.drainColour();
+  addToWorld(c: Container): void {
+    this.world.addChild(c);
   }
 
-  // After the replay: every finished land takes its colour back.
+  addOverlay(c: Container): void {
+    this.container.addChild(c);
+  }
+
+  // The world as it was: every land bright and in full colour, the stars all out.
+  brightNow(): void {
+    this.setDreaming(true);
+    for (const node of this.nodes.values()) {
+      gsap.killTweensOf(node);
+      node.alpha = 1;
+      void node.setColour(1);
+    }
+    this.paths.alpha = 1;
+    this.starDim = 1;
+  }
+
+  // The Silence: every land flickers and loses its colour at once, the trails and stars dim.
+  drainNow(instant = false): void {
+    for (const node of this.nodes.values()) {
+      gsap.killTweensOf(node);
+      if (instant) {
+        node.alpha = mapStyle.dreamAlpha;
+        void node.setColour(0);
+        continue;
+      }
+      void node.setColour(0, mapStyle.silenceSeconds);
+      gsap
+        .timeline()
+        .to(node, { alpha: 0.35, duration: 0.08 })
+        .to(node, { alpha: 0.9, duration: 0.08 })
+        .to(node, { alpha: 0.25, duration: 0.1 })
+        .to(node, { alpha: 0.6, duration: 0.1 })
+        .to(node, { alpha: mapStyle.dreamAlpha, duration: scaled(mapStyle.silenceSeconds), ease: easings.ambient });
+    }
+    gsap.to(this.paths, { alpha: mapStyle.dreamAlpha, duration: instant ? 0 : scaled(mapStyle.silenceSeconds) });
+    gsap.to(this, { starDim: 0.25, duration: instant ? 0 : scaled(mapStyle.silenceSeconds) });
+  }
+
+  // A family light has sunk into its land: the land glows once in its colour, then sleeps.
+  lightLanded(id: RegionId, instant = false): void {
+    const node = this.nodes.get(id)!;
+    const p = this.position(id);
+    if (instant) {
+      node.alpha = mapStyle.landedAlpha;
+      return;
+    }
+    const ripple = new Graphics();
+    ripple.eventMode = 'none';
+    this.world.addChild(ripple);
+    const r = { p: 0 };
+    gsap.to(r, {
+      p: 1,
+      duration: scaled(durations.completion) * 0.4,
+      ease: easings.response,
+      onUpdate: () => ripple.clear().circle(p.x, p.y, 8 + r.p * mapStyle.landRipple).stroke({ color: node.accent, width: 1.5, alpha: 0.6 * (1 - r.p) }),
+      onComplete: () => ripple.destroy(),
+    });
+    gsap.to(node, { alpha: mapStyle.landedAlpha, duration: scaled(durations.pieceMove) * 3 });
+    // Its song, one last time, then sleep.
+    void node.setColour(0.7, 0.3).then(() => node.setColour(0, 1.8));
+  }
+
+  // Lands cannot be chosen while the story is told over the map.
+  setDreaming(on: boolean): void {
+    this.dreaming = on;
+    for (const node of this.nodes.values()) node.eventMode = on ? 'none' : 'static';
+  }
+
+  // After a replay: every finished land takes its colour back.
   async restoreColours(): Promise<void> {
     await Promise.all(REGION_ORDER.filter((id) => this.stateFor(id) === 'complete').map((id) => this.nodes.get(id)!.setColour(1, mapStyle.colourReturnSeconds)));
   }
@@ -266,8 +272,8 @@ export class WorldMapScene implements Scene {
   }
 
   // A faint ring breathes around the light; resolves when the player taps it.
-  waitForLightTap(): Promise<void> {
-    const { x, y } = this.dreamSpot;
+  waitForLightTap(at: { x: number; y: number } = this.dreamSpot): Promise<void> {
+    const { x, y } = at;
     const ring = new Graphics().circle(0, 0, mapStyle.promptRadius).stroke({ color: palette.pearl, width: 1, alpha: 0.6 });
     ring.position.set(x, y);
     ring.alpha = 0;
@@ -298,6 +304,7 @@ export class WorldMapScene implements Scene {
       node.eventMode = 'static';
     }
     gsap.to(this.paths, { alpha: 1, duration: scaled(mapStyle.wakeSeconds) });
+    gsap.to(this, { starDim: 1, duration: scaled(mapStyle.wakeSeconds) });
     this.roam(this.firstUnfinished());
   }
 
@@ -425,7 +432,7 @@ export class WorldMapScene implements Scene {
       const tw = 0.5 + 0.5 * Math.sin(this.time * (0.5 + phase * 0.08) + phase);
       // Once the world is alive, some stars take on the lands' colours.
       const color = this.alive.v > 0.3 && i % 3 === 0 ? this.nodes.get(REGION_ORDER[i % REGION_ORDER.length]!)!.accent : palette.pearl;
-      g.circle(x, y, 0.7 + tw * (1 + this.alive.v * 0.4)).fill({ color, alpha: mapStyle.twinkleAlpha * tw * (1 + this.alive.v * 0.5) });
+      g.circle(x, y, 0.7 + tw * (1 + this.alive.v * 0.4)).fill({ color, alpha: mapStyle.twinkleAlpha * tw * (1 + this.alive.v * 0.5) * this.starDim });
     }
   }
 

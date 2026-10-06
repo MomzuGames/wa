@@ -15,13 +15,14 @@ import type { SceneId } from '../story/script';
 import { earnedScenes, landDone, missedScenes, scenesAfterLevel, type Solved } from '../story/triggers';
 import { getModule } from '../regions/registry';
 import { palette } from '../design/palette';
-import { durations, easings, scaled, storyInterlude } from '../design/motion';
+import { durations, easings, scaled } from '../design/motion';
 import gsap from 'gsap';
 import type { AudioEngine } from '../audio/engine';
 import type { ParticleSystem } from '../fx/particles';
 import type { Hud } from '../ui/hud';
 import type { SettingsPanel } from '../ui/settings';
 import { TitleScene } from '../scenes/title';
+import { OpeningCinematic } from '../map/opening';
 import { WorldMapScene, type MapReveal } from '../map/worldMap';
 import { RegionScene } from '../map/regionScene';
 import { haptic } from './native';
@@ -199,31 +200,24 @@ export class Game {
     }
   }
 
-  // The opening: the story, then on the map six lights fall into their lands, and the
-  // smallest light makes up its mind.
+  // The opening, told on the map itself: the family dancing, the Silence, the panic, six
+  // lights flying into the lands, the smallest left behind. Then it waits for a tap on the
+  // little light, and the journey begins.
   private async openJourney(map: WorldMapScene): Promise<void> {
     const hud = this.deps.hud;
     hud.visible = false;
     this.inOpening = true;
-    // The world as it was: bright and singing, a moment before the story begins.
-    this.deps.audio.storyStart();
-    this.deps.audio.storyMood('harmony');
-    await new Promise((r) => gsap.delayedCall(scaled(storyInterlude.brightWorld), r));
     const remember = !this.forceOpening;
     this.forceOpening = false;
-    await this.playStory(['prologue'], remember, () => map.drainColour());
+    const spot = await this.playOpening(map);
+    if (remember) markStorySeen('prologue');
     if (this.deps.scenes.scene !== map) {
       hud.visible = true;
       this.inOpening = false;
       return;
     }
-    // The light comes to the middle, remembers the night its family left, and decides.
-    const spot = map.dreamSpot;
-    events.emit('spirit:glide', { x: spot.x, y: spot.y });
-    await map.playArrival(this.hue());
-    await new Promise<void>((done) => events.emit('spirit:say', { lines: ['They are out there, asleep in the six lands.', 'I will find every one of them.'], done }));
     // Nothing moves on until the player taps the light; then the map wakes.
-    await map.waitForLightTap();
+    await map.waitForLightTap(spot);
     events.emit('spirit:joy', { x: spot.x, y: spot.y });
     map.wakeUp();
     // The journey begins, and so does the map's music.
@@ -235,6 +229,21 @@ export class Game {
     await this.catchUp();
   }
 
+  // Plays the opening over the map; the companion light steps aside and then takes the
+  // little light's place. Resolves with where it stands.
+  private async playOpening(map: WorldMapScene): Promise<{ x: number; y: number }> {
+    events.emit('spirit:hide');
+    this.deps.audio.storyStart();
+    // Wait until the map is on screen and has measured itself.
+    while (map.centreScreen().x <= 0) await new Promise((r) => gsap.delayedCall(0.05, r));
+    const opening = new OpeningCinematic(map, this.hue(), this.deps.audio, this.width, this.height);
+    const spot = await opening.play();
+    events.emit('spirit:show', spot);
+    opening.destroy();
+    if (!this.holdingScore) this.deps.audio.storyEnd();
+    return spot;
+  }
+
   // Story a player has earned but missed plays once, on the map, before they carry on.
   private async catchUp(): Promise<void> {
     const missed = missedScenes(this.solved(), seenStory());
@@ -243,35 +252,34 @@ export class Game {
     this.showFamily(true);
   }
 
-  // The story so far, again, in order: the opening, then (on the map) its lights falling
-  // into the lands once more, then every later chapter reached.
+  // The story so far, again, in order: the opening over the map, then every later
+  // chapter reached.
   private async replay(ids: SceneId[]): Promise<void> {
     if (this.storyPlaying || this.inOpening) return;
-    // One score carries through the whole replay, the lights falling into the lands included.
+    // One score carries through the whole replay.
     this.holdingScore = true;
-    this.deps.audio.storyStart();
-    this.deps.audio.storyMood('harmony');
-    // The story is told over the map: go there first if the book was opened elsewhere.
+    this.inOpening = true;
+    // The opening is told over the map: go there first if the book was opened elsewhere.
     if (!(this.deps.scenes.scene instanceof WorldMapScene)) {
       this.showMap();
       await new Promise((r) => gsap.delayedCall(scaled(durations.sceneTransition) * 1.5, r));
     }
     const map = this.deps.scenes.scene;
-    const onMap = map instanceof WorldMapScene ? map : null;
-    // The world as it was, bright and singing, before the story begins.
-    if (onMap) {
-      this.inOpening = true;
-      await onMap.brighten();
-      await new Promise((r) => gsap.delayedCall(scaled(storyInterlude.brightWorld), r));
-      this.inOpening = false;
+    const hud = this.deps.hud;
+    if (map instanceof WorldMapScene) {
+      hud.visible = false;
+      await this.playOpening(map);
+      hud.visible = true;
     }
-    await this.playStory(['prologue'], false, onMap ? () => onMap.drainColour() : undefined);
-    if (onMap) await onMap.playArrival(this.hue());
+    this.inOpening = false;
     await this.playStory(ids.filter((id) => id !== 'prologue'), false);
     this.holdingScore = false;
     this.deps.audio.storyEnd();
-    // The lands the player has finished take their colour back.
-    if (onMap) await onMap.restoreColours();
+    // The map wakes again, and the lands the player has finished take their colour back.
+    if (map instanceof WorldMapScene && this.deps.scenes.scene === map) {
+      map.wakeUp();
+      await map.restoreColours();
+    }
   }
 
   // Test builds: the last land comes home, the ending plays, and the map shows the world
@@ -302,7 +310,7 @@ export class Game {
   }
 
   // Plays story scenes over the current screen; they are remembered as seen.
-  private async playStory(ids: SceneId[], remember = true, silence?: () => Promise<void>): Promise<void> {
+  private async playStory(ids: SceneId[], remember = true): Promise<void> {
     if (ids.length === 0 || this.storyPlaying) return;
     this.storyPlaying = true;
     if (remember) ids.forEach((id) => markStorySeen(id));
@@ -315,21 +323,7 @@ export class Game {
     stage.addChild(player);
     await player.fadedIn;
     resting.forEach((c) => (c.visible = false));
-    // When the Silence falls, the story steps aside and the map shows it: the colour drains.
-    const interlude = silence
-      ? {
-          after: 'silence' as const,
-          run: async () => {
-            resting.forEach((c) => (c.visible = true));
-            await gsap.to(player, { alpha: 0, duration: scaled(storyInterlude.fade) });
-            await silence();
-            await new Promise((r) => gsap.delayedCall(scaled(storyInterlude.hold), r));
-            await gsap.to(player, { alpha: 1, duration: scaled(storyInterlude.fade) });
-            resting.forEach((c) => (c.visible = false));
-          },
-        }
-      : undefined;
-    await player.play(ids, interlude);
+    await player.play(ids);
     resting.forEach((c) => (c.visible = true));
     if (!this.holdingScore) this.deps.audio.storyEnd();
     await player.fadeOut();

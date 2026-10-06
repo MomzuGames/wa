@@ -107,6 +107,7 @@ export class AudioEngine {
   // The story's score; while it plays, the scene's own music rests.
   private score: StoryScore | null = null;
   private storyOn = false;
+  private storyMoodNow: StoryMood = 'harmony'; // remembered, in case sound starts mid-story
 
   // Silence while the game is in the background (another app, the lock screen) and pick
   // up again on return; iOS may have interrupted the audio context in between.
@@ -211,7 +212,10 @@ export class AudioEngine {
     this.ambient = new Ambient(this.musicBus);
     if (this.ambientWanted) this.ambient.start();
     if (this.scene !== 'title' && this.scene !== 'quiet' && !this.storyOn) this.bedFor(this.scene).start();
-    if (this.storyOn) this.scoreFor().start();
+    if (this.storyOn) {
+      this.scoreFor().start();
+      this.scoreFor().setMood(this.storyMoodNow);
+    }
 
     this.uiVoice = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: 'sine' },
@@ -275,8 +279,15 @@ export class AudioEngine {
 
   // Each beat of the story turns the score toward its mood.
   storyMood(mood: StoryMood): void {
+    this.storyMoodNow = mood;
     if (!this.started) return;
     this.scoreFor().setMood(mood);
+  }
+
+  // The Silence falls in the opening: the score stops at once with a deep boom.
+  storyHush(): void {
+    if (!this.started) return;
+    this.scoreFor().hush();
   }
 
   // The story ends: the score fades and the scene's music comes back.

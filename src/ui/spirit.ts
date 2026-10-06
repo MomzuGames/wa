@@ -100,6 +100,8 @@ export class Spirit extends Container {
       yoyo: true,
       repeat: -1,
     });
+    events.on('spirit:hide', () => this.hide());
+    events.on('spirit:show', ({ x, y }) => this.show(x, y));
     events.on('spirit:glide', ({ x, y, duration, hop }) => (hop ? this.hop(x, y) : this.glideTo(x, y, duration)));
     events.on('spirit:orbit', ({ x, y, radius }) => this.startOrbit(x, y, radius));
     events.on('spirit:react', (r) => this.react(r));

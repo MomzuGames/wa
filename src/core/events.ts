@@ -5,6 +5,8 @@ export type SpiritReaction = 'move' | 'attempt' | 'solved' | 'hide' | 'show';
 
 export interface GameEvents {
   'settings:changed': Settings;
+  'spirit:hide': void; // the companion steps out of sight (the opening tells its own story)
+  'spirit:show': { x: number; y: number };
   'spirit:glide': { x: number; y: number; duration?: number; hop?: boolean };
   'spirit:orbit': { x: number; y: number; radius: number };
   // Roam a loop of places, pausing at each; the map and the level trail use this.
