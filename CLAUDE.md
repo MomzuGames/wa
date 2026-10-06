@@ -203,7 +203,7 @@ Quicksand, light weight, generous letter-spacing. It is used only for the title 
 - **Master chain:** gentle limiter at −12 dB ceiling, then a long soft reverb, then output.
   - No transients sharper than a 10 ms attack.
   - No sounds below about 60 Hz or harsh highs above about 8 kHz.
-- **Autoplay:** audio starts on the first user click (browser autoplay rule). The title screen's pulsing dot is that click.
+- **Autoplay:** in the **iPhone app** sound starts at launch with no tap (Capacitor's web view needs no gesture) and resumes by itself after the phone is unlocked. On the **website** it starts on the first tap (browser autoplay rule; the title's pulsing dot is that tap). Every region voice goes through `AudioEngine.guard`, so a frozen or failed audio clock can never break a move.
 - **Ambient bed:** a slow evolving drone on D and A, with filtered noise "air" and slow random filter drift. It must never loop audibly.
 - **Region voices:**
 

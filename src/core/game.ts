@@ -25,6 +25,7 @@ import { TitleScene } from '../scenes/title';
 import { WorldMapScene, type MapReveal } from '../map/worldMap';
 import { RegionScene } from '../map/regionScene';
 import { haptic } from './native';
+import { IS_APP } from '../config/platform';
 import { LevelShellScene, type LevelResult } from '../scenes/levelScene';
 
 export interface GameDeps {
@@ -47,9 +48,12 @@ export class Game {
     // The book icon: the story so far, from the beginning.
     events.on('story:book', () => void this.replay(earnedScenes(this.solved())));
     events.on('progress:changed', () => this.showFamily(!(this.deps.scenes.scene instanceof LevelShellScene)));
+    // The iPhone app may play sound at once: its web view needs no gesture for audio.
+    if (IS_APP) void deps.audio.start();
     // Browsers only allow audio after a gesture. iOS Safari accepts only a finished
     // tap (touchend/click) or a key, never touchstart/pointerdown, so listen to those
-    // and keep trying until the audio context is really running.
+    // and keep trying until the audio context is really running (in the app too, as a
+    // fallback should the first start not take).
     const types = ['touchend', 'click', 'keydown'];
     const unlock = () => {
       void deps.audio.start().then(() => {

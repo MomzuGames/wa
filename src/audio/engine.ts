@@ -6,6 +6,7 @@ import { createBed, type Bed } from './beds';
 import type { RegionId } from '../regions/types';
 import { note } from './scale';
 import { IS_APP } from '../config/platform';
+import { dlog } from '../core/debugLog';
 
 export const audioConfig = {
   limiterCeilingDb: -12,
@@ -101,11 +102,19 @@ export class AudioEngine {
 
   // Silence while the game is in the background (another app, the lock screen) and pick
   // up again on return; iOS may have interrupted the audio context in between.
+  private followingVisibility = false;
+
   private followVisibility(): void {
+    if (this.followingVisibility) return;
+    this.followingVisibility = true;
     document.addEventListener('visibilitychange', () => {
       const context = Tone.getContext().rawContext as AudioContext;
       if (document.hidden) void context.suspend().catch(() => undefined);
-      else void context.resume().catch(() => undefined);
+      else
+        void context
+          .resume()
+          .catch(() => undefined)
+          .then(() => dlog('audio-resume', { state: context.state }));
     });
     // iOS often refuses that resume until the player touches the screen: try again then.
     const retry = () => {
@@ -126,6 +135,7 @@ export class AudioEngine {
       this.starting = false;
       return;
     }
+    dlog('audio-start', { state: Tone.getContext().state, app: IS_APP });
     // Some browsers resolve start() without actually running; try again on the next gesture.
     if (Tone.getContext().state !== 'running') {
       this.starting = false;
