@@ -55,7 +55,7 @@ export function bakeRegion<T extends Bakeable>(
 
   const out: T[] = [];
   // The free levels.
-  for (let levelIndex = 0; levelIndex < progression.freeLevels; levelIndex++) {
+  for (let levelIndex = 0; levelIndex < progression.firstPart; levelIndex++) {
     if (kept[levelIndex]) out.push(kept[levelIndex]!);
     else if (handcrafted[levelIndex]) out.push(handcrafted[levelIndex]!());
     else {
@@ -69,12 +69,12 @@ export function bakeRegion<T extends Bakeable>(
   const from = Math.max(1, out[out.length - 1]!.difficulty);
   const to = Math.max(from * 1.5, finale.difficulty);
   // The levels in between, each aiming a step higher.
-  for (let levelIndex = progression.freeLevels; levelIndex < last; levelIndex++) {
+  for (let levelIndex = progression.firstPart; levelIndex < last; levelIndex++) {
     if (handcrafted[levelIndex]) {
       out.push(handcrafted[levelIndex]!());
       continue;
     }
-    const step = (levelIndex - (progression.freeLevels - 1)) / (last - (progression.freeLevels - 1));
+    const step = (levelIndex - (progression.firstPart - 1)) / (last - (progression.firstPart - 1));
     const target = from * Math.pow(to / from, step);
     const previous = out[out.length - 1]!.difficulty;
     const pool = candidatesFor(levelIndex, bakeStyle.rampCandidates, false);
@@ -88,7 +88,7 @@ export function bakeRegion<T extends Bakeable>(
   for (let c = 0; c < progression.chapters; c++) {
     const { start, end } = chapterRange(c);
     const slots: number[] = [];
-    for (let i = Math.max(start, progression.freeLevels); i < Math.min(end, last); i++) if (!handcrafted[i]) slots.push(i);
+    for (let i = Math.max(start, progression.firstPart); i < Math.min(end, last); i++) if (!handcrafted[i]) slots.push(i);
     const sorted = slots.map((i) => out[i]!).sort((a, b) => a.difficulty - b.difficulty);
     slots.forEach((i, k) => (out[i] = sorted[k]!));
   }

@@ -209,18 +209,6 @@ export function markIntroSeen(id: RegionId, lines: string[]): number {
   return first;
 }
 
-// ----- The full journey: unlocked once per device, for every light on it -----
-
-const UNLOCK_KEY = `${SAVE_KEY}.unlock`;
-
-export function isFullGame(): boolean {
-  return readJson<boolean>(UNLOCK_KEY, false) === true;
-}
-
-export function setFullGame(value: boolean): void {
-  writeJson(UNLOCK_KEY, value);
-}
-
 // Story scenes this light has watched.
 export function seenStory(): Set<string> {
   return new Set(load().seenStory ?? []);

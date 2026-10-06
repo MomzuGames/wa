@@ -3,7 +3,7 @@ import { SceneManager } from './sceneManager';
 import { events } from './events';
 import { devFlags } from './dev';
 import { createRng } from './rng';
-import { levelPlayable, paywalled, progression, setBypassLocks } from './progress';
+import { levelPlayable, progression, setBypassLocks } from './progress';
 import { currentProfile, getRegion, markStorySeen, seenStory } from './save';
 import { applyUpdateIfReady } from './updates';
 import type { RegionId, ShellContext } from '../regions/types';
@@ -68,7 +68,7 @@ export class Game {
     this.applyProfileTint();
     if (devFlags.enabled) {
       const params = new URLSearchParams(location.search);
-      // ?locks=1 keeps progress and the paywall in force, to test them in dev.
+      // ?locks=1 keeps progress locks in force, to test them in dev.
       setBypassLocks(!params.has('locks'));
       const trail = params.get('trail');
       if (trail && REGION_ORDER.includes(trail as RegionId)) {
@@ -182,8 +182,6 @@ export class Game {
       this.showLevel(regionId, next);
     } else {
       this.showRegion(regionId, levelIndex);
-      // The free part of this land is done: offer the rest of the journey, gently.
-      if (next < progression.levelsPerRegion && paywalled(next)) gsap.delayedCall(scaled(durations.sceneTransition) * 2, () => events.emit('unlock:ask'));
     }
   }
 

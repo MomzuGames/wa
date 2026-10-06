@@ -7,7 +7,7 @@ import { spiritStyle } from '../ui/spirit';
 import { alphas, palette } from '../design/palette';
 import { breathe, durations, easings, reducedMotion, scaled } from '../design/motion';
 import { createGlow } from '../fx/glow';
-import { earliestUnsolved, isChapterEnd, levelUnlocked, paywalled, progression } from '../core/progress';
+import { earliestUnsolved, isChapterEnd, levelUnlocked, progression } from '../core/progress';
 import { events } from '../core/events';
 import { Atmosphere } from '../fx/atmosphere';
 import { createRng } from '../core/rng';
@@ -40,8 +40,7 @@ const trailStyle = {
   whisperDelay: 1.4,
 } as const;
 
-// 'paid': part of the full journey, not unlocked yet; tapping it opens the unlock card.
-type NodeState = 'locked' | 'paid' | 'unlocked' | 'solved';
+type NodeState = 'locked' | 'unlocked' | 'solved';
 
 interface TrailNode {
   root: Container;
@@ -65,7 +64,6 @@ export class RegionScene implements Scene {
   private time = 0;
   private screen = { x: 1, y: 1 };
   private unsubscribe: () => void = () => {};
-  private unsubscribeUnlock: () => void = () => {};
   private sleeper: StoryLight | null = null;
   private chosen = -1;
 
@@ -124,7 +122,6 @@ export class RegionScene implements Scene {
       this.sleeper = sleeper;
       this.tweens.push(gsap.to(sleeper.body.scale, { x: 1.07, y: 1.07, duration: durations.breathe / 2, yoyo: true, repeat: -1, ease: easings.ambient }));
     }
-    this.unsubscribeUnlock = events.on('unlock:changed', () => this.refreshStates());
     // Levels brighten as the light passes over them.
     this.unsubscribe = events.on('spirit:at', ({ x, y }) => {
       this.nodes.forEach((node, i) => {
@@ -136,7 +133,6 @@ export class RegionScene implements Scene {
   }
 
   private stateOf(i: number): NodeState {
-    if (paywalled(i)) return 'paid';
     if (getRegion(this.regionId).solved.includes(i)) return 'solved';
     return levelUnlocked(this.regionId, i) ? 'unlocked' : 'locked';
   }
@@ -159,17 +155,6 @@ export class RegionScene implements Scene {
         node.label.alpha = alphas.hudIdle * 0.5;
         node.root.cursor = 'default';
         break;
-      case 'paid': {
-        // A small padlock in the stone: the full journey continues here.
-        const s = radius * 0.32;
-        disc.circle(0, 0, radius).fill({ color: palette.void }).stroke({ color: palette.dim, width: 1.5 });
-        disc.roundRect(-s, -s * 0.2, s * 2, s * 1.5, s * 0.3).stroke({ color: palette.pearl, width: 1.2, alpha: 0.55 });
-        disc.moveTo(-s * 0.6, -s * 0.2).arc(0, -s * 0.2, s * 0.6, Math.PI, 0).stroke({ color: palette.pearl, width: 1.2, alpha: 0.55 });
-        disc.filters = [];
-        node.label.alpha = alphas.hudIdle * 0.7;
-        node.root.cursor = 'pointer';
-        break;
-      }
       case 'unlocked':
         disc.circle(0, 0, radius).fill({ color: palette.void }).stroke({ color: this.accent, width: 1.5 });
         disc.filters = [];
@@ -202,7 +187,7 @@ export class RegionScene implements Scene {
     // Names and a soft pool of light follow the spirit along the trail.
     const k = Math.min(1, dt * 5);
     this.nodes.forEach((node, i) => {
-      if (node.state === 'locked' || node.state === 'paid') return;
+      if (node.state === 'locked') return;
       const lift = this.chosen === i ? 1 : node.near;
       node.label.alpha += (trailStyle.nameIdleAlpha + (trailStyle.nameNearAlpha - trailStyle.nameIdleAlpha) * lift - node.label.alpha) * k;
       node.glow.clear();
@@ -225,7 +210,7 @@ export class RegionScene implements Scene {
 
   enter(): void {
     // The light wanders the open part of the trail, starting from where the player stands.
-    const open = this.nodes.map((n, i) => (n.state === 'locked' || n.state === 'paid' ? -1 : i)).filter((i) => i >= 0);
+    const open = this.nodes.map((n, i) => (n.state === 'locked' ? -1 : i)).filter((i) => i >= 0);
     const points = open.map((i) => this.spiritSpot(i));
     const start = Math.max(0, open.indexOf(this.currentNode()));
     events.emit('spirit:tour', { points, pause: trailStyle.tourPause, start });
@@ -272,16 +257,12 @@ export class RegionScene implements Scene {
 
   private hover(i: number, over: boolean): void {
     const node = this.nodes[i]!;
-    if (node.state === 'locked' || node.state === 'paid') return;
+    if (node.state === 'locked') return;
     gsap.to(node.root, { alpha: over ? 1 : 0.85, duration: durations.hudHover });
   }
 
   // Choosing a level: its name lights fully and the light leaps into its stone.
   private press(i: number): void {
-    if (this.nodes[i]!.state === 'paid') {
-      events.emit('unlock:ask');
-      return;
-    }
     if (this.nodes[i]!.state === 'locked' || this.chosen >= 0) return;
     this.chosen = i;
     const p = this.points[i]!;
@@ -326,7 +307,6 @@ export class RegionScene implements Scene {
 
   destroy(): void {
     this.unsubscribe();
-    this.unsubscribeUnlock();
     this.tweens.forEach((t) => t.kill());
     this.atmosphere.destroy();
     this.container.destroy({ children: true });

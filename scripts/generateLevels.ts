@@ -30,7 +30,7 @@ for (const region of regions) {
   if (only && region.id !== only) continue;
   const started = Date.now();
   const file0 = resolve('src/regions', region.id, 'levels.json');
-  if (keepFree && existsSync(file0)) freezeLevels(region.id, JSON.parse(readFileSync(file0, 'utf8')).slice(0, progression.freeLevels));
+  if (keepFree && existsSync(file0)) freezeLevels(region.id, JSON.parse(readFileSync(file0, 'utf8')).slice(0, progression.firstPart));
   const levels = region.bake();
   const file = resolve('src/regions', region.id, 'levels.json');
   writeFileSync(file, JSON.stringify(levels));

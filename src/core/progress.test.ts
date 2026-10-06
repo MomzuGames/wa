@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chapterOf, earliestUnsolved, isChapterEnd, isLevelUnlocked, isRegionComplete, isRegionUnlocked, isPaidLevel, progression } from './progress';
+import { chapterOf, earliestUnsolved, isChapterEnd, isLevelUnlocked, isRegionComplete, isRegionUnlocked, progression } from './progress';
 
 describe('level unlocking', () => {
   it('unlocks the first level and two ahead of the earliest unsolved', () => {
@@ -46,10 +46,13 @@ describe('region unlocking', () => {
   });
 });
 
-describe('free and paid levels', () => {
-  it('keeps 40% of the game free: the first four levels of every land', () => {
-    const free = Array.from({ length: progression.levelsPerRegion }, (_, i) => i).filter((i) => !isPaidLevel(i));
-    expect(free).toEqual([0, 1, 2, 3]);
-    expect((free.length * 6) / (progression.levelsPerRegion * 6)).toBeCloseTo(0.4);
+describe('a completely free game', () => {
+  it('opens every level by progress alone: no level is held back', () => {
+    // Solving every level in order reaches the very last one of a land.
+    const solved: number[] = [];
+    for (let i = 0; i < progression.levelsPerRegion; i++) {
+      expect(isLevelUnlocked(solved, i)).toBe(true);
+      solved.push(i);
+    }
   });
 });

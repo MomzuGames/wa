@@ -1,8 +1,7 @@
-import { createProfile, currentProfile, isFullGame, deleteProfile, exportBackup, importBackup, listProfiles, selectProfile, type Profile, type ProfileColor } from '../core/save';
+import { createProfile, currentProfile, deleteProfile, exportBackup, importBackup, listProfiles, selectProfile, type Profile, type ProfileColor } from '../core/save';
 import { cssHex } from '../design/palette';
 import { installLink } from '../core/install';
 import { IS_APP } from '../config/platform';
-import { STORE, relock } from '../core/store';
 import { LIGHT_COLORS } from '../story/family';
 
 // The one piece of DOM in the game: choosing which light you are. Each light is a
@@ -120,16 +119,6 @@ export class ProfileOverlay {
     // The app is shared through the App Store, not a web link.
     links.append(backup, restore);
     if (!IS_APP) links.append(share);
-    // Testing the unlock in the app before real purchases exist: put the lock back.
-    if (STORE === 'test' && isFullGame()) {
-      const relockLink = document.createElement('a');
-      relockLink.textContent = 'Lock the journey again (test)';
-      relockLink.addEventListener('click', () => {
-        relock();
-        this.renderList();
-      });
-      links.append(relockLink);
-    }
     card.appendChild(links);
   }
 

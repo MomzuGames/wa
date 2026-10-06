@@ -5,9 +5,9 @@ import type { SceneId } from './script';
 
 export type Solved = Record<RegionId, readonly number[]>;
 
-// A land's free part (its first levels) is done.
-export function freeDone(solved: readonly number[]): boolean {
-  return Array.from({ length: progression.freeLevels }, (_, i) => i).every((i) => solved.includes(i));
+// A land's first part (its first levels) is done: its sleeping light is found.
+export function firstPartDone(solved: readonly number[]): boolean {
+  return Array.from({ length: progression.firstPart }, (_, i) => i).every((i) => solved.includes(i));
 }
 
 export function landDone(solved: readonly number[]): boolean {
@@ -17,8 +17,8 @@ export function landDone(solved: readonly number[]): boolean {
 // Every scene the player has earned so far, in story order.
 export function earnedScenes(solved: Solved): SceneId[] {
   const out: SceneId[] = ['prologue'];
-  for (const id of REGION_ORDER) if (freeDone(solved[id])) out.push(`asleep:${id}`);
-  if (REGION_ORDER.every((id) => freeDone(solved[id]))) out.push('waiting');
+  for (const id of REGION_ORDER) if (firstPartDone(solved[id])) out.push(`asleep:${id}`);
+  if (REGION_ORDER.every((id) => firstPartDone(solved[id]))) out.push('waiting');
   for (const id of REGION_ORDER) if (landDone(solved[id])) out.push(`home:${id}`);
   if (REGION_ORDER.every((id) => landDone(solved[id]))) out.push('finale');
   return out;

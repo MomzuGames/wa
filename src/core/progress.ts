@@ -1,4 +1,4 @@
-import { getRegion, isFullGame, persist } from './save';
+import { getRegion, persist } from './save';
 import { events } from './events';
 import type { RegionId } from '../regions/types';
 import { REGION_ORDER } from '../regions/catalog';
@@ -11,7 +11,7 @@ export const progression = {
   chapterStarts: [0, 3, 6, 8] as const,
   lookahead: 2,
   // The free part of every region: chapter 1 and the first level of chapter 2 (24 of 60).
-  freeLevels: 4,
+  firstPart: 4, // a land's first levels: the story's halfway mark, and the bake's settled levels
   unlockNextAt: 8,
 } as const;
 
@@ -74,19 +74,9 @@ export function levelUnlocked(id: RegionId, levelIndex: number): boolean {
   return isLevelUnlocked(getRegion(id).solved, levelIndex);
 }
 
-// Levels past the free part belong to the full journey.
-export function isPaidLevel(levelIndex: number): boolean {
-  return levelIndex >= progression.freeLevels;
-}
-
-// A paid level the full journey has not unlocked yet (never in dev mode).
-export function paywalled(levelIndex: number): boolean {
-  return !bypassLocks && isPaidLevel(levelIndex) && !isFullGame();
-}
-
-// Whether a level can be opened right now: reached by progress, and free or unlocked.
+// Whether a level can be opened right now: the whole game is free, so only progress decides.
 export function levelPlayable(id: RegionId, levelIndex: number): boolean {
-  return levelUnlocked(id, levelIndex) && !paywalled(levelIndex);
+  return levelUnlocked(id, levelIndex);
 }
 
 // Returns true when this solve completed the region.

@@ -36,8 +36,6 @@ export interface GameEvents {
   // A hint would likely help now: the bulb glows (false when a level starts fresh).
   'hint:ready': boolean;
   // A paid level was chosen: open the unlock card. And: the full journey was unlocked or locked again.
-  'unlock:ask': void;
-  'unlock:changed': void;
   // The book icon: replay the story so far.
   'story:book': void;
   // A situational tip from a region (a refused star, a stroke let go too soon); shown once ever.
