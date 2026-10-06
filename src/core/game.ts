@@ -119,10 +119,11 @@ export class Game {
     this.deps.hud.setBackVisible(true);
     this.deps.hud.setLevelButtons(null);
     this.deps.hud.setAccountButton(() => this.deps.openAccount());
-    this.deps.audio.setScene('map');
-    this.showFamily(true);
-    // A new light's journey opens with the story of how it began; the map waits, dreaming.
+    // A new light's journey opens with the story of how it began; the map waits, dreaming,
+    // and stays hushed (the world is quiet) until the light decides to set out.
     const opening = !reveal && !seenStory().has('prologue') && !this.previewingStory;
+    this.deps.audio.setScene(opening ? 'quiet' : 'map');
+    this.showFamily(true);
     const map = new WorldMapScene((id) => this.showRegion(id), reveal, opening);
     void this.deps.scenes.go(map);
     if (opening) void this.openJourney(map);
@@ -207,6 +208,8 @@ export class Game {
     await map.waitForLightTap();
     events.emit('spirit:joy', { x: spot.x, y: spot.y });
     map.wakeUp();
+    // The journey begins, and so does the map's music.
+    this.deps.audio.setScene('map');
     this.inOpening = false;
     hud.alpha = 0;
     hud.visible = true;

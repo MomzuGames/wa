@@ -18,6 +18,7 @@ interface Mood {
   pace: number; // seconds per tune note
   harp: boolean; // a harp rises through each new chord
   boom: boolean; // a soft low drum as the beat begins
+  soft?: number; // 0..1: how loud the tune is (1 when left out)
 }
 
 const MOODS: Record<StoryMood, Mood> = {
@@ -31,8 +32,8 @@ const MOODS: Record<StoryMood, Mood> = {
   sleeping: { chords: [[0, 2, 3], [4, 5, 7], [3, 5, 6], [0, 2, 3]], bright: 1100, level: 0.55, drone: 0.6, tune: [7, 5, 6, 5, 3, 2, 3], pace: 1.25, harp: false, boom: false },
   // The smallest asleep on the shore: almost nothing, a few far notes.
   shore: { chords: [[0, 3], [1, 3]], bright: 800, level: 0.4, drone: 0.5, tune: [7, 9, 8], pace: 1.8, harp: false, boom: false },
-  // It wakes: the light opens, the tune climbs.
-  wake: { chords: [[0, 3, 5], [1, 3, 4], [0, 2, 3, 5]], bright: 1700, level: 0.6, drone: 0.4, tune: [5, 7, 9, 10, 9], pace: 0.9, harp: true, boom: false },
+  // It wakes, and the world is quiet: the music all but gone, a held breath and a far note.
+  wake: { chords: [[0, 3]], bright: 450, level: 0.12, drone: 0.15, tune: [7, 9], pace: 3.2, harp: false, boom: false, soft: 0.22 },
   // Someone sleeping in a land: the lullaby, a touch more distant.
   asleep: { chords: [[0, 2, 3], [4, 5, 7]], bright: 1000, level: 0.5, drone: 0.6, tune: [7, 5, 6, 5, 3], pace: 1.3, harp: false, boom: false },
   // All still here, waiting: suspended chords that do not resolve.
@@ -168,7 +169,7 @@ export class StoryScore {
     // The breath: air swells and falls as the beat turns.
     this.airLevel.gain.cancelScheduledValues(now);
     this.airLevel.gain.setValueAtTime(this.airLevel.gain.value, now);
-    this.airLevel.gain.linearRampToValueAtTime(0.5, now + 1.2);
+    this.airLevel.gain.linearRampToValueAtTime(0.5 * Math.min(1, m.level * 1.5), now + 1.2);
     this.airLevel.gain.linearRampToValueAtTime(0.06, now + 3.5);
     this.airFilter.frequency.cancelScheduledValues(now);
     this.airFilter.frequency.setValueAtTime(500, now);
@@ -199,7 +200,7 @@ export class StoryScore {
       if (m.tune && now + scoreConfig.ahead >= this.nextNote) {
         const at = Math.max(now, this.nextNote);
         const degree = m.tune[this.tuneAt % m.tune.length]!;
-        this.celesta.triggerAttackRelease(note(degree, 4), m.pace * 1.6, at, 0.4 + Math.random() * 0.15);
+        this.celesta.triggerAttackRelease(note(degree, 4), m.pace * 1.6, at, (0.4 + Math.random() * 0.15) * (m.soft ?? 1));
         this.tuneAt++;
         // Breathe at the end of each phrase.
         const phraseEnd = this.tuneAt % m.tune.length === 0;
