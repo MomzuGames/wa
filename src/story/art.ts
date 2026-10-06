@@ -568,6 +568,252 @@ function together(size: number, hue: PaletteToken): Vignette {
   return { root, dispose: () => t.killAll() };
 }
 
+// ----- the ending: the six fly home from their lands to the little one -----
+
+function returning(size: number, hue: PaletteToken): Vignette {
+  const FAMILY = familyColors(hue);
+  const t = new Tweens();
+  const root = new Container();
+  const ripples = new Graphics();
+  root.addChild(ripples);
+  const lands = ring(6, size * 0.46);
+  const gather = ring(6, size * 0.2);
+  REGION_ORDER.forEach((region, i) => {
+    const glyph = landGlyph(region, size * 0.07);
+    glyph.position.set(lands[i]!.x, lands[i]!.y);
+    glyph.alpha = 0.5;
+    root.addChild(glyph);
+  });
+  const me = new StoryLight(hue, size * 0.045 * LITTLE, false, true);
+  root.addChild(me);
+  const rings: Array<{ p: number; color: number }> = [];
+  t.add(
+    gsap.to({}, {
+      duration: 1,
+      repeat: -1,
+      onUpdate: () => {
+        ripples.clear();
+        for (const r of rings) ripples.circle(0, 0, size * (0.06 + r.p * 0.3)).stroke({ color: r.color, width: 1.4, alpha: 0.55 * (1 - r.p) });
+      },
+    }),
+  );
+  FAMILY.forEach((token, i) => {
+    const light = new StoryLight(token, size * 0.04, true);
+    light.position.set(lands[i]!.x, lands[i]!.y);
+    light.alpha = 0.5;
+    light.scale.set(0.7);
+    root.addChild(light);
+    const delay = 0.5 + i * 0.7;
+    t.add(gsap.delayedCall(delay, () => light.wake()));
+    t.add(gsap.to(light, { alpha: 1, duration: 0.4, delay }));
+    t.add(gsap.to(light.scale, { x: 1, y: 1, duration: 1.2, delay, ease: 'sine.out' }));
+    // Home in a gentle curve, not a straight line.
+    const path = { u: 0 };
+    const from = lands[i]!;
+    const to = gather[i]!;
+    const bend = { x: (from.x + to.x) / 2 - from.y * 0.35, y: (from.y + to.y) / 2 + from.x * 0.35 };
+    t.add(
+      gsap.to(path, {
+        u: 1,
+        duration: 1.3,
+        delay: delay + 0.2,
+        ease: 'sine.inOut',
+        onUpdate: () => {
+          const u = path.u;
+          light.position.set((1 - u) * (1 - u) * from.x + 2 * (1 - u) * u * bend.x + u * u * to.x, (1 - u) * (1 - u) * from.y + 2 * (1 - u) * u * bend.y + u * u * to.y);
+        },
+        onStart: () => me.face?.lookAt(Math.sign(from.x) || 0.01, Math.max(-1, Math.min(1, from.y / (size * 0.3)))),
+        onComplete: () => {
+          const r = { p: 0, color: palette[token] };
+          rings.push(r);
+          t.add(gsap.to(r, { p: 1, duration: 1.4, ease: 'power1.out', onComplete: () => rings.splice(rings.indexOf(r), 1) }));
+          t.add(gsap.to(me.body, { y: -size * 0.03, duration: 0.2, yoyo: true, repeat: 1, ease: 'sine.out' }));
+          light.face?.squint(0.6);
+        },
+      }),
+    );
+  });
+  t.add(gsap.delayedCall(0.5 + 6 * 0.7 + 1.6, () => me.face?.squint(1.2)));
+  return { root, dispose: () => t.killAll() };
+}
+
+// ----- the Silence lifts, and every land fills with colour again -----
+
+function lifting(size: number, hue: PaletteToken): Vignette {
+  const FAMILY = familyColors(hue);
+  const t = new Tweens();
+  const root = new Container();
+  const lands = ring(6, size * 0.4);
+  const blooms = new Graphics();
+  root.addChild(blooms);
+  const glyphs = REGION_ORDER.map((region, i) => {
+    const glyph = landGlyph(region, size * 0.09);
+    glyph.position.set(lands[i]!.x, lands[i]!.y);
+    glyph.alpha = 0.15;
+    root.addChild(glyph);
+    return glyph;
+  });
+  // The family, small and close, in the middle.
+  const family = ring(6, size * 0.09).map((p, i) => {
+    const light = new StoryLight(FAMILY[i]!, size * 0.026, false);
+    light.position.set(p.x, p.y);
+    root.addChild(light);
+    return light;
+  });
+  const me = new StoryLight(hue, size * 0.026 * LITTLE, false, true);
+  root.addChild(me);
+  // The Silence: dark mist over everything, breaking up and drifting away.
+  const rng = createRng('story:mist');
+  const mist = Array.from({ length: 16 }, () => {
+    const g = new Graphics().circle(0, 0, size * (0.12 + rng.next() * 0.1)).fill({ color: palette.void, alpha: 0.75 });
+    g.position.set((rng.next() - 0.5) * size, (rng.next() - 0.5) * size * 0.8);
+    root.addChild(g);
+    return g;
+  });
+  mist.forEach((g, k) => {
+    const away = Math.atan2(g.y, g.x || 0.01);
+    t.add(gsap.to(g, { x: g.x + Math.cos(away) * size * 0.5, y: g.y + Math.sin(away) * size * 0.4, alpha: 0, duration: 3, delay: 0.4 + k * 0.08, ease: 'power1.in' }));
+  });
+  // One land after another blooms into its colour.
+  const bloom = lands.map(() => ({ p: 0 }));
+  t.add(
+    gsap.to({}, {
+      duration: 1,
+      repeat: -1,
+      onUpdate: () => {
+        blooms.clear();
+        lands.forEach((p, i) => {
+          const b = bloom[i]!.p;
+          if (b <= 0) return;
+          const color = palette[REGION_ACCENT[REGION_ORDER[i]!]];
+          blooms.circle(p.x, p.y, size * 0.13 * b).fill({ color, alpha: 0.12 * b });
+          blooms.circle(p.x, p.y, size * (0.05 + 0.18 * ((b * 1.5) % 1))).stroke({ color, width: 1.2, alpha: 0.4 * (1 - ((b * 1.5) % 1)) });
+        });
+      },
+    }),
+  );
+  glyphs.forEach((glyph, i) => {
+    const delay = 1.2 + i * 0.45;
+    t.add(gsap.to(glyph, { alpha: 1, duration: 0.8, delay }));
+    t.add(gsap.to(glyph.scale, { x: 1.2, y: 1.2, duration: 0.5, delay, yoyo: true, repeat: 1, ease: 'sine.out' }));
+    t.add(gsap.to(bloom[i]!, { p: 1, duration: 1.4, delay, ease: 'sine.out' }));
+  });
+  t.add(gsap.delayedCall(1.4, () => [me, ...family].forEach((l) => l.face?.lookAt(0, -1))));
+  t.add(gsap.delayedCall(4.4, () => [me, ...family].forEach((l) => l.face?.squint(1))));
+  return { root, dispose: () => t.killAll() };
+}
+
+// ----- all seven sing, the little one at the heart -----
+
+function chorus(size: number, hue: PaletteToken): Vignette {
+  const FAMILY = familyColors(hue);
+  const t = new Tweens();
+  const root = new Container();
+  const song = new Graphics();
+  const sparks = new Graphics();
+  root.addChild(song, sparks);
+  const spots = ring(6, size * 0.27);
+  const family = FAMILY.map((token, i) => {
+    const light = new StoryLight(token, size * 0.042, false);
+    light.position.set(spots[i]!.x, spots[i]!.y);
+    root.addChild(light);
+    t.add(gsap.to(light.body.scale, { x: 1.2, y: 1.2, duration: 0.4, yoyo: true, repeat: -1, repeatDelay: 1.6, delay: i * 0.33, ease: 'sine.inOut' }));
+    return light;
+  });
+  const me = new StoryLight(hue, size * 0.042 * LITTLE, false, true);
+  root.addChild(me);
+  t.add(gsap.to(me.body.scale, { x: 1.3, y: 1.3, duration: 0.5, yoyo: true, repeat: -1, ease: 'sine.inOut' }));
+  // Song spreads from the little light, and sparks of every colour rise from all seven.
+  const rng = createRng('story:chorus');
+  const motes = Array.from({ length: 28 }, (_, k) => ({ from: k % 7, phase: rng.next(), drift: (rng.next() - 0.5) * size * 0.08 }));
+  const clock = { s: 0 };
+  t.add(
+    gsap.to(clock, {
+      s: 1000,
+      duration: 1000,
+      ease: 'none',
+      onUpdate: () => {
+        song.clear();
+        for (let k = 0; k < 3; k++) {
+          const q = (clock.s / 1.8 + k / 3) % 1;
+          song.circle(0, 0, size * (0.05 + q * 0.45)).stroke({ color: palette[hue], width: 1.3, alpha: 0.4 * (1 - q) });
+        }
+        sparks.clear();
+        for (const m of motes) {
+          const q = (clock.s / 2.6 + m.phase) % 1;
+          const origin = m.from === 6 ? { x: 0, y: 0 } : spots[m.from]!;
+          const color = palette[m.from === 6 ? hue : FAMILY[m.from]!];
+          sparks.circle(origin.x + m.drift * q + Math.sin(q * 6 + m.phase * 9) * 4, origin.y - q * size * 0.3, 2 * (1 - q) + 0.6).fill({ color, alpha: 0.85 * (1 - q) });
+        }
+      },
+    }),
+  );
+  t.add(gsap.delayedCall(0.8, () => [me, ...family].forEach((l) => l.face?.squint(1.5))));
+  return { root, dispose: () => t.killAll() };
+}
+
+// ----- the seven rise into the night sky as one constellation -----
+
+function ending(size: number, hue: PaletteToken): Vignette {
+  const FAMILY = familyColors(hue);
+  const t = new Tweens();
+  const root = new Container();
+  const sky = new Graphics();
+  const lines = new Graphics();
+  root.addChild(sky, lines);
+  const rng = createRng('story:ending');
+  const stars = Array.from({ length: 40 }, () => ({ x: (rng.next() - 0.5) * size * 1.2, y: (rng.next() - 0.5) * size, p: rng.next() }));
+  // The family's constellation: the little one at its heart, six around it.
+  const spots = ring(6, size * 0.2).map((p) => ({ x: p.x, y: p.y - size * 0.1 }));
+  const heart = { x: 0, y: -size * 0.1 };
+  const lights = FAMILY.map((token, i) => {
+    const light = new StoryLight(token, size * 0.032, false);
+    light.position.set(spots[i]!.x * 1.6, size * 0.4);
+    light.alpha = 0;
+    root.addChild(light);
+    t.add(gsap.to(light, { alpha: 1, duration: 0.6, delay: 0.2 + i * 0.12 }));
+    t.add(gsap.to(light, { x: spots[i]!.x, y: spots[i]!.y, duration: 2.4, delay: 0.2 + i * 0.12, ease: 'sine.inOut' }));
+    return light;
+  });
+  const me = new StoryLight(hue, size * 0.032 * LITTLE, false, true);
+  me.position.set(0, size * 0.4);
+  root.addChild(me);
+  t.add(gsap.to(me, { x: heart.x, y: heart.y, duration: 2.6, ease: 'sine.inOut' }));
+  // Lines join them, one by one, once they have settled.
+  const drawn = { n: 0 };
+  t.add(
+    gsap.to(drawn, {
+      n: 12,
+      duration: 3,
+      delay: 2.8,
+      ease: 'none',
+      onUpdate: () => {
+        lines.clear();
+        const segs: Array<[{ x: number; y: number }, { x: number; y: number }]> = [];
+        spots.forEach((p, i) => segs.push([p, spots[(i + 1) % 6]!]));
+        spots.forEach((p) => segs.push([heart, p]));
+        segs.slice(0, Math.floor(drawn.n)).forEach(([a, b]) => lines.moveTo(a.x, a.y).lineTo(b.x, b.y));
+        lines.stroke({ color: palette.pearl, width: 1, alpha: 0.35 });
+      },
+    }),
+  );
+  const clock = { s: 0 };
+  t.add(
+    gsap.to(clock, {
+      s: 1000,
+      duration: 1000,
+      ease: 'none',
+      onUpdate: () => {
+        sky.clear();
+        for (const st of stars) sky.circle(st.x, st.y, 1.2).fill({ color: palette.pearl, alpha: 0.15 + 0.35 * (0.5 + 0.5 * Math.sin(clock.s * 1.3 + st.p * 20)) });
+      },
+    }),
+  );
+  t.add(gsap.delayedCall(3, () => [me, ...lights].forEach((l) => l.face?.squint(2))));
+  t.add(gsap.to(root, { y: -size * 0.04, duration: 6, ease: 'sine.inOut' }));
+  return { root, dispose: () => t.killAll() };
+}
+
 export function buildArt(art: Art, size: number, hue: PaletteToken): Vignette {
   let v: Vignette;
   switch (art.kind) {
@@ -600,6 +846,18 @@ export function buildArt(art: Art, size: number, hue: PaletteToken): Vignette {
       break;
     case 'together':
       v = together(size, hue);
+      break;
+    case 'returning':
+      v = returning(size, hue);
+      break;
+    case 'lifting':
+      v = lifting(size, hue);
+      break;
+    case 'chorus':
+      v = chorus(size, hue);
+      break;
+    case 'ending':
+      v = ending(size, hue);
       break;
   }
   return {

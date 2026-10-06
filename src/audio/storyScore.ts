@@ -7,7 +7,7 @@ import { note } from './scale';
 // The Silence darkens and hushes it; departures, homecomings and the finale lift it. Every
 // note is from the pentatonic scale, every attack is soft, and nothing loops audibly.
 
-export type StoryMood = 'harmony' | 'silence' | 'depart' | 'sleeping' | 'shore' | 'wake' | 'asleep' | 'waiting' | 'home' | 'together' | 'finale';
+export type StoryMood = 'harmony' | 'silence' | 'depart' | 'sleeping' | 'shore' | 'wake' | 'asleep' | 'waiting' | 'home' | 'together' | 'finale' | 'returning' | 'lifting' | 'chorus' | 'ending';
 
 interface Mood {
   chords: number[][]; // pentatonic degrees from D3 (5 is the D above)
@@ -42,6 +42,14 @@ const MOODS: Record<StoryMood, Mood> = {
   home: { chords: [[3, 5, 6], [4, 5, 7], [0, 2, 3, 5]], bright: 2100, level: 0.8, drone: 0.5, tune: [5, 7, 9, 12, 10, 9], pace: 0.75, harp: true, boom: true },
   // The family together again.
   together: { chords: [[0, 2, 3, 5], [4, 5, 7, 9], [3, 5, 6, 8], [0, 2, 3, 5]], bright: 2400, level: 0.9, drone: 0.6, tune: [7, 9, 10, 9, 7, 5, 7], pace: 0.85, harp: true, boom: true },
+  // The ending begins: the lights come home one by one, the tune climbing with each.
+  returning: { chords: [[0, 2, 3], [1, 3, 4], [3, 5, 6], [4, 5, 7, 9]], bright: 1900, level: 0.75, drone: 0.5, tune: [5, 7, 9, 7, 9, 10, 12], pace: 0.7, harp: true, boom: false },
+  // The Silence lifts: a deep drum, then the light opens wide.
+  lifting: { chords: [[0, 3, 5], [3, 5, 7], [4, 5, 7, 9], [0, 2, 3, 5, 7]], bright: 2600, level: 0.9, drone: 0.8, tune: [7, 9, 10, 12, 10, 9], pace: 0.8, harp: true, boom: true },
+  // All seven sing: the family's theme, bright and full.
+  chorus: { chords: [[0, 2, 3, 5], [4, 5, 7, 9], [3, 5, 6, 8], [0, 2, 3, 5]], bright: 2700, level: 0.95, drone: 0.6, tune: [7, 6, 5, 3, 5, 7, 9, 7], pace: 0.6, harp: true, boom: false },
+  // Never alone again: the theme settles, warm and resolved, among the stars.
+  ending: { chords: [[0, 2, 3, 5], [3, 5, 6], [4, 5, 7], [0, 2, 3, 5, 7]], bright: 1800, level: 0.7, drone: 0.5, tune: [7, 5, 6, 5, 3, 2, 0], pace: 1.2, harp: true, boom: false },
   // The whole world sings: the family's theme at its fullest.
   finale: { chords: [[0, 2, 3, 5, 7], [4, 5, 7, 9], [3, 5, 6, 8, 10], [0, 2, 3, 5, 7]], bright: 2800, level: 1, drone: 0.7, tune: [7, 6, 5, 3, 5, 7, 9, 10], pace: 0.8, harp: true, boom: true },
 };

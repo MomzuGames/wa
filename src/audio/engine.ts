@@ -5,7 +5,7 @@ import { Ambient } from './ambient';
 import { createBed, type Bed } from './beds';
 import { StoryScore, type StoryMood } from './storyScore';
 
-export type MusicScene = 'title' | 'map' | 'quiet' | RegionId;
+export type MusicScene = 'title' | 'map' | 'celebration' | 'quiet' | RegionId;
 import type { RegionId } from '../regions/types';
 import { note } from './scale';
 import { IS_APP } from '../config/platform';
@@ -103,7 +103,7 @@ export class AudioEngine {
 
   private ambientWanted = false;
   private scene: MusicScene = 'quiet';
-  private beds = new Map<RegionId | 'map', Bed>();
+  private beds = new Map<RegionId | 'map' | 'celebration', Bed>();
   // The story's score; while it plays, the scene's own music rests.
   private score: StoryScore | null = null;
   private storyOn = false;
@@ -236,7 +236,7 @@ export class AudioEngine {
     else this.ambient.stop();
   }
 
-  private bedFor(id: RegionId | 'map'): Bed {
+  private bedFor(id: RegionId | 'map' | 'celebration'): Bed {
     let bed = this.beds.get(id);
     if (!bed) {
       bed = createBed(id, this.musicBus);

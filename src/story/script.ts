@@ -18,7 +18,11 @@ export type Art =
   | { kind: 'asleep'; region: RegionId } // a family light sleeping in a land
   | { kind: 'waiting' } // six sleeping lights around the little one
   | { kind: 'home'; region: RegionId } // a family light wakes and joins
-  | { kind: 'together' }; // the whole family circling together
+  | { kind: 'together' } // the whole family circling together
+  | { kind: 'returning' } // the six fly home from their lands to the little one
+  | { kind: 'lifting' } // the Silence lifts and every land fills with colour again
+  | { kind: 'chorus' } // all seven sing, the little one at the heart
+  | { kind: 'ending' }; // the seven rise into the night sky as one constellation
 
 export interface Beat {
   line: string;
@@ -59,8 +63,12 @@ export function scene(id: SceneId): Beat[] {
   if (id === 'waiting') return [{ line: 'They are all still here, waiting to be woken.', art: { kind: 'waiting' } }];
   if (id === 'finale') {
     return [
+      { line: 'One by one, the lights came home.', art: { kind: 'returning' } },
       { line: 'At last, the whole family was together.', art: { kind: 'together' } },
+      { line: 'The Silence lifted, and colour came back to every land.', art: { kind: 'lifting' } },
+      { line: 'Then all seven sang, the smallest one too.', art: { kind: 'chorus' } },
       { line: 'Together again, the whole world sang.', art: { kind: 'harmony', finale: true } },
+      { line: 'And the little light was never alone again.', art: { kind: 'ending' } },
     ];
   }
   const [kind, region] = id.split(':') as ['asleep' | 'home', RegionId];

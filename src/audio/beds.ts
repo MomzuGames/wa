@@ -358,10 +358,94 @@ function map(destination: Tone.ToneAudioNode): Bed {
   return finish(p);
 }
 
-export function createBed(id: RegionId | 'map', destination: Tone.ToneAudioNode): Bed {
+// The world, every land in tune again: the journey theme in full swing, upbeat yet serene.
+// A soft bass walks under warm open chords, a gentle shaker and wood keep an easy pulse,
+// and the family's tune passes from land to land, each phrase on one land's own voice
+// (marimba, celesta, kalimba, glass, electric piano, koto), with a high bell now and then.
+function celebration(destination: Tone.ToneAudioNode): Bed {
+  const p = frame(destination);
+  const eighth = 0.36; // seconds: an unhurried, lilting pulse
+  const pad = new Tone.PolySynth(Tone.AMSynth, {
+    harmonicity: 1.5,
+    oscillator: { type: 'sine' },
+    modulation: { type: 'sine' },
+    envelope: { attack: 1.5, decay: 1.5, sustain: 0.6, release: 4 },
+    volume: -23,
+  });
+  const padFilter = new Tone.Filter({ type: 'lowpass', frequency: 1700, Q: 0.4 }).connect(p.out);
+  pad.connect(padFilter);
+  const echo = new Tone.FeedbackDelay({ delayTime: eighth * 3, feedback: 0.25, wet: 0.22 }).connect(p.out);
+  // Chords (degrees from octave 3) and their bass roots, one per bar of eight eighths.
+  const bars = [
+    { chord: [0, 2, 3, 5], root: note(0, 2) },
+    { chord: [4, 5, 7, 9], root: note(4, 2) },
+    { chord: [3, 5, 6, 8], root: note(3, 2) },
+    { chord: [1, 3, 4, 6], root: note(1, 2) },
+  ];
+  const bass = new Tone.MonoSynth({
+    oscillator: { type: 'triangle' },
+    filter: { Q: 1, type: 'lowpass', rolloff: -24 },
+    envelope: { attack: 0.02, decay: 0.4, sustain: 0.4, release: 0.8 },
+    filterEnvelope: { attack: 0.02, decay: 0.3, sustain: 0.3, release: 0.6, baseFrequency: 180, octaves: 2 },
+    volume: -17,
+  }).connect(p.out);
+  const shaker = new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.012, decay: 0.07, sustain: 0, release: 0.05 }, volume: -36 });
+  const shakerFilter = new Tone.Filter({ type: 'bandpass', frequency: 5200, Q: 0.8 }).connect(p.out);
+  shaker.connect(shakerFilter);
+  const wood = new Tone.MembraneSynth({ pitchDecay: 0.015, octaves: 0.4, envelope: { attack: 0.012, decay: 0.1, sustain: 0, release: 0.15 }, volume: -29 }).connect(p.out);
+  // The six lands' voices, in journey order.
+  const fm = (harmonicity: number, index: number, decay: number, volume: number) =>
+    new Tone.FMSynth({ harmonicity, modulationIndex: index, envelope: { attack: 0.012, decay, sustain: 0, release: decay }, modulationEnvelope: { attack: 0.01, decay: 0.3, sustain: 0, release: 0.3 }, volume });
+  const voices = [
+    new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.012, decay: 0.7, sustain: 0, release: 0.8 }, volume: -13 }), // marimba
+    fm(4, 2, 0.9, -16), // celesta
+    fm(5.07, 1.4, 1.1, -13), // kalimba
+    new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.02, decay: 1.6, sustain: 0, release: 1.8 }, volume: -12 }), // glass
+    fm(1, 2.2, 1.6, -14), // electric piano
+    fm(2, 3, 1.4, -16), // koto
+  ];
+  voices.forEach((v) => {
+    v.connect(p.out);
+    v.connect(echo);
+  });
+  const bell = fm(3.01, 5, 1.4, -27);
+  bell.connect(echo);
+  // The family's tune and its answers, each sixteen eighths long (null: a rest).
+  const phrases: Array<Array<number | null>> = [
+    [7, null, 6, null, 5, null, 3, null, 5, null, 4, 3, 2, null, null, null],
+    [5, null, 7, null, 9, null, 7, 6, 5, null, 3, null, 5, null, null, null],
+    [3, null, 5, 6, 5, null, 3, null, 2, null, 0, null, 2, null, null, null],
+    [7, null, 9, null, 10, null, 9, 7, 6, null, 5, null, 7, null, null, null],
+  ];
+  let step = 0;
+  const loop = new Tone.Loop((time) => {
+    const bar = bars[Math.floor(step / 8) % bars.length]!;
+    const inBar = step % 8;
+    if (inBar === 0) pad.triggerAttackRelease(bar.chord.map((d) => note(d, 3)), eighth * 7.5, time, 0.5);
+    // Bass: on the beat, with a light lift on the way to the next bar.
+    if (inBar === 0 || inBar === 4) bass.triggerAttackRelease(bar.root, eighth * 1.6, time, 0.7);
+    if (inBar === 7) bass.triggerAttackRelease(bar.root.replace(/\d$/, (o) => String(Number(o) + 1)), eighth * 0.8, time, 0.45);
+    // Shaker on every eighth, softer off the beat; wood on two and four.
+    shaker.triggerAttackRelease(eighth * 0.4, time, inBar % 2 === 0 ? 0.6 : 0.3);
+    if (inBar === 2 || inBar === 6) wood.triggerAttackRelease('A3', '32n', time, 0.5);
+    // The tune: one phrase per two bars, each on the next land's voice.
+    const phraseIndex = Math.floor(step / 16);
+    const degree = phrases[phraseIndex % phrases.length]![step % 16];
+    if (degree !== null && degree !== undefined) voices[phraseIndex % voices.length]!.triggerAttackRelease(note(degree, 4), eighth * 1.8, time, 0.5 + Math.random() * 0.15);
+    if (inBar === 5 && Math.random() < 0.18) bell.triggerAttackRelease(note([7, 9, 10][Math.floor(Math.random() * 3)]!, 5), eighth * 2, time, 0.35);
+    step++;
+  }, eighth);
+  p.loops.push(loop);
+  p.disposables.push(pad, padFilter, echo, bass, shaker, shakerFilter, wood, ...voices, bell);
+  return finish(p);
+}
+
+export function createBed(id: RegionId | 'map' | 'celebration', destination: Tone.ToneAudioNode): Bed {
   switch (id) {
     case 'map':
       return map(destination);
+    case 'celebration':
+      return celebration(destination);
     case 'tidepools':
       return tidepools(destination);
     case 'nightsky':

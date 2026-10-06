@@ -122,7 +122,9 @@ export class Game {
     // A new light's journey opens with the story of how it began; the map waits, dreaming,
     // and stays hushed (the world is quiet) until the light decides to set out.
     const opening = !reveal && !seenStory().has('prologue') && !this.previewingStory;
-    this.deps.audio.setScene(opening ? 'quiet' : 'map');
+    // Every land in tune again: the map plays its celebration instead of the journey theme.
+    const allDone = REGION_ORDER.every((id) => landDone(this.solved()[id])) || (devFlags.enabled && new URLSearchParams(location.search).has('alive'));
+    this.deps.audio.setScene(opening ? 'quiet' : allDone ? 'celebration' : 'map');
     this.showFamily(true);
     const map = new WorldMapScene((id) => this.showRegion(id), reveal, opening);
     void this.deps.scenes.go(map);

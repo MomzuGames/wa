@@ -38,6 +38,14 @@ const mapStyle = {
   fallStagger: 0.45,
   fallRadius: 6,
   landRipple: 46,
+  // The world come alive, once every land is finished.
+  aliveFadeSeconds: 4,
+  auroraBands: 3,
+  sparksPerLand: 7,
+  sparkRise: 110, // px a spark climbs above its land before it fades
+  sparkSpeed: 0.22, // rises per second
+  alivePulses: 3, // lights travelling each trail at once
+  waveStagger: 0.35, // seconds between lands as the colour sweeps across them
 } as const;
 
 // Region positions as fractions of the screen, forming a gentle winding journey.
@@ -59,6 +67,11 @@ export class WorldMapScene implements Scene {
   private world = new Container();
   private twinkles = new Graphics();
   private pulses = new Graphics();
+  // Every land in tune again: aurora ribbons across the sky, sparks rising from each land.
+  private aurora = new Graphics();
+  private sparks = new Graphics();
+  private alive = { v: 0 };
+  private waves: Array<{ x: number; y: number; p: number; color: number }> = [];
   private paths = new Graphics();
   private litPaths = new Graphics();
   private nodes = new Map<RegionId, RegionNode>();
@@ -85,10 +98,12 @@ export class WorldMapScene implements Scene {
     this.pendingReveal = reveal?.completed ?? null;
     this.twinkles.eventMode = 'none';
     this.pulses.eventMode = 'none';
+    this.aurora.eventMode = 'none';
+    this.sparks.eventMode = 'none';
     const rng = createRng('worldmap');
     for (let i = 0; i < mapStyle.twinkleCount * 3; i++) this.seeds.push(rng.next());
-    this.container.addChild(this.twinkles, this.world);
-    this.world.addChild(this.paths, this.litPaths, this.pulses);
+    this.container.addChild(this.twinkles, this.aurora, this.world);
+    this.world.addChild(this.paths, this.litPaths, this.pulses, this.sparks);
     for (const id of REGION_ORDER) {
       const node = new RegionNode(id, () => this.select(id));
       this.nodes.set(id, node);
@@ -256,6 +271,35 @@ export class WorldMapScene implements Scene {
       return;
     }
     this.roam(this.firstUnfinished());
+    if (this.allFinished()) this.celebrate(false);
+  }
+
+  private allFinished(): boolean {
+    // Dev: ?alive=1 shows the living world without finishing every land.
+    if (import.meta.env.DEV && new URLSearchParams(location.search).has('alive')) return true;
+    return REGION_ORDER.every((id) => isRegionComplete(solvedCount(id)));
+  }
+
+  // The whole world in tune: the sky fills with aurora, sparks rise from every land, more
+  // light travels the trails. Played as a wave of colour across the lands the moment the
+  // last land is finished, and simply present on every visit after.
+  private celebrate(animate: boolean): void {
+    if (this.alive.v > 0) return;
+    if (!animate) {
+      this.alive.v = 1;
+      return;
+    }
+    gsap.to(this.alive, { v: 1, duration: scaled(mapStyle.aliveFadeSeconds), ease: easings.ambient });
+    REGION_ORDER.forEach((id, i) => {
+      gsap.delayedCall(i * mapStyle.waveStagger, () => {
+        const node = this.nodes.get(id)!;
+        const p = this.position(id);
+        const wave = { x: p.x, y: p.y, p: 0, color: node.accent };
+        this.waves.push(wave);
+        gsap.to(wave, { p: 1, duration: scaled(durations.completion) * 0.6, ease: easings.response, onComplete: () => this.waves.splice(this.waves.indexOf(wave), 1) });
+        gsap.fromTo(node.scale, { x: 1, y: 1 }, { x: 1.14, y: 1.14, duration: scaled(durations.pieceMove), yoyo: true, repeat: 1, ease: easings.ambient });
+      });
+    });
   }
 
   update(dt: number): void {
@@ -272,6 +316,49 @@ export class WorldMapScene implements Scene {
     this.twinkles.y = py * 0.35;
     this.drawTwinkles();
     this.drawPulses();
+    this.aurora.x = px * 0.5;
+    this.aurora.y = py * 0.5;
+    this.drawAlive();
+  }
+
+  // Aurora ribbons, rising sparks and the colour waves, while the world is alive.
+  private drawAlive(): void {
+    this.aurora.clear();
+    this.sparks.clear();
+    const a = this.alive.v;
+    if (a <= 0 && this.waves.length === 0) return;
+    const accents = REGION_ORDER.map((id) => this.nodes.get(id)!.accent);
+    const top = this.height > this.width ? this.height * 0.1 : this.height * 0.08;
+    for (let k = 0; k < mapStyle.auroraBands; k++) {
+      const color = accents[(k * 2 + Math.floor(this.time / 20)) % accents.length]!;
+      const base = top + k * this.height * 0.06;
+      const ribbon = () => {
+        for (let x = -40; x <= this.width + 40; x += 16) {
+          const y = base + Math.sin(x * 0.006 + this.time * 0.25 + k * 1.7) * this.height * 0.035 + Math.sin(x * 0.013 - this.time * 0.17 + k) * this.height * 0.015;
+          if (x === -40) this.aurora.moveTo(x, y);
+          else this.aurora.lineTo(x, y);
+        }
+      };
+      for (const [w, al] of [[46, 0.05], [22, 0.08], [6, 0.13]] as const) {
+        ribbon();
+        this.aurora.stroke({ color, width: w, alpha: al * a, cap: 'round', join: 'round' });
+      }
+    }
+    if (a > 0) {
+      REGION_ORDER.forEach((id, i) => {
+        const p = this.position(id);
+        const color = accents[i]!;
+        for (let k = 0; k < mapStyle.sparksPerLand; k++) {
+          const s1 = this.seeds[(i * mapStyle.sparksPerLand + k) * 3]!;
+          const s2 = this.seeds[(i * mapStyle.sparksPerLand + k) * 3 + 1]!;
+          const q = (this.time * mapStyle.sparkSpeed * (0.8 + s2 * 0.4) + s1) % 1;
+          const x = p.x + (s2 - 0.5) * 70 + Math.sin(this.time * 1.3 + s1 * 9) * 8;
+          const y = p.y + 20 - q * mapStyle.sparkRise;
+          this.sparks.circle(x, y, 2.2 * (1 - q) + 0.6).fill({ color, alpha: Math.sin(q * Math.PI) * 0.8 * a });
+        }
+      });
+    }
+    for (const w of this.waves) this.sparks.circle(w.x, w.y, 20 + w.p * 120).stroke({ color: w.color, width: 2, alpha: 0.6 * (1 - w.p) });
   }
 
   private drawTwinkles(): void {
@@ -282,7 +369,9 @@ export class WorldMapScene implements Scene {
       const y = this.seeds[i * 3 + 1]! * this.height;
       const phase = this.seeds[i * 3 + 2]! * Math.PI * 2;
       const tw = 0.5 + 0.5 * Math.sin(this.time * (0.5 + phase * 0.08) + phase);
-      g.circle(x, y, 0.7 + tw).fill({ color: palette.pearl, alpha: mapStyle.twinkleAlpha * tw });
+      // Once the world is alive, some stars take on the lands' colours.
+      const color = this.alive.v > 0.3 && i % 3 === 0 ? this.nodes.get(REGION_ORDER[i % REGION_ORDER.length]!)!.accent : palette.pearl;
+      g.circle(x, y, 0.7 + tw * (1 + this.alive.v * 0.4)).fill({ color, alpha: mapStyle.twinkleAlpha * tw * (1 + this.alive.v * 0.5) });
     }
   }
 
@@ -294,10 +383,16 @@ export class WorldMapScene implements Scene {
       const a = REGION_ORDER[i]!;
       const b = REGION_ORDER[i + 1]!;
       if (!isRegionComplete(solvedCount(a)) || a === this.pendingReveal) continue;
-      const t = ((this.time * mapStyle.pulseSpeed + i * 0.37) % 1 + 1) % 1;
-      const p = this.curve(a, b, t);
-      g.circle(p.x, p.y, 9).fill({ color: palette.pearl, alpha: 0.1 }).circle(p.x, p.y, 5).fill({ color: palette.pearl, alpha: 0.2 });
-      g.circle(p.x, p.y, 3).fill({ color: palette.pearl, alpha: 0.8 });
+      // One pearl light per finished trail; once the world is alive, more, in the lands' colours.
+      const count = this.alive.v > 0 ? mapStyle.alivePulses : 1;
+      for (let k = 0; k < count; k++) {
+        const t = ((this.time * mapStyle.pulseSpeed + i * 0.37 + k / count) % 1 + 1) % 1;
+        const p = this.curve(a, b, t);
+        const color = k === 0 ? palette.pearl : this.nodes.get(k % 2 ? a : b)!.accent;
+        const al = k === 0 ? 1 : this.alive.v;
+        g.circle(p.x, p.y, 9).fill({ color, alpha: 0.1 * al }).circle(p.x, p.y, 5).fill({ color, alpha: 0.2 * al });
+        g.circle(p.x, p.y, 3).fill({ color, alpha: 0.8 * al });
+      }
     }
   }
 
@@ -308,12 +403,14 @@ export class WorldMapScene implements Scene {
     if (!next) {
       this.pendingReveal = null;
       this.roam(completed);
+      if (this.allFinished()) this.celebrate(true);
       return;
     }
     await this.drawLitPath(completed, next);
     this.pendingReveal = null;
     await this.nodes.get(next)!.setState(this.stateFor(next), false);
     this.roam(next);
+    if (this.allFinished()) this.celebrate(true);
   }
 
   private position(id: RegionId): { x: number; y: number } {
