@@ -39,6 +39,11 @@ const mapStyle = {
   fallStagger: 0.45,
   fallRadius: 6,
   landRipple: 46,
+  // The Silence on the map: the colour drains out of the lands, one after another.
+  drainSeconds: 1.8,
+  drainStagger: 0.35,
+  silenceHold: 1.2, // seconds the bright world shows before the colour drains (book replay)
+  colourReturnSeconds: 2.2, // a finished land's colour washing back
   // The world come alive, once every land is finished.
   aliveFadeSeconds: 4,
   auroraBands: 3,
@@ -112,11 +117,12 @@ export class WorldMapScene implements Scene {
     }
     this.applyStates();
     if (dreaming) {
+      // The opening begins on the world as it was: every land bright and in colour, until
+      // the Silence falls in the story (drainColour).
       for (const node of this.nodes.values()) {
-        node.alpha = mapStyle.dreamAlpha;
         node.eventMode = 'none';
+        void node.setColour(1);
       }
-      this.paths.alpha = mapStyle.dreamAlpha;
     }
     // The map leans toward the pointer, and the regions brighten as the light passes them.
     this.container.eventMode = 'static';
@@ -144,6 +150,8 @@ export class WorldMapScene implements Scene {
       if (this.reveal && id === this.reveal.completed) state = 'unlocked';
       if (this.reveal && this.isNextAfter(this.reveal.completed, id)) state = 'locked';
       void this.nodes.get(id)!.setState(state, false);
+      // The Silence left every land grey; a finished land has its colour back.
+      void this.nodes.get(id)!.setColour(state === 'complete' ? 1 : 0);
     }
   }
 
@@ -206,6 +214,39 @@ export class WorldMapScene implements Scene {
       ),
     );
     layer.destroy({ children: true });
+  }
+
+  // The Silence falls on the map: the colour drains out of every land, one after another
+  // (during the opening the lands also dim, as the world goes quiet).
+  async drainColour(): Promise<void> {
+    await Promise.all(
+      REGION_ORDER.map(
+        (id, i) =>
+          new Promise<void>((resolve) => {
+            gsap.delayedCall(i * mapStyle.drainStagger, () => {
+              const node = this.nodes.get(id)!;
+              if (this.dreaming) {
+                gsap.to(node, { alpha: mapStyle.dreamAlpha, duration: scaled(mapStyle.drainSeconds), ease: easings.ambient });
+                gsap.to(this.paths, { alpha: mapStyle.dreamAlpha, duration: scaled(mapStyle.drainSeconds) });
+              }
+              void node.setColour(0, mapStyle.drainSeconds).then(resolve);
+            });
+          }),
+      ),
+    );
+  }
+
+  // For the book's replay: the world shows its colour again for a moment, then the Silence
+  // drains it away as it did that night.
+  async playSilence(): Promise<void> {
+    await Promise.all(REGION_ORDER.map((id) => this.nodes.get(id)!.setColour(1, mapStyle.drainSeconds * 0.6)));
+    await new Promise((r) => gsap.delayedCall(scaled(mapStyle.silenceHold), r));
+    await this.drainColour();
+  }
+
+  // After the replay: every finished land takes its colour back.
+  async restoreColours(): Promise<void> {
+    await Promise.all(REGION_ORDER.filter((id) => this.stateFor(id) === 'complete').map((id) => this.nodes.get(id)!.setColour(1, mapStyle.colourReturnSeconds)));
   }
 
   // Where the light waits while the opening finishes: the middle of the screen.
@@ -286,6 +327,7 @@ export class WorldMapScene implements Scene {
   // last land is finished, and simply present on every visit after.
   private celebrate(animate: boolean): void {
     if (this.alive.v > 0) return;
+    for (const node of this.nodes.values()) void node.setColour(1, animate ? mapStyle.colourReturnSeconds : 0);
     if (!animate) {
       this.alive.v = 1;
       return;
@@ -399,7 +441,9 @@ export class WorldMapScene implements Scene {
 
   private async playReveal(completed: RegionId): Promise<void> {
     await new Promise((r) => gsap.delayedCall(scaled(durations.sceneTransition), r));
-    await this.nodes.get(completed)!.setState('complete', true);
+    // The land's song is back, and with it its colour.
+    const node = this.nodes.get(completed)!;
+    await Promise.all([node.setColour(1, mapStyle.colourReturnSeconds), node.setState('complete', true)]);
     const next = REGION_ORDER[REGION_ORDER.indexOf(completed) + 1];
     if (!next) {
       this.pendingReveal = null;

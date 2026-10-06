@@ -15,7 +15,7 @@ import type { SceneId } from '../story/script';
 import { earnedScenes, landDone, missedScenes, scenesAfterLevel, type Solved } from '../story/triggers';
 import { getModule } from '../regions/registry';
 import { palette } from '../design/palette';
-import { durations, easings, scaled } from '../design/motion';
+import { durations, easings, scaled, storyInterlude } from '../design/motion';
 import gsap from 'gsap';
 import type { AudioEngine } from '../audio/engine';
 import type { ParticleSystem } from '../fx/particles';
@@ -195,7 +195,11 @@ export class Game {
     const hud = this.deps.hud;
     hud.visible = false;
     this.inOpening = true;
-    await this.playStory(['prologue']);
+    // The world as it was: bright and singing, a moment before the story begins.
+    this.deps.audio.storyStart();
+    this.deps.audio.storyMood('harmony');
+    await new Promise((r) => gsap.delayedCall(scaled(storyInterlude.brightWorld), r));
+    await this.playStory(['prologue'], true, () => map.drainColour());
     if (this.deps.scenes.scene !== map) {
       hud.visible = true;
       this.inOpening = false;
@@ -234,12 +238,15 @@ export class Game {
     // One score carries through the whole replay, the lights falling into the lands included.
     this.holdingScore = true;
     this.deps.audio.storyStart();
-    await this.playStory(['prologue'], false);
     const map = this.deps.scenes.scene;
-    if (map instanceof WorldMapScene) await map.playArrival(this.hue());
+    const onMap = map instanceof WorldMapScene ? map : null;
+    await this.playStory(['prologue'], false, onMap ? () => onMap.playSilence() : undefined);
+    if (onMap) await onMap.playArrival(this.hue());
     await this.playStory(ids.filter((id) => id !== 'prologue'), false);
     this.holdingScore = false;
     this.deps.audio.storyEnd();
+    // The lands the player has finished take their colour back.
+    if (onMap) await onMap.restoreColours();
   }
 
   private hue(): PaletteToken {
@@ -260,7 +267,7 @@ export class Game {
   }
 
   // Plays story scenes over the current screen; they are remembered as seen.
-  private async playStory(ids: SceneId[], remember = true): Promise<void> {
+  private async playStory(ids: SceneId[], remember = true, silence?: () => Promise<void>): Promise<void> {
     if (ids.length === 0 || this.storyPlaying) return;
     this.storyPlaying = true;
     if (remember) ids.forEach((id) => markStorySeen(id));
@@ -273,7 +280,21 @@ export class Game {
     stage.addChild(player);
     await player.fadedIn;
     resting.forEach((c) => (c.visible = false));
-    await player.play(ids);
+    // When the Silence falls, the story steps aside and the map shows it: the colour drains.
+    const interlude = silence
+      ? {
+          after: 'silence' as const,
+          run: async () => {
+            resting.forEach((c) => (c.visible = true));
+            await gsap.to(player, { alpha: 0, duration: scaled(storyInterlude.fade) });
+            await silence();
+            await new Promise((r) => gsap.delayedCall(scaled(storyInterlude.hold), r));
+            await gsap.to(player, { alpha: 1, duration: scaled(storyInterlude.fade) });
+            resting.forEach((c) => (c.visible = false));
+          },
+        }
+      : undefined;
+    await player.play(ids, interlude);
     resting.forEach((c) => (c.visible = true));
     if (!this.holdingScore) this.deps.audio.storyEnd();
     await player.fadeOut();

@@ -24,6 +24,13 @@ export const tipTiming = {
 } as const;
 
 // Story scenes: each beat fades in and waits for a tap; a faint dot breathes once it may.
+// The opening and the book replay step out of the story to show the map.
+export const storyInterlude = {
+  brightWorld: 3, // seconds the bright, coloured world shows before the story begins
+  fade: 0.9, // the story fading out of the way and back
+  hold: 0.8, // the grey world, held a moment before the story returns
+} as const;
+
 export const storyTiming = {
   fadeIn: 0.8,
   lineDelay: 0.5,

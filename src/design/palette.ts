@@ -35,6 +35,22 @@ export function rgba(token: PaletteToken, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+// The Silence: a colour drained to grey of the same lightness, a little dimmer.
+export function drained(color: number): number {
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
+  const l = Math.round((0.299 * r + 0.587 * g + 0.114 * b) * 0.72);
+  return (l << 16) | (l << 8) | l;
+}
+
+// Between two colours: t = 0 gives a, t = 1 gives b.
+export function mixColor(a: number, b: number, t: number): number {
+  const k = Math.max(0, Math.min(1, t));
+  const ch = (shift: number) => Math.round(((a >> shift) & 0xff) * (1 - k) + ((b >> shift) & 0xff) * k);
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
 export function cssHex(token: PaletteToken): string {
   return `#${palette[token].toString(16).padStart(6, '0')}`;
 }

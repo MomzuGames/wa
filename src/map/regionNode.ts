@@ -2,7 +2,7 @@ import gsap from 'gsap';
 import { Container, FillGradient, Graphics, Text } from 'pixi.js';
 import type { RegionId } from '../regions/types';
 import { REGION_ACCENT, REGION_NAME } from '../regions/catalog';
-import { palette, rgba } from '../design/palette';
+import { drained, mixColor, palette } from '../design/palette';
 import { durations, easings, reducedMotion, scaled } from '../design/motion';
 import { layout } from '../design/layout';
 
@@ -18,6 +18,8 @@ export const regionNodeStyle = {
   auraIdle: 0.25,
   auraNear: 0.9,
   nearRadius: 190, // px: how close the light must come for a region to brighten
+  nearColour: 0.65, // how much colour a grey land shows while the little light is over it
+  colourEase: 2.5, // per second: how quickly a land's shown colour follows its target
 } as const;
 
 // Each figure is drawn inside a box of `size`, centred on (0,0), and moves with time:
@@ -117,10 +119,16 @@ export class RegionNode extends Container {
   private baseScale = 1;
   private _state: RegionState = 'locked';
   readonly accent: number;
+  // Colour: the Silence drained every land to grey. A land's own colour comes back once it is
+  // finished (base 1), and shows faintly while the little light is over it.
+  private colourBase = { v: 1 };
+  private colour = 1;
+  private shade: number;
 
   constructor(readonly id: RegionId, onPress: () => void) {
     super();
     this.accent = palette[REGION_ACCENT[id]];
+    this.shade = this.accent;
     const half = regionNodeStyle.size / 2;
     this.hit.circle(0, 0, Math.max(layout.minHitSize, half * 0.9)).fill({ color: palette.pearl, alpha: 0.001 });
     this.life.eventMode = 'none';
@@ -133,8 +141,8 @@ export class RegionNode extends Container {
       outerCenter: { x: 0.5, y: 0.5 },
       outerRadius: 0.5,
       colorStops: [
-        { offset: 0, color: rgba(REGION_ACCENT[id], 0.16) },
-        { offset: 1, color: rgba(REGION_ACCENT[id], 0) },
+        { offset: 0, color: 'rgba(255,255,255,0.16)' },
+        { offset: 1, color: 'rgba(255,255,255,0)' },
       ],
     });
     this.aura.circle(0, 0, regionNodeStyle.size * 2.2).fill(gradient);
@@ -164,7 +172,7 @@ export class RegionNode extends Container {
   }
 
   private redrawFigure(): void {
-    const color = this._state === 'locked' ? palette.dim : this.accent;
+    const color = this._state === 'locked' ? palette.dim : this.shade;
     const line = { color, cap: 'round' as const, join: 'round' as const };
     this.outline.clear();
     // The glow is drawn, not filtered: two wide faint strokes under the line. A glow filter
@@ -182,7 +190,7 @@ export class RegionNode extends Container {
       this.fill.clear();
       drawFigure(this.fill, this.id, regionNodeStyle.size, this.time);
       this.fill.circle(0, 0, regionNodeStyle.size * 0.55);
-      this.fill.fill({ color: this.accent, alpha: regionNodeStyle.completeFillAlpha });
+      this.fill.fill({ color: this.shade, alpha: regionNodeStyle.completeFillAlpha });
     }
   }
 
@@ -213,6 +221,21 @@ export class RegionNode extends Container {
     this.nameLabel.y = regionNodeStyle.size * (compact ? 0.7 : 0.74);
   }
 
+  // How much of its own colour the land has (0 grey, 1 full), eased over `seconds`.
+  setColour(v: number, seconds = 0): Promise<void> {
+    gsap.killTweensOf(this.colourBase);
+    if (seconds <= 0) {
+      this.colourBase.v = v;
+      this.colour = v;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => gsap.to(this.colourBase, { v, duration: scaled(seconds), ease: easings.ambient, onComplete: () => resolve() }));
+  }
+
+  get colourAmount(): number {
+    return this.colourBase.v;
+  }
+
   // How close the light is (0 far, 1 on top of it): the name and aura brighten to meet it.
   setNear(strength: number): void {
     this.near = Math.max(0, Math.min(1, strength));
@@ -226,6 +249,13 @@ export class RegionNode extends Container {
   // The figure moves every frame; the ripples, twinkles and sparks live on top of it.
   tick(dt: number): void {
     this.time += dt;
+    // The shown colour follows the land's own, plus a faint blush while the light is near.
+    const want = Math.max(this.colourBase.v, this.near * regionNodeStyle.nearColour);
+    // A deliberate change (the Silence falling, a land finished) follows its own easing.
+    if (gsap.isTweening(this.colourBase)) this.colour = want;
+    else this.colour += (want - this.colour) * Math.min(1, dt * regionNodeStyle.colourEase);
+    this.shade = mixColor(drained(this.accent), this.accent, this.colour);
+    this.aura.tint = this.shade;
     this.redrawFigure();
     const lift = this.chosen ? 1 : this.hovered ? 0.9 : this.near;
     const k = Math.min(1, dt * 5);
@@ -244,7 +274,7 @@ export class RegionNode extends Container {
         // Two clear ripples rolling outward, one behind the other.
         for (let n = 0; n < 2; n++) {
           const p = ((this.time / 3.2 + n * 0.5) % 1 + 1) % 1;
-          g.circle(0, s * 0.1, s * (0.15 + p * 0.95)).stroke({ color: this.accent, width: 2 - p, alpha: 0.85 * (1 - p) * strength });
+          g.circle(0, s * 0.1, s * (0.15 + p * 0.95)).stroke({ color: this.shade, width: 2 - p, alpha: 0.85 * (1 - p) * strength });
         }
         break;
       }
@@ -259,7 +289,7 @@ export class RegionNode extends Container {
       case 'stonegarden': {
         for (let i = 0; i < 3; i++) {
           const p = (this.time / 6 + i / 3) % 1;
-          g.circle(-s * 0.5 + i * s * 0.5, s * 0.75 - p * s * 1.3, 1.5).fill({ color: this.accent, alpha: 0.45 * (1 - p) * strength });
+          g.circle(-s * 0.5 + i * s * 0.5, s * 0.75 - p * s * 1.3, 1.5).fill({ color: this.shade, alpha: 0.45 * (1 - p) * strength });
         }
         break;
       }
@@ -276,8 +306,8 @@ export class RegionNode extends Container {
         const p = (this.time / 7) % 1;
         const x = Math.sin(p * Math.PI * 2) * s * 0.5;
         g.circle(x, -s * 0.55 + Math.cos(p * Math.PI * 2) * s * 0.08, 2).fill({ color: palette.pearl, alpha: 0.6 * strength });
-        g.moveTo(-s * 0.85, s * 0.78).lineTo(s * 0.85, s * 0.78).stroke({ color: this.accent, width: 1, alpha: 0.25 * strength });
-        g.moveTo(x - s * 0.3, s * 0.78).lineTo(x + s * 0.3, s * 0.78).stroke({ color: this.accent, width: 2, alpha: 0.4 * strength });
+        g.moveTo(-s * 0.85, s * 0.78).lineTo(s * 0.85, s * 0.78).stroke({ color: this.shade, width: 1, alpha: 0.25 * strength });
+        g.moveTo(x - s * 0.3, s * 0.78).lineTo(x + s * 0.3, s * 0.78).stroke({ color: this.shade, width: 2, alpha: 0.4 * strength });
         break;
       }
       case 'moonlake': {
