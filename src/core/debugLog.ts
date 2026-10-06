@@ -15,7 +15,7 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let appRef: Application | null = null;
 const started = Date.now();
 
-function flush(): void {
+export function flush(): void {
   flushTimer = null;
   const text = lines.join('\n');
   try {
@@ -52,7 +52,15 @@ export function sizes(): Record<string, unknown> {
 
 export function installDebugLog(app: Application, sceneName: () => string): void {
   appRef = app;
-  dlog('start', sizes());
+  // Keep what earlier launches recorded: the game may reload itself (after iOS drops its
+  // graphics), and that reload is exactly what we need to see.
+  try {
+    const before = localStorage.getItem(KEY);
+    if (before) lines.push(...before.split('\n').slice(-200), '--- new launch ---');
+  } catch {
+    // ignore
+  }
+  dlog('start', { ...sizes(), visibility: document.visibilityState });
   document.addEventListener('visibilitychange', () => dlog(document.hidden ? 'hidden' : 'visible', sizes()));
   window.addEventListener('resize', () => dlog('window-resize', sizes()));
   window.visualViewport?.addEventListener('resize', () => dlog('viewport-resize', sizes()));

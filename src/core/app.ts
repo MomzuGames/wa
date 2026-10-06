@@ -2,7 +2,7 @@ import gsap from 'gsap';
 import { Application, Container, type DestroyOptions } from 'pixi.js';
 import { palette } from '../design/palette';
 import { readSafeArea } from '../design/layout';
-import { dlog } from './debugLog';
+import { dlog, flush } from './debugLog';
 
 const resumeChecks = [0, 250, 700, 1500];
 
@@ -60,6 +60,7 @@ export function installResumeGuard(app: Application, cancel: () => void): void {
     }
     if (lost || gl?.isContextLost()) {
       dlog('reload-after-lost-context');
+      flush();
       location.reload();
       return;
     }
@@ -69,7 +70,11 @@ export function installResumeGuard(app: Application, cancel: () => void): void {
     for (const ms of resumeChecks) setTimeout(() => app.resize(), ms);
   });
   window.addEventListener('pageshow', (e) => {
-    if ((e as PageTransitionEvent).persisted && (lost || gl?.isContextLost())) location.reload();
+    if ((e as PageTransitionEvent).persisted && (lost || gl?.isContextLost())) {
+      dlog('reload-after-pageshow');
+      flush();
+      location.reload();
+    }
   });
 }
 

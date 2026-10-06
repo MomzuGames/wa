@@ -1,4 +1,5 @@
 import UIKit
+import AVFoundation
 import Capacitor
 
 @UIApplicationMain
@@ -7,8 +8,26 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // The game's sound: it mixes with the player's own music and follows the silent switch.
+        // Locking the phone deactivates the app's audio session, and the web view does not
+        // always reopen it, so the music went silent after unlocking even though the game's
+        // audio engine was running again. Reopen the session whenever the app becomes
+        // active, and when an interruption (a call, Siri, an alarm) ends.
+        activateAudio()
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            self.activateAudio()
+        }
+        NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { note in
+            let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap(AVAudioSession.InterruptionType.init)
+            if type == .ended { self.activateAudio() }
+        }
         return true
+    }
+
+    private func activateAudio() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+        try? session.setActive(true)
     }
 
     func applicationWillResignActive(_ application: UIApplication) {

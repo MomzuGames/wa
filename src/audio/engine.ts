@@ -16,6 +16,7 @@ export const audioConfig = {
   highCutHz: 8000,
   minSliderDb: -36,
   resumeChecks: [0, 300, 900, 1800, 3000], // ms after coming back
+  kickAfter: 1200, // ms after coming back: restart the output once the app has settled
 } as const;
 
 // iOS mutes Web Audio when the ringer switch is on silent, unless the page has played
@@ -120,8 +121,12 @@ export class AudioEngine {
         if (!IS_APP) void context.suspend().catch(() => undefined);
         return;
       }
+      // Re-declare the kind of sound this is (the app's native side reopens the session).
+      const nav = navigator as Navigator & { audioSession?: { type: string; state?: string } };
+      if (IS_APP && nav.audioSession) nav.audioSession.type = 'ambient';
       for (const ms of audioConfig.resumeChecks) {
         setTimeout(() => {
+          dlog('audio-check', { after: ms, context: context.state, session: nav.audioSession?.state ?? 'n/a' });
           if (context.state === 'running') return;
           void context
             .resume()
@@ -129,12 +134,36 @@ export class AudioEngine {
             .then(() => dlog('audio-resume', { after: ms, state: context.state }));
         }, ms);
       }
+      // After the lock screen iOS can leave the audio clock "running" with its output cut.
+      // A full pause and restart once the app is settled reconnects it.
+      if (IS_APP) setTimeout(() => void this.kick('return'), audioConfig.kickAfter);
     });
     // A tap is always a good moment to try again, should the checks above not take.
     const retry = () => {
       if (this.started && Tone.getContext().state !== 'running') void Tone.getContext().resume().catch(() => undefined);
     };
     for (const type of ['touchend', 'click', 'keydown']) window.addEventListener(type, retry);
+  }
+
+  // Pause and restart the audio output, then play a moment of silence through it: the
+  // known cure for WebKit audio that reports "running" but makes no sound after an
+  // interruption. Harmless when the sound was fine.
+  private async kick(why: string): Promise<void> {
+    const context = Tone.getContext().rawContext as AudioContext;
+    const t0 = context.currentTime;
+    try {
+      await context.suspend();
+      await context.resume();
+      const blip = context.createBufferSource();
+      blip.buffer = context.createBuffer(1, 1, context.sampleRate);
+      blip.connect(context.destination);
+      blip.start();
+    } catch (e) {
+      dlog('audio-kick-failed', { why, message: String((e as Error)?.message ?? e) });
+      return;
+    }
+    // Whether the clock is really moving tells us if the output is alive.
+    setTimeout(() => dlog('audio-kick', { why, state: context.state, clockMoved: +(context.currentTime - t0).toFixed(2) }), 500);
   }
 
   async start(): Promise<void> {
@@ -150,6 +179,8 @@ export class AudioEngine {
       return;
     }
     dlog('audio-start', { state: Tone.getContext().state, app: IS_APP });
+    // A start that follows a reload on unlock can hit the same cut output: restart it once.
+    if (IS_APP) setTimeout(() => void this.kick('launch'), audioConfig.kickAfter);
     // Some browsers resolve start() without actually running; try again on the next gesture.
     if (Tone.getContext().state !== 'running') {
       this.starting = false;
