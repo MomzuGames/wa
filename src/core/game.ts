@@ -25,7 +25,7 @@ import { TitleScene } from '../scenes/title';
 import { WorldMapScene, type MapReveal } from '../map/worldMap';
 import { RegionScene } from '../map/regionScene';
 import { haptic } from './native';
-import { IS_APP } from '../config/platform';
+import { IS_APP, PREVIEW_ENDING } from '../config/platform';
 import { LevelShellScene, type LevelResult } from '../scenes/levelScene';
 
 export interface GameDeps {
@@ -38,6 +38,9 @@ export interface GameDeps {
   settings: SettingsPanel;
 }
 
+// Every scene of the story, in order, the ending included.
+const ALL_SCENES: SceneId[] = ['prologue', ...REGION_ORDER.map((id) => `asleep:${id}` as SceneId), 'waiting', ...REGION_ORDER.map((id) => `home:${id}` as SceneId), 'finale'];
+
 export class Game {
   private storyPlaying = false;
   private holdingScore = false; // a replay keeps one score going across its parts
@@ -47,7 +50,7 @@ export class Game {
   constructor(private deps: GameDeps) {
     events.on('input:back', () => this.back());
     // The book icon: the story so far, from the beginning.
-    events.on('story:book', () => void this.replay(earnedScenes(this.solved())));
+    events.on('story:book', () => void this.replay(PREVIEW_ENDING ? ALL_SCENES : earnedScenes(this.solved())));
     events.on('progress:changed', () => this.showFamily(!(this.deps.scenes.scene instanceof LevelShellScene)));
     // The iPhone app may play sound at once: its web view needs no gesture for audio.
     if (IS_APP) void deps.audio.start();
@@ -80,8 +83,7 @@ export class Game {
       if (story) {
         this.previewingStory = true;
         this.showMap();
-        const all: SceneId[] = ['prologue', ...REGION_ORDER.map((id) => `asleep:${id}` as SceneId), 'waiting', ...REGION_ORDER.map((id) => `home:${id}` as SceneId), 'finale'];
-        void this.playStory(story === 'all' ? all : [story as SceneId], false);
+        void this.playStory(story === 'all' ? ALL_SCENES : [story as SceneId], false);
         return;
       }
       const jump = params.get('level');
@@ -123,7 +125,7 @@ export class Game {
     // and stays hushed (the world is quiet) until the light decides to set out.
     const opening = !reveal && !seenStory().has('prologue') && !this.previewingStory;
     // Every land in tune again: the map plays its celebration instead of the journey theme.
-    const allDone = REGION_ORDER.every((id) => landDone(this.solved()[id])) || (devFlags.enabled && new URLSearchParams(location.search).has('alive'));
+    const allDone = PREVIEW_ENDING || REGION_ORDER.every((id) => landDone(this.solved()[id])) || (devFlags.enabled && new URLSearchParams(location.search).has('alive'));
     this.deps.audio.setScene(opening ? 'quiet' : allDone ? 'celebration' : 'map');
     this.showFamily(true);
     const map = new WorldMapScene((id) => this.showRegion(id), reveal, opening);

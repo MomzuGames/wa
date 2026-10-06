@@ -14,6 +14,7 @@ import { RegionNode, type RegionState, regionNodeStyle } from './regionNode';
 import { events } from '../core/events';
 import { reducedMotion } from '../design/motion';
 import { createRng } from '../core/rng';
+import { PREVIEW_ENDING } from '../config/platform';
 
 const mapStyle = {
   spreadX: 0.7,
@@ -276,7 +277,7 @@ export class WorldMapScene implements Scene {
 
   private allFinished(): boolean {
     // Dev: ?alive=1 shows the living world without finishing every land.
-    if (import.meta.env.DEV && new URLSearchParams(location.search).has('alive')) return true;
+    if (PREVIEW_ENDING || (import.meta.env.DEV && new URLSearchParams(location.search).has('alive'))) return true;
     return REGION_ORDER.every((id) => isRegionComplete(solvedCount(id)));
   }
 
