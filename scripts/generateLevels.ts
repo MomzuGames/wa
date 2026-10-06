@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { freezeLevels } from '../src/regions/bakeHelper';
 import { progression } from '../src/core/progress';
 import { bakeTidepools } from '../src/regions/tidepools/bake';
+import { bakeShellTrials } from '../src/regions/tidepools/shells/bake';
 import { bakeNightSky } from '../src/regions/nightsky/bake';
 import { bakeStoneGarden } from '../src/regions/stonegarden/bake';
 import { bakeCrystalCaves } from '../src/regions/crystalcaves/bake';
@@ -32,3 +33,8 @@ for (const region of regions) {
   writeFileSync(file, JSON.stringify(levels));
   console.log(`${region.id}: ${levels.length} levels in ${Date.now() - started} ms -> ${file}`);
 }
+
+// Test pools for Tidepools levels 5–7 (Shells and Stones), while the owner tries them.
+const shells = bakeShellTrials();
+writeFileSync(resolve('src/regions/tidepools/shells/levels.json'), JSON.stringify(shells));
+console.log(`tidepools shells: ${shells.length} pools`);

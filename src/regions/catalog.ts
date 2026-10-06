@@ -24,7 +24,7 @@ export const REGION_ACCENT: Record<RegionId, PaletteToken> = {
 // Each level carries a name from its region instead of a number: ten small places
 // on the way from the shallows to the deep, from dusk to zenith.
 export const LEVEL_NAMES: Record<RegionId, string[]> = {
-  tidepools: ['Foam', 'Kelp', 'Anemone', 'Driftwood', 'Limpet', 'Starfish', 'Eddy', 'Barnacle', 'Undertow', 'Deep Pool'],
+  tidepools: ['Foam', 'Kelp', 'Anemone', 'Driftwood', 'Shells', 'Pebbles', 'Turning Tide', 'Barnacle', 'Undertow', 'Deep Pool'],
   nightsky: ['Dusk', 'First Star', 'Comet', 'Pole Star', 'Meteor', 'Milky Way', 'Nebula', 'Aurora', 'Eclipse', 'Zenith'],
   stonegarden: ['Pebble', 'Moss', 'Rake', 'Bonsai', 'Koi', 'Bridge', 'Lantern', 'Pagoda', 'Temple', 'Mountain'],
   crystalcaves: ['Quartz', 'Facet', 'Geode', 'Vein', 'Amethyst', 'Halo', 'Prism', 'Spectrum', 'Lumen', 'Core'],

@@ -299,6 +299,7 @@ For every region:
 - All other levels are generated from seeds.
 
 ### Region 1 — Tidepools (Loop) · accent `mint`
+- **Being tested: Shells and Stones** (`tidepools/shells/`), a deduction puzzle to replace tile turning, which the owner found too random. The player draws one closed loop of tide through the pool's points from clues: a **shell** is passed straight through with a turn just before or after it; a **stone** turns the tide, which runs straight on one more step each side. Every pool has exactly one answer and is solvable by reasoning alone (`solveByLogic`, a person-like solver that records why each line follows; it also drives the hints). Levels 5–7 ('Shells', 'Pebbles', 'Turning Tide') are the three test pools (gentle, fewest clues, needs the "no small loop" insight); the rest of Tidepools is unchanged until the owner decides.
 - **Board:** a grid of tiles. Each tile has 0–4 connectors (end, straight, corner, T, cross). Every level of every region is verified solvable by its solver in tests (`src/regions/allLevels.test.ts` plus per-region suites).
 - **Input:** click to rotate clockwise; right-click (or Shift-click) rotates counter-clockwise. Rotation is a smooth 90° tween with a slight overshoot.
 - **Win condition:** every connector meets a matching connector, with no open ends. Accept **any** valid configuration, not just the stored one.

@@ -7,8 +7,15 @@ import { progression } from '../../core/progress';
 import levelsJson from './levels.json';
 import type { LoopLevel } from './model';
 import { LoopLevelScene } from './view';
+import shellsJson from './shells/levels.json';
+import type { ShellLevel } from './shells/model';
+import { ShellPoolScene } from './shells/view';
 
 const levels = levelsJson as LoopLevel[];
+// Test: levels 5–7 are Shells and Stones pools (drawing a loop from clues) while the owner
+// decides whether Tidepools moves to this kind of puzzle.
+const shellPools = shellsJson as ShellLevel[];
+const SHELL_SLOTS = [4, 5, 6];
 
 // Region finale: concentric ripples spread across the whole screen while light motes rise.
 function playFinale(ctx: ShellContext): Promise<void> {
@@ -63,6 +70,7 @@ export const tidepoolsModule: PuzzleModule = {
   id: 'tidepools',
   accent: 'mint',
   levelCount: progression.levelsPerRegion,
-  createLevel: (ctx, levelIndex) => new LoopLevelScene(ctx, levels[levelIndex]!, levelIndex === 0),
+  createLevel: (ctx, levelIndex) =>
+    SHELL_SLOTS.includes(levelIndex) ? new ShellPoolScene(ctx, shellPools[SHELL_SLOTS.indexOf(levelIndex)]!) : new LoopLevelScene(ctx, levels[levelIndex]!, levelIndex === 0),
   playRegionFinale: playFinale,
 };
