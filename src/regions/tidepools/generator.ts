@@ -1,202 +1,153 @@
 import { createRng, type Rng } from '../../core/rng';
-import { DELTA, DIRS, type Board, type Dir, type LoopLevel, type Tile, distinctRotations, isSolved } from './model';
-import { forcedCells, solve } from './solver';
+import { type Clue, type ClueKind, DIRS, type Dir, STEP, type ShellLevel, edgeAt, edgeCount, edgeEnds, exits, opposite } from './model';
+import { countSolutions, solveByLogic } from './solver';
 
-export interface LoopParams {
+export interface ShellParams {
   width: number;
   height: number;
-  irregular: boolean;
-  loopiness: number;
-  components: number;
-  lockedFraction: number;
-  // Pairs of tiles that turn together.
-  links?: number;
-  // A handcrafted silhouette of present cells (row-major), overriding `irregular`.
-  present?: boolean[];
+  fill: [number, number]; // share of the pool's squares inside the loop
+  keepExtra: number; // 0..1: clues kept beyond the fewest needed (gentler levels keep more)
+  needsInsight: boolean; // require the "no small loop" realisation at least once
+  kinds?: ClueKind[]; // only these clues (early pools teach one at a time)
 }
 
-export const MAX_BLANK_FRACTION = 0.2;
-const MIN_COMPONENT_SIZE = 4;
-const MIN_SCRAMBLED_FRACTION = 0.6;
+// The loop is the outline of a region of squares (the pool's squares lie between its
+// points). Growing a region one square at a time, keeping its outline a single simple
+// loop, gives a random tide line that never touches itself.
+function outline(w: number, h: number, inside: Set<number>): Set<number> {
+  const fw = w - 1;
+  const fh = h - 1;
+  const has = (fx: number, fy: number) => fx >= 0 && fy >= 0 && fx < fw && fy < fh && inside.has(fy * fw + fx);
+  const on = new Set<number>();
+  // A line between two points lies between two squares; it is on the loop when exactly one is inside.
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w - 1; x++) {
+      if (has(x, y - 1) !== has(x, y)) on.add(edgeAt(w, h, x, y, 1));
+    }
+  }
+  for (let y = 0; y < h - 1; y++) {
+    for (let x = 0; x < w; x++) {
+      if (has(x - 1, y) !== has(x, y)) on.add(edgeAt(w, h, x, y, 2));
+    }
+  }
+  return on;
+}
 
-function carveShape(rng: Rng, width: number, height: number): boolean[] {
-  const present = new Array<boolean>(width * height).fill(true);
-  const bites = rng.int(2, 4);
-  for (let b = 0; b < bites; b++) {
-    const cornerX = rng.chance(0.5) ? 0 : width - 1;
-    const cornerY = rng.chance(0.5) ? 0 : height - 1;
-    const size = rng.int(1, Math.max(1, Math.floor(Math.min(width, height) / 3)));
-    for (let dy = 0; dy < size; dy++) {
-      for (let dx = 0; dx < size - dy; dx++) {
-        const x = cornerX === 0 ? dx : cornerX - dx;
-        const y = cornerY === 0 ? dy : cornerY - dy;
-        present[y * width + x] = false;
+// One closed loop that never touches itself (a hole inside the region would add a second).
+function isSimpleLoop(w: number, h: number, on: Set<number>): boolean {
+  if (on.size === 0) return false;
+  const level = { width: w, height: h };
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const n = exits(level, on, x, y).length;
+      if (n !== 0 && n !== 2) return false;
+    }
+  }
+  const start = [...on][0]!;
+  const seen = new Set<number>([start]);
+  const queue = [start];
+  while (queue.length) {
+    const [a, b] = edgeEnds(w, h, queue.pop()!);
+    for (const p of [a, b]) {
+      for (const d of DIRS) {
+        const e = edgeAt(w, h, p.x, p.y, d);
+        if (e >= 0 && on.has(e) && !seen.has(e)) {
+          seen.add(e);
+          queue.push(e);
+        }
       }
     }
   }
-  return present;
+  return seen.size === on.size;
 }
 
-function isConnected(present: boolean[], width: number, height: number): boolean {
-  const start = present.indexOf(true);
-  if (start < 0) return false;
-  const seen = new Set([start]);
-  const stack = [start];
-  while (stack.length) {
-    const i = stack.pop()!;
-    const x = i % width;
-    const y = Math.floor(i / width);
-    for (const d of DIRS) {
-      const nx = x + DELTA[d].dx;
-      const ny = y + DELTA[d].dy;
-      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-      const ni = ny * width + nx;
-      if (present[ni] && !seen.has(ni)) {
-        seen.add(ni);
-        stack.push(ni);
+export function growLoop(rng: Rng, w: number, h: number, fill: number): Set<number> | null {
+  const fw = w - 1;
+  const fh = h - 1;
+  const target = Math.max(2, Math.round(fw * fh * fill));
+  const inside = new Set<number>([rng.int(0, fw * fh - 1)]);
+  for (let tries = 0; inside.size < target && tries < 600; tries++) {
+    const frontier: number[] = [];
+    for (const f of inside) {
+      const fx = f % fw;
+      const fy = Math.floor(f / fw);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = fx + dx!;
+        const ny = fy + dy!;
+        if (nx >= 0 && ny >= 0 && nx < fw && ny < fh && !inside.has(ny * fw + nx)) frontier.push(ny * fw + nx);
       }
     }
-  }
-  return seen.size === present.filter(Boolean).length;
-}
-
-interface Attempt {
-  cells: (Tile | null)[];
-  solvedMasks: number[];
-  links: Array<[number, number]>;
-}
-
-function buildAttempt(rng: Rng, params: LoopParams): Attempt | null {
-  const { width, height } = params;
-  const present = params.present ?? (params.irregular ? carveShape(rng, width, height) : new Array<boolean>(width * height).fill(true));
-  if (!isConnected(present, width, height)) return null;
-
-  const cellIndices = present.map((p, i) => (p ? i : -1)).filter((i) => i >= 0);
-  const component = new Array<number>(width * height).fill(-1);
-  const edges = new Set<string>();
-  const edgeKey = (a: number, b: number) => (a < b ? `${a}-${b}` : `${b}-${a}`);
-
-  // Multi-source randomised Prim: a spanning forest with one tree per component.
-  const roots = rng.shuffle(cellIndices.slice()).slice(0, params.components);
-  const frontier: Array<{ from: number; to: number }> = [];
-  const pushFrontier = (i: number) => {
-    const x = i % width;
-    const y = Math.floor(i / width);
-    for (const d of DIRS) {
-      const nx = x + DELTA[d].dx;
-      const ny = y + DELTA[d].dy;
-      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-      const ni = ny * width + nx;
-      if (present[ni] && component[ni] === -1) frontier.push({ from: i, to: ni });
-    }
-  };
-  roots.forEach((r, k) => {
-    component[r] = k;
-    pushFrontier(r);
-  });
-  while (frontier.length) {
-    const pick = rng.int(0, frontier.length - 1);
-    const edge = frontier[pick]!;
-    frontier[pick] = frontier[frontier.length - 1]!;
-    frontier.pop();
-    if (component[edge.to] !== -1) continue;
-    component[edge.to] = component[edge.from]!;
-    edges.add(edgeKey(edge.from, edge.to));
-    pushFrontier(edge.to);
-  }
-
-  const sizes = new Array<number>(params.components).fill(0);
-  for (const i of cellIndices) sizes[component[i]!]++;
-  if (sizes.some((s) => s < MIN_COMPONENT_SIZE)) return null;
-
-  // Extra edges within a component create loops.
-  for (const i of cellIndices) {
-    const x = i % width;
-    const y = Math.floor(i / width);
-    for (const d of [DIRS[1], DIRS[2]] as Dir[]) {
-      const nx = x + DELTA[d].dx;
-      const ny = y + DELTA[d].dy;
-      if (nx >= width || ny >= height) continue;
-      const ni = ny * width + nx;
-      if (!present[ni] || component[ni] !== component[i]) continue;
-      if (rng.chance(params.loopiness)) edges.add(edgeKey(i, ni));
-    }
-  }
-
-  const solvedMasks = new Array<number>(width * height).fill(0);
-  for (const i of cellIndices) {
-    const x = i % width;
-    const y = Math.floor(i / width);
-    for (const d of DIRS) {
-      const nx = x + DELTA[d].dx;
-      const ny = y + DELTA[d].dy;
-      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-      const ni = ny * width + nx;
-      if (edges.has(edgeKey(i, ni))) solvedMasks[i] |= d;
-    }
-  }
-
-  const blanks = cellIndices.filter((i) => solvedMasks[i] === 0).length;
-  if (blanks / cellIndices.length > MAX_BLANK_FRACTION) return null;
-
-  const cells: (Tile | null)[] = solvedMasks.map((mask, i) => (present[i] ? { mask, rotation: 0, locked: false } : null));
-
-  // Scramble: every non-symmetric tile gets a rotation that changes its look.
-  let scrambled = 0;
-  let scramblable = 0;
-  for (const i of cellIndices) {
-    const tile = cells[i]!;
-    const distinct = distinctRotations(tile.mask);
-    if (distinct === 1) continue;
-    scramblable++;
-    if (rng.chance(0.85)) {
-      tile.rotation = rng.int(1, 3);
-      scrambled++;
-    }
-  }
-  if (scramblable === 0 || scrambled / scramblable < MIN_SCRAMBLED_FRACTION) return null;
-
-  // Locked tiles sit in their solved orientation from the start.
-  const lockCount = Math.round(cellIndices.length * params.lockedFraction);
-  for (const i of rng.shuffle(cellIndices.slice()).slice(0, lockCount)) {
-    cells[i]!.rotation = 0;
-    cells[i]!.locked = true;
-  }
-
-  // Linked pairs: two unlocked, asymmetric tiles that start at the same rotation and turn together.
-  const links: Array<[number, number]> = [];
-  const linkable = rng.shuffle(cellIndices.filter((i) => !cells[i]!.locked && distinctRotations(cells[i]!.mask) === 4));
-  for (let k = 0; k < (params.links ?? 0) && linkable.length >= 2; k++) {
-    const a = linkable.pop()!;
-    const b = linkable.pop()!;
-    cells[b]!.rotation = cells[a]!.rotation;
-    links.push([a, b]);
-  }
-
-  return { cells, solvedMasks, links };
-}
-
-export function generateLoopLevel(seed: string, chapter: number, params: LoopParams): LoopLevel | null {
-  const rng = createRng(seed);
-  for (let attempt = 0; attempt < 60; attempt++) {
-    const built = buildAttempt(rng, params);
-    if (!built) continue;
-    const board: Board = { width: params.width, height: params.height, cells: built.cells, links: built.links };
-    if (isSolved(board)) continue;
-    const result = solve(board);
-    if (!result.solution) continue;
-    const tiles = built.cells.filter((c) => c && c.mask !== 0).length;
-    const undetermined = tiles - forcedCells(board).length;
-    return {
-      seed,
-      chapter,
-      width: params.width,
-      height: params.height,
-      cells: built.cells,
-      links: built.links,
-      solution: built.cells.map(() => 0),
-      difficulty: result.nodes * 10 + tiles + undetermined * 3 + built.links.length * 12,
+    if (frontier.length === 0) break;
+    // Squares touching the region on one side only make a wigglier, more clue-rich loop.
+    const touching = (f: number) => {
+      const fx = f % fw;
+      const fy = Math.floor(f / fw);
+      return [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => inside.has((fy + dy!) * fw + fx + dx!) && fx + dx! >= 0 && fx + dx! < fw).length;
     };
+    const lean = frontier.filter((f) => touching(f) === 1);
+    const pick = rng.pick(lean.length && rng.chance(0.8) ? lean : frontier);
+    inside.add(pick);
+    if (!isSimpleLoop(w, h, outline(w, h, inside))) inside.delete(pick);
   }
-  return null;
+  const on = outline(w, h, inside);
+  return isSimpleLoop(w, h, on) ? on : null;
 }
+
+// Every spot on the loop where a shell or a stone would be true.
+export function candidateClues(w: number, h: number, on: Set<number>): Clue[] {
+  const level = { width: w, height: h };
+  const out: Clue[] = [];
+  const straight = (x: number, y: number) => {
+    const ds = exits(level, on, x, y);
+    return ds.length === 2 && ds[0] === opposite(ds[1]!);
+  };
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const ds = exits(level, on, x, y);
+      if (ds.length !== 2) continue;
+      const step = (d: Dir) => ({ x: x + STEP[d].dx, y: y + STEP[d].dy });
+      if (straight(x, y)) {
+        if (ds.some((d) => !straight(step(d).x, step(d).y))) out.push({ x, y, kind: 'shell' });
+      } else if (ds.every((d) => straight(step(d).x, step(d).y))) {
+        out.push({ x, y, kind: 'stone' });
+      }
+    }
+  }
+  return out;
+}
+
+export function generateShellLevel(seed: string, chapter: number, params: ShellParams): ShellLevel | null {
+  const rng = createRng(seed);
+  const { width: w, height: h } = params;
+  const loop = growLoop(rng, w, h, params.fill[0] + rng.next() * (params.fill[1] - params.fill[0]));
+  if (!loop) return null;
+  const solution = [...loop].sort((a, b) => a - b);
+  let clues = candidateClues(w, h, loop).filter((c) => !params.kinds || params.kinds.includes(c.kind));
+  const level = (cs: Clue[]): ShellLevel => ({ seed, chapter, width: w, height: h, clues: cs, solution, difficulty: 0 });
+  const fair = (cs: Clue[]) => countSolutions(level(cs), 2) === 1 && solveByLogic(level(cs)).solved;
+  if (!fair(clues)) return null;
+  // Take clues away while the pool stays one-answer and solvable by reasoning.
+  const removable: Clue[] = [];
+  for (const c of rng.shuffle(clues.slice())) {
+    const without = clues.filter((k) => k !== c);
+    if (fair(without)) {
+      clues = without;
+      removable.push(c);
+    }
+  }
+  // Gentler pools get some of them back.
+  const extra = Math.round(removable.length * params.keepExtra);
+  clues = [...clues, ...removable.slice(0, extra)];
+  const logic = solveByLogic(level(clues));
+  if (params.needsInsight && logic.smallLoopSteps === 0) return null;
+  // Difficulty: how far reasoning must travel, with the loop insight weighing most.
+  const rounds = new Set(logic.deductions.map((d) => `${d.x},${d.y}`)).size;
+  return { ...level(clues), difficulty: Math.round(logic.deductions.length / Math.max(1, clues.length) * 10 + rounds + logic.smallLoopSteps * 15) };
+}
+
+// Unused here, but handy when checking a pool by hand.
+export function edgesFor(level: Pick<ShellLevel, 'width' | 'height'>): number {
+  return edgeCount(level.width, level.height);
+}
+
+export { DIRS };

@@ -2,9 +2,11 @@ import * as Tone from 'tone';
 import type { AudioEngine } from '../../audio/engine';
 import { note } from '../../audio/scale';
 
-// Moon Lake voice: a warm electric-piano tone for each press and a swell on solve.
+// Moon Lake voice: a warm electric-piano tone as a lantern settles, a softer low one as it
+// is lifted away, and a swell on solve.
 export interface MoonVoice {
   press(index: number): void;
+  lift(): void;
   solve(): void;
   dispose(): void;
 }
@@ -26,6 +28,9 @@ export function createMoonVoice(audio: AudioEngine): MoonVoice {
   return audio.guard({
     press(index) {
       piano?.triggerAttackRelease(note(index % 5, 4), '8n', undefined, 0.5);
+    },
+    lift() {
+      piano?.triggerAttackRelease(note(0, 3), '8n', undefined, 0.25);
     },
     solve() {
       if (!piano) return;

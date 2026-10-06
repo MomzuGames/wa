@@ -1,99 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import levelsJson from './levels.json';
-import { E, N, S, W, boardFromLevel, isSolutionValid, isSolved, linkPartner, rotateMask, tileKind, type LoopLevel } from './model';
-import { countSolutions, solve } from './solver';
-import { generateLoopLevel } from './generator';
-import { stepClue } from './clues';
+import { type ShellLevel, isSolved } from './model';
+import { countSolutions, solveByLogic } from './solver';
+import { generateShellLevel } from './generator';
 
-const levels = levelsJson as LoopLevel[];
+const levels = levelsJson as ShellLevel[];
 
-describe('loop model', () => {
-  it('rotates masks clockwise', () => {
-    expect(rotateMask(N, 1)).toBe(E);
-    expect(rotateMask(E, 1)).toBe(S);
-    expect(rotateMask(S, 1)).toBe(W);
-    expect(rotateMask(W, 1)).toBe(N);
-    expect(rotateMask(N | E, 2)).toBe(S | W);
-  });
-
-  it('classifies tiles', () => {
-    expect(tileKind(0)).toBe('blank');
-    expect(tileKind(N)).toBe('end');
-    expect(tileKind(N | S)).toBe('straight');
-    expect(tileKind(N | E)).toBe('corner');
-    expect(tileKind(N | E | S)).toBe('tee');
-    expect(tileKind(15)).toBe('cross');
-  });
-});
-
-describe('loop solver', () => {
-  it('solves a scrambled ring', () => {
-    const level = levels[0]!;
-    const board = boardFromLevel(level);
-    const result = solve(board);
-    expect(result.solution).not.toBeNull();
-    board.cells.forEach((c, i) => {
-      if (c) c.rotation = result.solution![i]!;
-    });
-    expect(isSolved(board)).toBe(true);
-  });
-
-  it('reports no solution for an impossible board', () => {
-    const board = { width: 1, height: 1, cells: [{ mask: N, rotation: 0, locked: false }] };
-    expect(solve(board).solution).toBeNull();
-    expect(countSolutions(board)).toBe(0);
-  });
-});
-
-describe('loop generator', () => {
-  it('is deterministic for a seed', () => {
-    const params = { width: 5, height: 5, irregular: false, loopiness: 0.2, components: 1, lockedFraction: 0 };
-    const a = generateLoopLevel('det', 1, params);
-    const b = generateLoopLevel('det', 1, params);
-    expect(a).toEqual(b);
-  });
-});
-
-describe('baked tidepools levels', () => {
-  it('has 10 levels', () => {
+describe('tidepools: shells and stones pools', () => {
+  it('has ten pools, each at least as hard as the one before (after the teaching pools)', () => {
     expect(levels).toHaveLength(10);
+    for (let i = 5; i < levels.length; i++) expect(levels[i]!.difficulty).toBeGreaterThanOrEqual(levels[i - 1]!.difficulty);
+  });
+
+  it('a level is deterministic for its seed', () => {
+    const params = { width: 5, height: 5, fill: [0.4, 0.65] as [number, number], keepExtra: 0.5, needsInsight: false };
+    expect(generateShellLevel('same', 0, params)).toEqual(generateShellLevel('same', 0, params));
   });
 
   levels.forEach((level, i) => {
-    describe(`level ${i + 1} (${level.seed})`, () => {
-      it('is not solved at its start state', () => {
-        expect(isSolved(boardFromLevel(level))).toBe(false);
+    describe(`pool ${i + 1} (${level.seed})`, () => {
+      it('its stored loop meets every clue', () => {
+        expect(isSolved(level, new Set(level.solution))).toBe(true);
       });
-
-      it('has a valid stored solution', () => {
-        expect(isSolutionValid(level)).toBe(true);
+      it('has exactly one answer', () => {
+        expect(countSolutions(level, 2)).toBe(1);
       });
-
-      it('is solvable by the solver', () => {
-        expect(solve(boardFromLevel(level)).solution).not.toBeNull();
+      it('can be solved by reasoning alone, no guessing', () => {
+        expect(solveByLogic(level).solved).toBe(true);
       });
-
-      it('hints turn a wrong tile into place each time and never finish the puzzle', () => {
-        const board = boardFromLevel(level);
-        let steps = 0;
-        for (let step = stepClue(board, `t${steps}`); step; step = stepClue(board, `t${++steps}`)) {
-          const tile = board.cells[step.cell]!;
-          expect(tile.rotation === step.rotation).toBe(false);
-          for (const i of [step.cell, linkPartner(board, step.cell)]) {
-            if (i === null || board.cells[i]!.locked) continue;
-            board.cells[i]!.rotation = step.rotation;
-            board.cells[i]!.locked = true;
-          }
-          expect(solve(board).solution).not.toBeNull();
-          expect(steps).toBeLessThan(board.cells.length);
-        }
-        expect(isSolved(board)).toBe(false);
-      });
-
-      it('keeps blanks under 20% of tiles', () => {
-        const present = level.cells.filter((c) => c);
-        const blanks = present.filter((c) => c!.mask === 0);
-        expect(blanks.length / present.length).toBeLessThanOrEqual(0.2);
+      it('starts empty and unsolved', () => {
+        expect(isSolved(level, new Set())).toBe(false);
       });
     });
   });

@@ -3,7 +3,6 @@ import { resolve } from 'node:path';
 import { freezeLevels } from '../src/regions/bakeHelper';
 import { progression } from '../src/core/progress';
 import { bakeTidepools } from '../src/regions/tidepools/bake';
-import { bakeShellTrials } from '../src/regions/tidepools/shells/bake';
 import { bakeNightSky } from '../src/regions/nightsky/bake';
 import { bakeStoneGarden } from '../src/regions/stonegarden/bake';
 import { bakeCrystalCaves } from '../src/regions/crystalcaves/bake';
@@ -22,9 +21,13 @@ const regions: Array<{ id: string; bake: () => unknown[] }> = [
 ];
 
 // The free levels are settled: keep them exactly as they are unless --all is passed.
+// (Tidepools makes every pool from a fixed seed, so it bakes the same pools anyway.)
+// `--only <id>` bakes one region.
 const keepFree = !process.argv.includes('--all');
+const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 
 for (const region of regions) {
+  if (only && region.id !== only) continue;
   const started = Date.now();
   const file0 = resolve('src/regions', region.id, 'levels.json');
   if (keepFree && existsSync(file0)) freezeLevels(region.id, JSON.parse(readFileSync(file0, 'utf8')).slice(0, progression.freeLevels));
@@ -33,8 +36,3 @@ for (const region of regions) {
   writeFileSync(file, JSON.stringify(levels));
   console.log(`${region.id}: ${levels.length} levels in ${Date.now() - started} ms -> ${file}`);
 }
-
-// Test pools for Tidepools levels 5–7 (Shells and Stones), while the owner tries them.
-const shells = bakeShellTrials();
-writeFileSync(resolve('src/regions/tidepools/shells/levels.json'), JSON.stringify(shells));
-console.log(`tidepools shells: ${shells.length} pools`);

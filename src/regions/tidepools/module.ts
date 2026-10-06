@@ -5,17 +5,11 @@ import { palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
 import { progression } from '../../core/progress';
 import levelsJson from './levels.json';
-import type { LoopLevel } from './model';
-import { LoopLevelScene } from './view';
-import shellsJson from './shells/levels.json';
-import type { ShellLevel } from './shells/model';
-import { ShellPoolScene } from './shells/view';
+import type { ShellLevel } from './model';
+import { ShellPoolScene } from './view';
 
-const levels = levelsJson as LoopLevel[];
-// Test: levels 1–7 are Shells and Stones pools (drawing a loop from clues) while the owner
-// decides whether Tidepools moves to this kind of puzzle.
-const shellPools = shellsJson as ShellLevel[];
-const SHELL_SLOTS = [0, 1, 2, 3, 4, 5, 6];
+// Shells and Stones: draw one closed loop of tide through the pool from its clues.
+const levels = levelsJson as ShellLevel[];
 
 // Region finale: concentric ripples spread across the whole screen while light motes rise.
 function playFinale(ctx: ShellContext): Promise<void> {
@@ -70,7 +64,6 @@ export const tidepoolsModule: PuzzleModule = {
   id: 'tidepools',
   accent: 'mint',
   levelCount: progression.levelsPerRegion,
-  createLevel: (ctx, levelIndex) =>
-    SHELL_SLOTS.includes(levelIndex) ? new ShellPoolScene(ctx, shellPools[SHELL_SLOTS.indexOf(levelIndex)]!, levelIndex === 0) : new LoopLevelScene(ctx, levels[levelIndex]!, levelIndex === 0),
+  createLevel: (ctx, levelIndex) => new ShellPoolScene(ctx, levels[levelIndex]!, levelIndex === 0),
   playRegionFinale: playFinale,
 };

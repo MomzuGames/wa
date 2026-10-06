@@ -1,126 +1,135 @@
 import gsap from 'gsap';
-import { events } from '../../core/events';
-import { Container, FederatedPointerEvent, Graphics } from 'pixi.js';
+import { Container, type FederatedPointerEvent, Graphics } from 'pixi.js';
 import type { IntroPage, LevelScene, ShellContext, Tip } from '../types';
 import { palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
-import { isTouch, puzzleArea } from '../../design/layout';
-import { createGlow } from '../../fx/glow';
-import { GhostHand } from '../../ui/ghostHand';
-import { holdAt, liftFinger, makeFinger, refuse, tapAt } from '../../ui/introGlyphs';
-import {
-  DELTA,
-  DIRS,
-  E,
-  N,
-  S,
-  W,
-  type Board,
-  type LoopLevel,
-  boardFromLevel,
-  components,
-  connectorMatched,
-  currentMask,
-  index,
-  isSolved,
-  linkGroup,
-  linkPartner,
-  rotateMask,
-  tileKind,
-} from './model';
-import { type LoopStep, moreSteps, stepClue } from './clues';
+import { puzzleArea } from '../../design/layout';
+import { liftFinger, makeFinger } from '../../ui/introGlyphs';
 import { createTidepoolsVoice, type TidepoolsVoice } from './sound';
+import { type ClueKind, DIRS, type ShellLevel, clueMet, clueState, edgeAt, edgeEnds, exits, isClosedLoop, isSolved } from './model';
+import { events } from '../../core/events';
+import { dlog } from '../../core/debugLog';
+import { type Deduction, type Reason, solveByLogic } from './solver';
 
-const loopStyle = {
-  maxCell: 92,
-  gapFraction: 0.07,
-  cornerFraction: 0.22,
-  pipeFraction: 0.16,
-  hubFraction: 0.11,
-  endFraction: 0.17,
-  rotateSeconds: 0.34,
-  flowSpeed: 2.6,
-  flowSpacing: 0.9,
-  tutorialDelay: 1.6,
-  shadowOffset: 4,
-  shadowAlpha: 0.45,
-  longPressSeconds: 0.42,
+// Shells and stones: the player draws one closed loop of tide through the pool's points.
+// Drag from point to point to draw; drag back over a line to erase it; tap a point to
+// clear the lines at it. Clues glow softly once they are met.
+
+const poolStyle = {
+  maxCell: 74,
+  pointRadius: 2.2,
+  lineWidth: 0.13, // of a cell
+  clueRadius: 0.3, // of a cell
+  snap: 0.42, // of a cell: how close the finger must come to a point
+  flowSpeed: 0.9, // segments per second: the light moving along the drawn water
+  flowSpacing: 0.85, // segments between two glints
+  flowDash: 0.3, // of a segment
+  sandSpecks: 0.9, // per square of pool
 } as const;
+
+// A scallop shell, upright, centred on (x, y): a fan with a scalloped rim and ridges.
+export function drawShell(g: Graphics, x: number, y: number, r: number, alpha = 1): void {
+  const bumps = 5;
+  const hinge = { x, y: y + r * 0.78 };
+  const rim: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i <= bumps * 4; i++) {
+    const t = i / (bumps * 4);
+    const a = Math.PI * (1.08 + t * 0.84); // a wide fan, opening upward
+    const wave = 1 + 0.07 * Math.cos(t * bumps * Math.PI * 2);
+    rim.push({ x: x + Math.cos(a) * r * wave, y: y + r * 0.3 + Math.sin(a) * r * 1.05 * wave });
+  }
+  // Two small ears at the hinge, then the fan.
+  g.poly([hinge.x - r * 0.38, hinge.y - r * 0.02, hinge.x - r * 0.2, hinge.y - r * 0.26, hinge.x + r * 0.2, hinge.y - r * 0.26, hinge.x + r * 0.38, hinge.y - r * 0.02, hinge.x, hinge.y + r * 0.08]).fill({ color: palette.peach, alpha: 0.85 * alpha });
+  g.moveTo(hinge.x, hinge.y);
+  for (const p of rim) g.lineTo(p.x, p.y);
+  g.closePath().fill({ color: palette.peach, alpha: 0.95 * alpha }).stroke({ color: palette.pearl, width: Math.max(1, r * 0.07), alpha: 0.55 * alpha, join: 'round' });
+  // Ridges fan out from the hinge.
+  for (let i = 1; i < bumps; i++) {
+    const p = rim[Math.round((i / bumps) * (rim.length - 1))]!;
+    g.moveTo(hinge.x, hinge.y - r * 0.1).lineTo(hinge.x + (p.x - hinge.x) * 0.9, hinge.y + (p.y - hinge.y) * 0.9);
+  }
+  g.stroke({ color: palette.rose, width: Math.max(0.8, r * 0.08), alpha: 0.75 * alpha, cap: 'round' });
+}
+
+// A smooth pebble with a soft shine, centred on (x, y).
+export function drawPebble(g: Graphics, x: number, y: number, r: number, alpha = 1): void {
+  g.ellipse(x + r * 0.08, y + r * 0.16, r * 1.02, r * 0.82).fill({ color: palette.shadow, alpha: 0.35 * alpha });
+  g.ellipse(x, y, r * 1.02, r * 0.84).fill({ color: palette.dim, alpha: alpha }).ellipse(x, y, r * 1.02, r * 0.84).fill({ color: palette.lavender, alpha: 0.78 * alpha });
+  g.ellipse(x + r * 0.1, y + r * 0.22, r * 0.8, r * 0.5).fill({ color: palette.shadow, alpha: 0.12 * alpha });
+  g.ellipse(x, y, r * 1.02, r * 0.84).stroke({ color: palette.pearl, width: Math.max(1, r * 0.06), alpha: 0.35 * alpha });
+  g.ellipse(x - r * 0.35, y - r * 0.32, r * 0.32, r * 0.16).fill({ color: palette.pearl, alpha: 0.6 * alpha });
+}
+
 
 type Handler = () => void;
 
-// One colour per linked pair (never the land's own mint, which lights finished loops).
-const LINK_COLORS = [palette.lavender, palette.peach, palette.sky, palette.rose, palette.lemon] as const;
-function linkColor(group: number): number {
-  return LINK_COLORS[group % LINK_COLORS.length]!;
-}
+const NUDGE: Record<Reason, string> = {
+  point: 'Look at the ringed point. Every point the tide visits has exactly one way in and one way out.',
+  stone: 'Look at the ringed stone. It turns the tide and runs straight on one more step each side, and only one way fits.',
+  shell: 'Look at the ringed shell. The tide passes straight through, and one direction is blocked.',
+  'shell-turn': 'Look at the ringed shell. The tide must turn just before or just after it.',
+  'small-loop': 'Look at the ringed point. Joining there would close a small loop and leave the rest of the tide out.',
+  'what-if': 'Try the ringed spot in your head: one way leads straight to a dead end.',
+};
 
-interface TileView {
-  root: Container;
-  shadow: Graphics;
-  base: Graphics;
-  pipes: Graphics;
-  lit: Graphics;
-  lockDot: Graphics;
-  flowPhase: number;
-  animating: boolean;
-  spin: number;
-}
-
-export class LoopLevelScene implements LevelScene {
+export class ShellPoolScene implements LevelScene {
   readonly container = new Container();
-  private board: Board;
-  private views: (TileView | null)[] = [];
-  private boardLayer = new Container();
-  private litLayer = new Container();
-  private ghostLayer = new Container();
-  private ripple = new Graphics();
-  private hand: GhostHand | null = null;
+  private water = new Graphics();
+  private points = new Graphics();
+  private glow = new Graphics();
+  private lines = new Graphics();
+  private flow = new Graphics();
+  private halos = new Graphics();
+  private broken = new Graphics();
+  private clueLayer = new Graphics();
+  // The drawn water as runs of points (open streams and closed loops), for the moving light.
+  private runs: Array<Array<{ x: number; y: number }>> = [];
+  private flowBoost = 1;
+  private hintLayer = new Container();
+  private hit = new Graphics();
+  private drawn = new Set<number>();
   private handlers: Record<'attempt' | 'solved' | 'move', Handler[]> = { attempt: [], solved: [], move: [] };
-  private accent: number;
-  private cell = 60;
+  private cell = 40;
   private origin = { x: 0, y: 0 };
-  private time = 0;
+  private dragging: { last: { x: number; y: number }; mode: 'draw' | 'erase' | null; changed: boolean; start: { x: number; y: number } } | null = null;
   private solved = false;
-  private matchedCount = 0;
-  private completeCount = 0;
-  // Hints never turn a tile: a nudge rings the tile to look at, then faint ghost lines show
-  // how it (and later a few more) should face. Ghosts fade once a tile matches.
-  private hintTarget: LoopStep | null = null;
-  private nudge: { cell: number; g: Graphics; tween: gsap.core.Tween } | null = null;
-  private ghosts = new Map<number, { rotation: number; g: Graphics }>();
-  private hintCount = 0;
-  // A touch cut short never turns a tile by itself.
-  private offCancel = events.on('input:cancel', () => this.cancelPress());
   private voice: TidepoolsVoice;
-  private tutorialTimer: gsap.core.Tween | null = null;
-  private pressTimer: gsap.core.Tween | null = null;
-  private pressHandled = false;
+  private accent = palette.mint;
+  private time = 0;
+  // Hints never draw for the player: a nudge rings where to look, then a faint line shows
+  // the next stretch of tide (or a drawn line pulses when it cannot be right).
+  private logic: Deduction[];
+  private hintTarget: Deduction | null = null;
+  private nudge: { g: Graphics; tween: gsap.core.Tween } | null = null;
+  private ghosts = new Map<number, Graphics>();
+  private hintCount = 0;
+  private moveCount = 0;
+  // A touch cut short ends the drawing stroke where it was, and is never read as a tap.
+  private offCancel = events.on('input:cancel', () => {
+    dlog('pool-cancel', { dragging: !!this.dragging });
+    this.dragging = null;
+  });
+
+  // Level 1: a faint loop and a finger show how to draw, until the first line is drawn.
+  private demo: { line: Graphics; finger: Graphics; tl: gsap.core.Timeline } | null = null;
+  private closedNote = '';
 
   constructor(
-    private ctx: ShellContext,
-    private level: LoopLevel,
-    private isTutorial: boolean,
+    ctx: ShellContext,
+    private level: ShellLevel,
+    private tutorial = false,
   ) {
-    this.accent = palette.mint;
-    this.board = boardFromLevel(level);
     this.voice = createTidepoolsVoice(ctx.audio);
-    this.litLayer.filters = [createGlow(this.accent, { distance: 18, strength: 1.3, quality: 0.3 })];
-    // Overlays must never intercept pointer input meant for the tiles.
-    this.litLayer.eventMode = 'none';
-    this.ghostLayer.eventMode = 'none';
-    this.ripple.eventMode = 'none';
-    this.container.addChild(this.ripple, this.boardLayer, this.litLayer, this.ghostLayer);
-    this.buildTiles();
+    this.logic = solveByLogic(level).deductions;
+    for (const g of [this.water, this.points, this.glow, this.lines, this.flow, this.halos, this.broken, this.clueLayer]) g.eventMode = 'none';
+    this.hintLayer.eventMode = 'none';
+    this.hit.eventMode = 'static';
+    this.hit.on('pointerdown', (e: FederatedPointerEvent) => this.onDown(e));
+    this.hit.on('globalpointermove', (e: FederatedPointerEvent) => this.onMove(e));
+    this.hit.on('pointerup', () => this.onUp());
+    this.hit.on('pointerupoutside', () => this.onUp());
+    this.container.addChild(this.hit, this.water, this.points, this.halos, this.broken, this.glow, this.lines, this.flow, this.clueLayer, this.hintLayer);
     this.layout(ctx.width, ctx.height);
-    this.clearHints();
-    this.matchedCount = this.countMatched();
-    this.completeCount = components(this.board).filter((c) => c.complete).length;
-    this.refreshLit();
-  }
-
-  begin(): void {
-    if (this.isTutorial) this.scheduleTutorial();
   }
 
   on(event: 'attempt' | 'solved' | 'move', cb: Handler): void {
@@ -131,325 +140,391 @@ export class LoopLevelScene implements LevelScene {
     this.handlers[event].forEach((h) => h());
   }
 
-  private buildTiles(): void {
-    this.board.cells.forEach((tile, i) => {
-      if (!tile) {
-        this.views.push(null);
-        return;
-      }
-      const root = new Container();
-      const shadow = new Graphics();
-      const base = new Graphics();
-      const pipes = new Graphics();
-      const lockDot = new Graphics();
-      const lit = new Graphics();
-      lit.visible = false;
-      root.addChild(shadow, base, pipes, lockDot);
-      this.boardLayer.addChild(root);
-      this.litLayer.addChild(lit);
-      root.eventMode = 'static';
-      root.cursor = tile.locked ? 'default' : 'pointer';
-      root.on('pointerdown', (e: FederatedPointerEvent) => this.onPress(i, e));
-      root.on('pointerup', () => this.onRelease(i));
-      root.on('pointerupoutside', () => this.cancelPress());
-      this.views.push({ root, shadow, base, pipes, lit, lockDot, flowPhase: 0, animating: false, spin: 0 });
-    });
-  }
+  // ----- layout and drawing -----
 
   layout(width: number, height: number): void {
     const area = puzzleArea(width, height);
-    const fit = Math.min(area.width / this.board.width, area.height / this.board.height);
-    const cell = Math.min(loopStyle.maxCell, fit);
-    this.cell = cell;
-    this.origin = {
-      x: width / 2 - (this.board.width * cell) / 2 + cell / 2,
-      y: height / 2 - (this.board.height * cell) / 2 + cell / 2,
-    };
-    this.views.forEach((v, i) => {
-      if (!v) return;
-      const x = this.origin.x + (i % this.board.width) * cell;
-      const y = this.origin.y + Math.floor(i / this.board.width) * cell;
-      v.root.position.set(x, y);
-      v.lit.position.set(x, y);
-      this.drawTile(i);
-    });
-    // Hints follow their tiles to the new size and place.
-    for (const [i, ghost] of this.ghosts) {
-      ghost.g.position.copyFrom(this.views[i]!.root.position);
-      this.drawPipes(ghost.g, rotateMask(this.board.cells[i]!.mask, ghost.rotation), this.accent, 0.45);
+    const { width: w, height: h } = this.level;
+    this.cell = Math.min(poolStyle.maxCell, area.width / w, area.height / h);
+    this.origin = { x: width / 2 - ((w - 1) * this.cell) / 2, y: area.y + area.height / 2 - ((h - 1) * this.cell) / 2 };
+    this.hit.clear().rect(0, 0, width, height).fill({ color: palette.pearl, alpha: 0.001 });
+    // A tide pool: wet sand under shallow water, a soft rim where the water meets the rock.
+    const pad = this.cell * 0.6;
+    const x0 = this.origin.x - pad;
+    const y0 = this.origin.y - pad;
+    const pw = (w - 1) * this.cell + pad * 2;
+    const ph = (h - 1) * this.cell + pad * 2;
+    const round = this.cell * 0.55;
+    this.water
+      .clear()
+      .roundRect(x0 + 3, y0 + 6, pw, ph, round)
+      .fill({ color: palette.shadow, alpha: 0.35 })
+      .roundRect(x0, y0, pw, ph, round)
+      .fill({ color: palette.ink, alpha: 1 })
+      .roundRect(x0, y0, pw, ph, round)
+      .fill({ color: palette.peach, alpha: 0.05 })
+      .roundRect(x0 + pad * 0.18, y0 + pad * 0.18, pw - pad * 0.36, ph - pad * 0.36, round * 0.8)
+      .fill({ color: palette.mint, alpha: 0.035 })
+      .roundRect(x0, y0, pw, ph, round)
+      .stroke({ color: palette.mint, width: 1.2, alpha: 0.22 })
+      .roundRect(x0 + 4, y0 + 4, pw - 8, ph - 8, round * 0.9)
+      .stroke({ color: palette.pearl, width: 0.8, alpha: 0.07 });
+    // Grains of sand, the same every time for this pool.
+    let seed = 0;
+    for (const ch of this.level.seed) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+    const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const specks = Math.round((w - 1) * (h - 1) * poolStyle.sandSpecks * 6);
+    for (let i = 0; i < specks; i++) this.water.circle(x0 + pad * 0.3 + rand() * (pw - pad * 0.6), y0 + pad * 0.3 + rand() * (ph - pad * 0.6), 0.6 + rand() * 0.9).fill({ color: rand() < 0.5 ? palette.peach : palette.pearl, alpha: 0.05 + rand() * 0.08 });
+    // The points: small drops of water to draw between.
+    this.points.clear();
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        this.points.circle(this.px(x), this.py(y), poolStyle.pointRadius * 2.2).fill({ color: palette.mint, alpha: 0.06 });
+        this.points.circle(this.px(x), this.py(y), poolStyle.pointRadius).fill({ color: palette.mint, alpha: 0.35 });
+      }
     }
-    if (this.nudge) this.showNudge(this.nudge.cell);
+    this.redraw();
+    this.rebuildHints();
   }
 
   resize(width: number, height: number): void {
     this.layout(width, height);
   }
 
-  private drawPipes(g: Graphics, mask: number, color: number, alpha: number): void {
-    const half = this.cell / 2;
-    const w = this.cell * loopStyle.pipeFraction;
+  private px(x: number): number {
+    return this.origin.x + x * this.cell;
+  }
+
+  private py(y: number): number {
+    return this.origin.y + y * this.cell;
+  }
+
+  private redraw(): void {
+    const { width: w, height: h } = this.level;
+    const lw = this.cell * poolStyle.lineWidth;
+    this.lines.clear();
+    this.glow.clear();
+    const path = (g: Graphics) => {
+      for (const e of this.drawn) {
+        const [a, b] = edgeEnds(w, h, e);
+        g.moveTo(this.px(a.x), this.py(a.y)).lineTo(this.px(b.x), this.py(b.y));
+      }
+    };
+    // The water: a wide soft glow, a translucent mint body, then a bright thin core.
+    path(this.glow);
+    this.glow.stroke({ color: this.accent, width: lw * 2.6, alpha: 0.1, cap: 'round', join: 'round' });
+    path(this.lines);
+    this.lines.stroke({ color: this.accent, width: lw * 1.25, alpha: 0.45, cap: 'round', join: 'round' });
+    path(this.lines);
+    this.lines.stroke({ color: this.accent, width: lw * 0.4, alpha: 0.9, cap: 'round', join: 'round' });
+    // Open ends of the drawn tide show as small drops.
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (exits(this.level, this.drawn, x, y).length === 1) this.lines.circle(this.px(x), this.py(y), lw * 0.85).fill({ color: this.accent, alpha: 0.9 });
+      }
+    }
+    this.runs = this.findRuns();
+    this.drawClues();
+  }
+
+  private drawClues(): void {
+    const g = this.clueLayer;
     g.clear();
-    if (mask === 0) return;
-    for (const d of DIRS) {
-      if (!(mask & d)) continue;
-      const { dx, dy } = DELTA[d];
-      g.moveTo(0, 0).lineTo(dx * half, dy * half).stroke({ color, width: w, cap: 'round', alpha });
-    }
-    const kind = tileKind(mask);
-    const hub = kind === 'end' ? loopStyle.endFraction : loopStyle.hubFraction;
-    g.circle(0, 0, this.cell * hub).fill({ color, alpha });
-  }
-
-  private drawTile(i: number): void {
-    const v = this.views[i]!;
-    const tile = this.board.cells[i]!;
-    const half = this.cell / 2;
-    const gap = this.cell * loopStyle.gapFraction;
-    const size = this.cell - gap * 2;
-    v.shadow
-      .clear()
-      .roundRect(-half + gap + loopStyle.shadowOffset * 0.6, -half + gap + loopStyle.shadowOffset, size, size, this.cell * loopStyle.cornerFraction)
-      .fill({ color: palette.shadow, alpha: loopStyle.shadowAlpha });
-    v.base
-      .clear()
-      .roundRect(-half + gap, -half + gap, size, size, this.cell * loopStyle.cornerFraction)
-      .fill({ color: palette.ink })
-      .stroke({ color: palette.dim, width: 1, alpha: 0.5 });
-    this.drawPipes(v.pipes, tile.mask, palette.dim, 1);
-    v.spin = (tile.rotation * Math.PI) / 2;
-    v.pipes.rotation = v.spin;
-    this.drawPipes(v.lit, tile.mask, this.accent, 1);
-    v.lit.rotation = v.spin;
-    v.lockDot.clear();
-    // A tile that cannot turn wears a small hollow ring in its corner.
-    if (tile.locked) {
-      v.lockDot.circle(half - gap * 2.4, -half + gap * 2.4, this.cell * 0.05).stroke({ color: palette.pearl, width: 1.5, alpha: 0.6 });
-    }
-    // Linked tiles share a coloured border, one colour per pair, so a pair is easy to spot.
-    const group = linkGroup(this.board, i);
-    if (group >= 0) {
-      v.lockDot.roundRect(-half + gap, -half + gap, size, size, this.cell * loopStyle.cornerFraction).stroke({ color: linkColor(group), width: 2.5, alpha: 0.9 });
+    this.halos.clear();
+    this.broken.clear();
+    const r = this.cell * poolStyle.clueRadius;
+    // Each clue answers as the tide is drawn: a mint glow once met, a slow rose pulse as
+    // soon as a line breaks its rule.
+    for (const c of this.level.clues) {
+      const state = clueState(this.level, this.drawn, c);
+      const x = this.px(c.x);
+      const y = this.py(c.y);
+      if (state === 'met') for (const k of [2.1, 1.6, 1.25]) this.halos.circle(x, y, r * k).fill({ color: this.accent, alpha: 0.09 });
+      if (state === 'broken') this.broken.circle(x, y, r * 1.7).fill({ color: palette.rose, alpha: 0.2 }).circle(x, y, r * 1.7).stroke({ color: palette.rose, width: 1.5, alpha: 0.7 });
+      if (c.kind === 'shell') drawShell(g, x, y - r * 0.08, r);
+      else drawPebble(g, x, y, r * 0.95);
     }
   }
 
-  // When one of a linked pair turns, its partner's border flashes as it turns too.
-  private flashLink(i: number): void {
-    const group = linkGroup(this.board, i);
-    if (group < 0) return;
-    const half = this.cell / 2;
-    const gap = this.cell * loopStyle.gapFraction;
-    const size = this.cell - gap * 2;
-    const flash = new Graphics().roundRect(-half + gap, -half + gap, size, size, this.cell * loopStyle.cornerFraction).fill({ color: linkColor(group), alpha: 0.3 });
-    flash.position.copyFrom(this.views[i]!.root.position);
-    this.ghostLayer.addChild(flash);
-    gsap.to(flash, { alpha: 0, duration: scaled(durations.pieceMove) * 3, ease: easings.ambient, onComplete: () => flash.destroy() });
+  // The drawn water as runs of points: open streams from end to end, then closed loops.
+  private findRuns(): Array<Array<{ x: number; y: number }>> {
+    const { width: w, height: h } = this.level;
+    const seen = new Set<number>();
+    const runs: Array<Array<{ x: number; y: number }>> = [];
+    const walk = (start: { x: number; y: number }) => {
+      const run = [start];
+      let cur = start;
+      for (;;) {
+        const d = exits(this.level, this.drawn, cur.x, cur.y).find((k) => !seen.has(edgeAt(w, h, cur.x, cur.y, k)));
+        if (d === undefined) break;
+        const e = edgeAt(w, h, cur.x, cur.y, d);
+        seen.add(e);
+        const [a, b] = edgeEnds(w, h, e);
+        cur = a.x === cur.x && a.y === cur.y ? b : a;
+        run.push(cur);
+      }
+      if (run.length > 1) runs.push(run);
+    };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (exits(this.level, this.drawn, x, y).length === 1) walk({ x, y });
+    for (const e of this.drawn) if (!seen.has(e)) walk(edgeEnds(w, h, e)[0]);
+    return runs;
   }
 
-  // Click turns clockwise; right-click, shift-click or a long press turns the other way.
-  private onPress(i: number, e: FederatedPointerEvent): void {
+  // Glints of light travel along the water, around closed loops and down open streams.
+  private drawFlow(): void {
+    const g = this.flow;
+    g.clear();
+    if (this.runs.length === 0) return;
+    const shift = (this.time * poolStyle.flowSpeed * this.flowBoost) % poolStyle.flowSpacing;
+    for (const run of this.runs) {
+      const segments = run.length - 1;
+      for (let s = shift; s < segments; s += poolStyle.flowSpacing) {
+        const i = Math.floor(s);
+        const f = s - i;
+        const a = run[i]!;
+        const b = run[i + 1]!;
+        const end = Math.min(1, f + poolStyle.flowDash);
+        const ax = this.px(a.x + (b.x - a.x) * f);
+        const ay = this.py(a.y + (b.y - a.y) * f);
+        g.moveTo(ax, ay).lineTo(this.px(a.x + (b.x - a.x) * end), this.py(a.y + (b.y - a.y) * end));
+      }
+    }
+    g.stroke({ color: palette.pearl, width: this.cell * poolStyle.lineWidth * 0.35, alpha: 0.6, cap: 'round' });
+  }
+
+  // ----- drawing the tide -----
+
+  private pointNear(gx: number, gy: number): { x: number; y: number } | null {
+    const local = this.container.toLocal({ x: gx, y: gy });
+    const x = Math.round((local.x - this.origin.x) / this.cell);
+    const y = Math.round((local.y - this.origin.y) / this.cell);
+    if (x < 0 || y < 0 || x >= this.level.width || y >= this.level.height) return null;
+    if (Math.hypot(local.x - this.px(x), local.y - this.py(y)) > this.cell * poolStyle.snap) return null;
+    return { x, y };
+  }
+
+  private onDown(e: FederatedPointerEvent): void {
     if (this.solved) return;
-    const tile = this.board.cells[i]!;
-    if (tile.locked || tile.mask === 0) return;
-    if (e.button === 2 || e.shiftKey) {
-      this.pressHandled = true;
-      this.rotate(i, -1);
+    const p = this.pointNear(e.global.x, e.global.y);
+    dlog('pool-down', { at: [Math.round(e.global.x), Math.round(e.global.y)], point: p, dragging: !!this.dragging });
+    if (!p) return;
+    this.dragging = { last: p, mode: null, changed: false, start: p };
+  }
+
+  private onMove(e: FederatedPointerEvent): void {
+    this.moveCount++;
+    const drag = this.dragging;
+    if (!drag || this.solved) return;
+    const p = this.pointNear(e.global.x, e.global.y);
+    if (!p || (p.x === drag.last.x && p.y === drag.last.y)) return;
+    // Walk one step at a time toward the finger, so fast strokes leave no gaps.
+    while (drag.last.x !== p.x || drag.last.y !== p.y) {
+      const dx = Math.sign(p.x - drag.last.x);
+      const dy = dx === 0 ? Math.sign(p.y - drag.last.y) : 0;
+      const next = { x: drag.last.x + dx, y: drag.last.y + dy };
+      this.stroke(drag, drag.last, next);
+      drag.last = next;
+    }
+  }
+
+  private stroke(drag: NonNullable<ShellPoolScene['dragging']>, a: { x: number; y: number }, b: { x: number; y: number }): void {
+    const dir = DIRS.find((d) => edgeAt(this.level.width, this.level.height, a.x, a.y, d) === edgeAt(this.level.width, this.level.height, b.x, b.y, ((d + 2) % 4) as 0))!;
+    const e = edgeAt(this.level.width, this.level.height, a.x, a.y, dir);
+    if (e < 0) return;
+    drag.mode ??= this.drawn.has(e) ? 'erase' : 'draw';
+    if (drag.mode === 'erase') {
+      if (!this.drawn.has(e)) return;
+      this.drawn.delete(e);
+    } else {
+      if (this.drawn.has(e)) return;
+      // A point never takes a third line: the tide passes through each point once.
+      if (exits(this.level, this.drawn, a.x, a.y).length >= 2 || exits(this.level, this.drawn, b.x, b.y).length >= 2) return;
+      this.drawn.add(e);
+      this.voice.rotate(b.x);
+    }
+    drag.changed = true;
+    this.changed();
+  }
+
+  private onUp(): void {
+    const drag = this.dragging;
+    this.dragging = null;
+    dlog('pool-up', { had: !!drag, changed: drag?.changed ?? null, gameMoves: this.moveCount });
+    this.moveCount = 0;
+    if (!drag || this.solved || drag.changed) return;
+    // A tap on a point clears the lines that meet there.
+    const { x, y } = drag.start;
+    let cleared = false;
+    for (const d of DIRS) {
+      const e = edgeAt(this.level.width, this.level.height, x, y, d);
+      if (e >= 0 && this.drawn.delete(e)) cleared = true;
+    }
+    if (cleared) this.changed();
+  }
+
+  private changed(): void {
+    this.stopDemo();
+    this.emit('move');
+    this.redraw();
+    this.settleHints();
+    if (isSolved(this.level, this.drawn)) {
+      this.solved = true;
+      this.voice.loopClosed(this.drawn.size);
+      this.emit('solved');
       return;
     }
-    this.pressHandled = false;
-    this.pressTimer?.kill();
-    this.pressTimer = gsap.delayedCall(loopStyle.longPressSeconds, () => {
-      this.pressHandled = true;
-      this.rotate(i, -1);
-    });
-  }
-
-  private onRelease(i: number): void {
-    this.pressTimer?.kill();
-    this.pressTimer = null;
-    if (this.pressHandled) return;
-    this.pressHandled = true;
-    this.rotate(i, 1);
-  }
-
-  private cancelPress(): void {
-    this.pressTimer?.kill();
-    this.pressTimer = null;
-    this.pressHandled = true;
-  }
-
-  private rotate(i: number, direction: 1 | -1): void {
-    this.stopTutorial();
-    this.emit('move');
-    this.voice.rotate(i % this.board.width);
-    this.spin(i, direction);
-    const partner = linkPartner(this.board, i);
-    if (partner !== null && !this.board.cells[partner]!.locked) {
-      this.spin(partner, direction);
-      this.flashLink(partner);
+    // A closed loop that is not right yet: say which clues it misses, gently, once per loop.
+    if (isClosedLoop(this.level, this.drawn)) {
+      const key = [...this.drawn].sort((a, b) => a - b).join(',');
+      if (key === this.closedNote) return;
+      this.closedNote = key;
+      this.pulseUnmet();
+      const outside = this.level.clues.filter((c) => exits(this.level, this.drawn, c.x, c.y).length === 0).length;
+      events.emit(
+        'level:note',
+        outside > 0
+          ? 'The loop is closed, but it must pass through every shell and every stone. The pulsing ones are left out.'
+          : 'The loop is closed, but the pulsing clues are not satisfied yet. Check how the loop passes them.',
+      );
     }
   }
 
-  // Turns one tile's model and animates it; linked partners are spun by the caller.
-  private spin(i: number, direction: 1 | -1): void {
-    const tile = this.board.cells[i]!;
-    const v = this.views[i]!;
-    tile.rotation = (tile.rotation + direction + 4) % 4;
-
-    v.animating = true;
-    v.lit.visible = false;
-    // Always tween toward the model's angle so rapid clicks never drift.
-    v.spin += (direction * Math.PI) / 2;
-    gsap.to(v.pipes, {
-      rotation: v.spin,
-      duration: scaled(loopStyle.rotateSeconds),
-      ease: easings.tileSnap,
-      overwrite: true,
-      onComplete: () => {
-        v.animating = false;
-        v.lit.rotation = v.spin;
-        this.afterChange();
-      },
-    });
-  }
-
-  private countMatched(): number {
-    let n = 0;
-    for (let y = 0; y < this.board.height; y++) {
-      for (let x = 0; x < this.board.width; x++) {
-        const tile = this.board.cells[index(this.board, x, y)];
-        if (!tile) continue;
-        for (const d of DIRS) if (currentMask(tile) & d && connectorMatched(this.board, x, y, d)) n++;
-      }
-    }
-    return n;
-  }
-
-  private afterChange(): void {
-    const matched = this.countMatched();
-    const comps = components(this.board);
-    const complete = comps.filter((c) => c.complete).length;
-    if (matched > this.matchedCount) this.voice.connect(matched);
-    if (complete > this.completeCount) {
-      const newest = comps.filter((c) => c.complete).sort((a, b) => b.cells.length - a.cells.length)[0]!;
-      this.voice.loopClosed(newest.cells.length);
-    }
-    this.matchedCount = matched;
-    this.completeCount = complete;
-    this.refreshLit();
-    this.settleHints();
-    if (!this.solved && isSolved(this.board)) {
-      this.solved = true;
-      this.emit('solved');
+  // Unsatisfied clues pulse for a moment.
+  private pulseUnmet(): void {
+    const r = this.cell * poolStyle.clueRadius;
+    for (const c of this.level.clues) {
+      if (clueMet(this.level, this.drawn, c)) continue;
+      const g = new Graphics().circle(0, 0, r * 1.7).stroke({ color: palette.peach, width: 2, alpha: 0.9 });
+      g.position.set(this.px(c.x), this.py(c.y));
+      this.hintLayer.addChild(g);
+      gsap.fromTo(g, { alpha: 0 }, { alpha: 1, duration: 0.45, yoyo: true, repeat: 3, ease: easings.ambient, onComplete: () => g.destroy() });
     }
   }
 
-  // Lights every tile in a fully satisfied group; flow phase comes from distance within the group.
-  private refreshLit(): void {
-    this.views.forEach((v) => {
-      if (v) v.lit.visible = false;
-    });
-    for (const comp of components(this.board)) {
-      if (!comp.complete) continue;
-      const dist = new Map<number, number>();
-      const start = comp.cells[0]!;
-      dist.set(start, 0);
-      const queue = [start];
-      while (queue.length) {
-        const i = queue.shift()!;
-        const x = i % this.board.width;
-        const y = Math.floor(i / this.board.width);
-        const tile = this.board.cells[i]!;
-        for (const d of DIRS) {
-          if (!(currentMask(tile) & d)) continue;
-          const ni = index(this.board, x + DELTA[d].dx, y + DELTA[d].dy);
-          if (comp.cells.includes(ni) && !dist.has(ni)) {
-            dist.set(ni, dist.get(i)! + 1);
-            queue.push(ni);
-          }
-        }
-      }
-      for (const i of comp.cells) {
-        const v = this.views[i]!;
-        if (v.animating) continue;
-        v.lit.visible = true;
-        v.flowPhase = dist.get(i) ?? 0;
-      }
-    }
+  // ----- the level 1 demonstration -----
+
+  begin(): void {
+    if (this.tutorial && this.drawn.size === 0) gsap.delayedCall(0.6, () => this.startDemo());
   }
 
-  update(dt: number): void {
-    this.time += dt;
-    for (const v of this.views) {
-      if (!v || !v.lit.visible) continue;
-      v.lit.alpha = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(this.time * loopStyle.flowSpeed - v.flowPhase * loopStyle.flowSpacing));
+  private loopPoints(): Array<{ x: number; y: number }> {
+    const { width: w, height: h } = this.level;
+    const sol = new Set(this.level.solution);
+    const start = edgeEnds(w, h, this.level.solution[0]!)[0];
+    const order = [start];
+    let prev: { x: number; y: number } | null = null;
+    let cur = start;
+    for (let i = 0; i < sol.size; i++) {
+      const nextDir = DIRS.find((d) => {
+        const e = edgeAt(w, h, cur.x, cur.y, d);
+        if (e < 0 || !sol.has(e)) return false;
+        const [a, b] = edgeEnds(w, h, e);
+        const other = a.x === cur.x && a.y === cur.y ? b : a;
+        return !prev || other.x !== prev.x || other.y !== prev.y;
+      })!;
+      const [a, b] = edgeEnds(w, h, edgeAt(w, h, cur.x, cur.y, nextDir));
+      const other = a.x === cur.x && a.y === cur.y ? b : a;
+      prev = cur;
+      cur = other;
+      order.push(cur);
     }
+    return order;
+  }
+
+  private startDemo(): void {
+    if (this.demo || this.drawn.size > 0 || this.solved) return;
+    const pts = this.loopPoints();
+    // The whole loop shows faintly at once; the finger then traces it.
+    const line = new Graphics();
+    const whole = new Graphics();
+    for (let i = 1; i < pts.length; i++) whole.moveTo(this.px(pts[i - 1]!.x), this.py(pts[i - 1]!.y)).lineTo(this.px(pts[i]!.x), this.py(pts[i]!.y));
+    whole.stroke({ color: palette.pearl, width: this.cell * poolStyle.lineWidth * 0.8, alpha: 0.16, cap: 'round', join: 'round' });
+    line.addChild(whole);
+    const finger = makeFinger();
+    this.hintLayer.addChild(line, finger);
+    const draw = (upTo: number) => {
+      line.clear();
+      for (let i = 1; i <= upTo; i++) line.moveTo(this.px(pts[i - 1]!.x), this.py(pts[i - 1]!.y)).lineTo(this.px(pts[i]!.x), this.py(pts[i]!.y));
+      line.stroke({ color: palette.pearl, width: this.cell * poolStyle.lineWidth * 0.8, alpha: 0.45, cap: 'round', join: 'round' });
+    };
+    const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 });
+    tl.call(() => draw(0)).set(finger, { x: this.px(pts[0]!.x), y: this.py(pts[0]!.y) }).to(finger, { alpha: 1, duration: 0.25 });
+    for (let i = 1; i < pts.length; i++) tl.to(finger, { x: this.px(pts[i]!.x), y: this.py(pts[i]!.y), duration: 0.35, ease: 'none', onComplete: () => draw(i) });
+    tl.to(finger, { alpha: 0, duration: 0.3, delay: 0.3 }).to(line, { alpha: 0, duration: 0.6 }).set(line, { alpha: 1 });
+    this.demo = { line, finger, tl };
+  }
+
+  private stopDemo(): void {
+    if (!this.demo) return;
+    this.demo.tl.kill();
+    this.demo.line.destroy();
+    this.demo.finger.destroy();
+    this.demo = null;
   }
 
   restart(): void {
     if (this.solved) return;
-    this.stopTutorial();
-    this.board.cells.forEach((tile, i) => {
-      const original = this.level.cells[i];
-      if (!tile || !original) return;
-      tile.rotation = original.rotation;
-      const v = this.views[i]!;
-      gsap.killTweensOf(v.pipes);
-      v.animating = false;
-      v.root.cursor = tile.locked ? 'default' : 'pointer';
-      this.drawTile(i);
-    });
-    this.matchedCount = this.countMatched();
-    this.completeCount = components(this.board).filter((c) => c.complete).length;
-    this.refreshLit();
-    if (this.isTutorial) this.scheduleTutorial();
+    this.drawn.clear();
+    this.clearHints();
+    this.redraw();
+  }
+
+  update(dt: number): void {
+    this.time += dt;
+    this.drawFlow();
+    this.broken.alpha = 0.55 + 0.45 * Math.sin(this.time * 2.2);
+  }
+
+  // ----- hints -----
+
+  // The first step of pure reasoning the player has not made yet: a line that should be
+  // drawn, or one they drew that cannot be part of the tide.
+  private nextStep(): Deduction | null {
+    const wrong = this.logic.find((d) => !d.on && this.drawn.has(d.edge));
+    if (wrong) return wrong;
+    return this.logic.find((d) => d.on && !this.drawn.has(d.edge)) ?? null;
+  }
+
+  private stepDone(d: Deduction): boolean {
+    return d.on ? this.drawn.has(d.edge) : !this.drawn.has(d.edge);
   }
 
   hint(): string {
     if (this.solved) return '';
     this.hintCount++;
-    const seed = `${this.level.seed}:hint:${this.hintCount}`;
-    if (this.hintTarget && this.faces(this.hintTarget.cell, this.hintTarget.rotation)) this.hintTarget = null;
-    // First: where to look, and why.
+    if (this.hintTarget && this.stepDone(this.hintTarget)) this.hintTarget = null;
     if (!this.hintTarget) {
-      const step = stepClue(this.board, seed);
-      if (!step) return 'Just one tile left to turn. You can do this one!';
+      const step = this.nextStep();
+      const left = this.level.solution.filter((e) => !this.drawn.has(e)).length;
+      if (!step || left <= 1) return 'Just one line left. You can do this one!';
       this.hintTarget = step;
-      this.showNudge(step.cell);
-      switch (step.reason) {
-        case 'forced':
-          return 'Look at the ringed tile. No line may point off the board or into an empty space, so only one way fits.';
-        case 'neighbour':
-          return 'Look at the ringed tile. The tiles beside it are already right: which way meets their lines?';
-        default:
-          return 'Look at the ringed tile. Try turning it until its lines meet its neighbours.';
+      if (!step.on) {
+        this.showNudge(step.x, step.y);
+        return 'One of your lines cannot be part of the tide. Look near the ringed point.';
       }
+      this.showNudge(step.x, step.y);
+      return NUDGE[step.reason];
     }
-    // Then: how that tile should face.
-    if (!this.ghosts.has(this.hintTarget.cell)) {
-      this.addGhost(this.hintTarget.cell, this.hintTarget.rotation);
-      return 'The faint lines show which way the ringed tile should face. Turn it to match.';
+    if (!this.ghosts.has(this.hintTarget.edge)) {
+      this.addGhost(this.hintTarget.edge, this.hintTarget.on);
+      return this.hintTarget.on ? 'The faint line shows where the tide runs. Draw it.' : 'The pulsing line cannot be part of the tide. Drag back over it to erase it.';
     }
-    // After that: a few more tiles at a time, never more than half of what is left.
-    const more = moreSteps(this.board, new Set(this.ghosts.keys()), 2);
+    // A few more lines at a time, never more than half of what is still to draw.
+    const left = this.level.solution.filter((e) => !this.drawn.has(e));
+    const room = Math.floor(left.length / 2) - [...this.ghosts.keys()].filter((e) => left.includes(e)).length;
+    const more = this.logic.filter((d) => d.on && !this.drawn.has(d.edge) && !this.ghosts.has(d.edge)).slice(0, Math.max(0, Math.min(2, room)));
     if (more.length === 0) return 'That is all I can show. The rest is yours.';
-    more.forEach((m) => this.addGhost(m.cell, m.rotation));
-    return more.length === 1 ? 'One more tile shows its shape. Turn it to match.' : 'Two more tiles show their shape. Turn each to match.';
+    more.forEach((d) => this.addGhost(d.edge, true));
+    return more.length === 1 ? 'One more stretch of tide shows faintly.' : 'Two more stretches of tide show faintly.';
   }
 
-  private faces(i: number, rotation: number): boolean {
-    const tile = this.board.cells[i]!;
-    return currentMask(tile) === rotateMask(tile.mask, rotation);
-  }
-
-  private showNudge(i: number): void {
+  private showNudge(x: number, y: number): void {
     this.clearNudge();
-    const v = this.views[i]!;
-    const size = this.cell * 1.02;
-    const g = new Graphics().roundRect(-size / 2, -size / 2, size, size, this.cell * loopStyle.cornerFraction).stroke({ color: palette.pearl, width: 1.5, alpha: 0.9 });
-    g.position.copyFrom(v.root.position);
-    this.ghostLayer.addChild(g);
+    const g = new Graphics().circle(0, 0, this.cell * 0.42).stroke({ color: palette.pearl, width: 1.5, alpha: 0.9 });
+    g.position.set(this.px(x), this.py(y));
+    this.hintLayer.addChild(g);
     const tween = gsap.fromTo(g, { alpha: 0.25 }, { alpha: 0.9, duration: 0.9, yoyo: true, repeat: -1, ease: easings.ambient });
-    this.nudge = { cell: i, g, tween };
+    this.nudge = { g, tween };
   }
 
   private clearNudge(): void {
@@ -458,277 +533,193 @@ export class LoopLevelScene implements LevelScene {
     this.nudge = null;
   }
 
-  private addGhost(i: number, rotation: number): void {
-    if (this.ghosts.has(i) || this.faces(i, rotation)) return;
-    const g = new Graphics();
-    g.position.copyFrom(this.views[i]!.root.position);
-    this.drawPipes(g, rotateMask(this.board.cells[i]!.mask, rotation), this.accent, 0.45);
-    g.alpha = 0;
-    this.ghostLayer.addChild(g);
-    gsap.to(g, { alpha: 1, duration: scaled(durations.pieceMove) });
-    this.ghosts.set(i, { rotation, g });
+  private addGhost(e: number, on: boolean): void {
+    const [a, b] = edgeEnds(this.level.width, this.level.height, e);
+    const g = new Graphics()
+      .moveTo(this.px(a.x), this.py(a.y))
+      .lineTo(this.px(b.x), this.py(b.y))
+      .stroke({ color: on ? palette.pearl : palette.peach, width: this.cell * poolStyle.lineWidth * (on ? 0.7 : 1.6), alpha: on ? 0.4 : 0.5, cap: 'round' });
+    this.hintLayer.addChild(g);
+    if (!on) gsap.fromTo(g, { alpha: 0.2 }, { alpha: 0.8, duration: 0.7, yoyo: true, repeat: -1, ease: easings.ambient });
+    this.ghosts.set(e, g);
   }
 
-  // Ghosts (and the nudge) go once their tile faces the way they showed.
   private settleHints(): void {
-    for (const [i, ghost] of this.ghosts) {
-      if (!this.faces(i, ghost.rotation)) continue;
-      gsap.to(ghost.g, { alpha: 0, duration: scaled(durations.pieceMove), onComplete: () => ghost.g.destroy() });
-      this.ghosts.delete(i);
+    for (const [e, g] of this.ghosts) {
+      const shouldBeOn = this.level.solution.includes(e);
+      if (this.drawn.has(e) === shouldBeOn) {
+        gsap.killTweensOf(g);
+        g.destroy();
+        this.ghosts.delete(e);
+      }
     }
-    if (this.nudge && this.hintTarget && this.faces(this.hintTarget.cell, this.hintTarget.rotation)) {
+    if (this.hintTarget && this.stepDone(this.hintTarget)) {
       this.clearNudge();
       this.hintTarget = null;
     }
   }
 
+  private rebuildHints(): void {
+    const kept = [...this.ghosts.keys()];
+    this.ghosts.forEach((g) => {
+      gsap.killTweensOf(g);
+      g.destroy();
+    });
+    this.ghosts.clear();
+    kept.forEach((e) => this.addGhost(e, this.level.solution.includes(e)));
+    if (this.hintTarget) this.showNudge(this.hintTarget.x, this.hintTarget.y);
+  }
+
   private clearHints(): void {
     this.clearNudge();
-    this.ghosts.forEach((g) => g.g.destroy());
+    this.ghosts.forEach((g) => {
+      gsap.killTweensOf(g);
+      g.destroy();
+    });
     this.ghosts.clear();
     this.hintTarget = null;
   }
 
   tips(): Tip[] {
-    const tips: Tip[] = [
-      { id: 'loop:edges', text: 'Tip: start at the edges and corners. A line can never point off the board.', after: 1 },
-      { id: 'loop:back', text: isTouch() ? 'Tip: hold a tile to turn it back the other way.' : 'Tip: right-click a tile to turn it back the other way.', after: 2 },
-      { id: 'loop:follow', text: 'Tip: once a tile is right, its lines tell its neighbours which way to face. Work outward from it.', after: 4 },
+    return [
+      { id: 'pool:edge', text: 'Tip: start with clues near the edge of the pool. The tide cannot leave it, so they have fewer ways to go.', after: 1 },
+      { id: 'pool:stone', text: 'Tip: a stone sends the tide straight on for a step each side. If a side has no room, the tide must go the other way.', after: 2 },
+      { id: 'pool:loop', text: 'Tip: the tide is one loop. Never close a small loop while clues are still left outside it.', after: 3 },
     ];
-    if (this.level.links?.length) tips.push({ id: 'loop:links', text: 'Tip: tiles with the same coloured border always turn together. Set the harder one; the other follows.', after: 2 });
-    return tips;
   }
 
-  private scheduleTutorial(): void {
-    this.stopTutorial();
-    this.tutorialTimer = gsap.delayedCall(loopStyle.tutorialDelay, () => {
-      const i = this.board.cells.findIndex((t, k) => t && !t.locked && t.mask !== 0 && currentMask(t) !== rotateMask(t.mask, this.level.solution[k]!));
-      if (i < 0) return;
-      if (!this.hand) {
-        this.hand = new GhostHand();
-        this.container.addChild(this.hand);
-      }
-      const v = this.views[i]!;
-      this.hand.demoTap(v.root.x, v.root.y);
-    });
-  }
-
-  private stopTutorial(): void {
-    this.tutorialTimer?.kill();
-    this.tutorialTimer = null;
-    this.hand?.stop();
-  }
+  // ----- completion -----
 
   playCompletion(): Promise<void> {
-    this.stopTutorial();
+    this.clearHints();
     this.voice.solve();
     const total = scaled(durations.completion);
-    const cx = this.origin.x + ((this.board.width - 1) * this.cell) / 2;
-    const cy = this.origin.y + ((this.board.height - 1) * this.cell) / 2;
-    const maxDist = Math.hypot(this.board.width, this.board.height) * this.cell;
-
-    // Ripple ring radiating outward from the board centre.
-    const ring = { r: 0, alpha: 0.5 };
-    gsap.to(ring, {
-      r: maxDist,
-      alpha: 0,
+    const { width: w, height: h } = this.level;
+    const ripple = new Graphics();
+    this.hintLayer.addChild(ripple);
+    const cx = this.px((w - 1) / 2);
+    const cy = this.py((h - 1) / 2);
+    const reach = Math.hypot(w, h) * this.cell;
+    // The water rushes all the way round, then settles.
+    gsap.timeline().to(this, { flowBoost: 4, duration: total * 0.3, ease: easings.response }).to(this, { flowBoost: 1.5, duration: total * 0.6, ease: easings.ambient });
+    const state = { p: 0 };
+    gsap.to(state, {
+      p: 1,
       duration: total * 0.8,
       ease: easings.response,
       onUpdate: () => {
-        this.ripple.clear().circle(cx, cy, ring.r).stroke({ color: this.accent, width: 2, alpha: ring.alpha });
+        ripple.clear().circle(cx, cy, state.p * reach).stroke({ color: this.accent, width: 2, alpha: 0.5 * (1 - state.p) });
+        this.glow.alpha = 1 + Math.sin(state.p * Math.PI) * 4;
       },
     });
+    return new Promise((resolve) => gsap.delayedCall(total, resolve));
+  }
 
-    // Tiles bob like water, staggered by distance from the centre.
-    this.views.forEach((v) => {
-      if (!v) return;
-      const dist = Math.hypot(v.root.x - cx, v.root.y - cy) / maxDist;
-      const bob = this.cell * 0.12;
-      gsap.to([v.root, v.lit], {
-        y: `-=${bob}`,
-        duration: total * 0.22,
-        delay: dist * total * 0.35,
-        ease: easings.ambient,
-        yoyo: true,
-        repeat: 1,
+  // ----- instruction card -----
+
+  introPages(): IntroPage[] {
+    const s = 34;
+    const dot = (g: Graphics, x: number, y: number) => g.circle(x, y, 2.4).fill({ color: palette.pearl, alpha: 0.35 });
+    const grid = (g: Graphics, n: number) => {
+      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) dot(g, (x - (n - 1) / 2) * s, (y - (n - 1) / 2) * s);
+    };
+    const path = (g: Graphics, pts: Array<[number, number]>, upTo: number, color = this.accent) => {
+      g.clear();
+      for (let i = 1; i <= upTo && i < pts.length; i++) g.moveTo(pts[i - 1]![0] * s, pts[i - 1]![1] * s).lineTo(pts[i]![0] * s, pts[i]![1] * s);
+      g.stroke({ color, width: 4, alpha: 0.95, cap: 'round', join: 'round' });
+    };
+    // Example pools, right and wrong side by side, each with a soft tick or cross below.
+    type Example = { w: number; h: number; path: Array<[number, number]>; clues: Array<[number, number, ClueKind]>; ok: boolean };
+    const exampleGlyph = (examples: Example[]) => () => {
+      const root = new Container();
+      const step = 18;
+      const gap = 26;
+      const widths = examples.map((e) => (e.w - 1) * step);
+      let x0 = -(widths.reduce((a, w) => a + w, 0) + gap * (examples.length - 1)) / 2;
+      examples.forEach((e, i) => {
+        const panel = new Graphics();
+        const ox = x0;
+        const oy = -((e.h - 1) * step) / 2 - 10;
+        for (let y = 0; y < e.h; y++) for (let x = 0; x < e.w; x++) panel.circle(ox + x * step, oy + y * step, 2).fill({ color: palette.pearl, alpha: 0.3 });
+        for (let k = 1; k < e.path.length; k++) panel.moveTo(ox + e.path[k - 1]![0] * step, oy + e.path[k - 1]![1] * step).lineTo(ox + e.path[k]![0] * step, oy + e.path[k]![1] * step);
+        panel.stroke({ color: this.accent, width: 3.5, alpha: 0.95, cap: 'round', join: 'round' });
+        for (const [cx, cy, kind] of e.clues) {
+          if (kind === 'shell') drawShell(panel, ox + cx * step, oy + cy * step - 0.5, 6.5);
+          else drawPebble(panel, ox + cx * step, oy + cy * step, 6);
+        }
+        // The verdict under the example.
+        const mx = ox + ((e.w - 1) * step) / 2;
+        const my = oy + (e.h - 1) * step + 24;
+        if (e.ok) panel.moveTo(mx - 7, my).lineTo(mx - 2, my + 5).lineTo(mx + 8, my - 6).stroke({ color: palette.mint, width: 2.5, cap: 'round', join: 'round' });
+        else panel.moveTo(mx - 6, my - 6).lineTo(mx + 6, my + 6).moveTo(mx + 6, my - 6).lineTo(mx - 6, my + 6).stroke({ color: palette.peach, width: 2.5, cap: 'round' });
+        panel.alpha = 0;
+        root.addChild(panel);
+        gsap.to(panel, { alpha: 1, duration: 0.5, delay: i * 0.35 });
+        x0 += widths[i]! + gap;
       });
-      v.lit.visible = true;
-      v.flowPhase = dist * 6;
-    });
-
-    for (let i = 0; i < 24; i++) {
-      const a = this.ctx.rng.next() * Math.PI * 2;
-      const r = this.ctx.rng.next() * maxDist * 0.4;
-      this.ctx.particles.emit({
-        x: cx + Math.cos(a) * r,
-        y: cy + Math.sin(a) * r,
-        color: this.accent,
-        vx: 0,
-        vy: -10 - this.ctx.rng.next() * 20,
-        life: 1.5 + this.ctx.rng.next(),
-        alphaFrom: 0.5,
-        scaleFrom: 0.3,
-        scaleTo: 0.05,
+      return root;
+    };
+    const pages: IntroPage[] = [
+      {
+        caption: 'Draw one closed loop of water that passes through every shell and every stone. Drag from point to point. It does not have to touch every point.',
+        glyph: exampleGlyph([
+          { w: 3, h: 3, path: [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1], [0, 0]], clues: [[0, 0, 'stone'], [1, 2, 'shell']], ok: true },
+          { w: 3, h: 3, path: [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]], clues: [[0, 0, 'stone'], [1, 2, 'shell']], ok: false },
+        ]),
+      },
+    ];
+    const has = (k: ClueKind) => this.level.clues.some((c) => c.kind === k);
+    if (has('shell')) {
+      pages.push({
+        caption: 'Shell: go straight through it, then turn at the very next point, on at least one side.',
+        glyph: exampleGlyph([
+          { w: 4, h: 3, path: [[1, 2], [1, 1], [2, 1], [3, 1]], clues: [[2, 1, 'shell']], ok: true },
+          { w: 3, h: 3, path: [[0, 1], [1, 1], [1, 2]], clues: [[1, 1, 'shell']], ok: false },
+          { w: 5, h: 3, path: [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1]], clues: [[2, 1, 'shell']], ok: false },
+        ]),
       });
     }
-
-    return new Promise((resolve) => gsap.delayedCall(total, resolve));
+    if (has('stone')) {
+      pages.push({
+        caption: 'Stone: turn on it, then go straight for two steps both ways.',
+        glyph: exampleGlyph([
+          { w: 3, h: 3, path: [[2, 0], [1, 0], [0, 0], [0, 1], [0, 2]], clues: [[0, 0, 'stone']], ok: true },
+          { w: 3, h: 3, path: [[0, 1], [1, 1], [2, 1]], clues: [[1, 1, 'stone']], ok: false },
+          { w: 3, h: 3, path: [[1, 1], [1, 0], [0, 0], [0, 1], [0, 2]], clues: [[0, 0, 'stone']], ok: false },
+        ]),
+      });
+    }
+    pages.push({
+      caption: 'To erase, drag back over a line, or tap a point to clear the lines there. A shell or stone glows mint when it is right, and pulses pink when a line breaks its rule.',
+      glyph: () => {
+        // Draw two steps to the right, then slide back: each line vanishes under the finger.
+        const root = new Container();
+        const dots = new Graphics();
+        grid(dots, 3);
+        const line = new Graphics();
+        const finger = makeFinger();
+        root.addChild(dots, line, finger);
+        const pts: Array<[number, number]> = [[-1, 0], [0, 0], [1, 0]];
+        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
+        tl.call(() => path(line, pts, 0)).set(finger, { x: -s, y: 0 }).to(finger, { alpha: 1, duration: 0.2 });
+        tl.to(finger, { x: 0, duration: 0.35, ease: 'none', onComplete: () => path(line, pts, 1) });
+        tl.to(finger, { x: s, duration: 0.35, ease: 'none', onComplete: () => path(line, pts, 2) });
+        tl.to({}, { duration: 0.5 });
+        tl.to(finger, { x: 0, duration: 0.35, ease: 'none', onComplete: () => path(line, pts, 1) });
+        tl.to(finger, { x: -s, duration: 0.35, ease: 'none', onComplete: () => path(line, pts, 0) });
+        liftFinger(tl, finger);
+        root.on('destroyed', () => tl.kill());
+        return root;
+      },
+    });
+    return pages;
   }
 
   destroy(): void {
     this.offCancel();
-    this.stopTutorial();
-    this.pressTimer?.kill();
+    this.stopDemo();
+    this.clearHints();
     this.voice.dispose();
-    this.views.forEach((v) => v && gsap.killTweensOf([v.pipes, v.root, v.lit]));
     this.container.destroy({ children: true });
-  }
-
-  // ----- instruction pages -----
-
-  // A miniature tile for the instruction card: base, pipes (turnable) and an optional lit copy.
-  private miniTile(cell: number, mask: number, opts: { locked?: boolean; links?: number } = {}): { root: Container; pipes: Graphics; lit: Graphics } {
-    const root = new Container();
-    const base = new Graphics()
-      .roundRect(-cell / 2 + 4, -cell / 2 + 4, cell - 8, cell - 8, cell * loopStyle.cornerFraction)
-      .fill({ color: palette.ink })
-      .stroke({ color: palette.dim, width: 1 });
-    const pipes = new Graphics();
-    const lit = new Graphics();
-    const savedCell = this.cell;
-    this.cell = cell;
-    this.drawPipes(pipes, mask, opts.locked ? this.accent : palette.dim, opts.locked ? 0.8 : 1);
-    this.drawPipes(lit, mask, this.accent, 1);
-    this.cell = savedCell;
-    lit.alpha = 0;
-    root.addChild(base, pipes, lit);
-    if (opts.locked) root.addChild(new Graphics().circle(cell / 2 - 11, -cell / 2 + 11, 3).stroke({ color: palette.pearl, width: 1.5, alpha: 0.6 }));
-    if (opts.links) root.addChild(new Graphics().roundRect(-cell / 2 + 4, -cell / 2 + 4, cell - 8, cell - 8, cell * loopStyle.cornerFraction).stroke({ color: linkColor(opts.links - 1), width: 2.5, alpha: 0.9 }));
-    return { root, pipes, lit };
-  }
-
-  introPages(): IntroPage[] {
-    const cell = 56;
-    const pages: IntroPage[] = [];
-    // 1. Lines must meet: the left tile turns until its line meets the right tile's line.
-    pages.push({
-      caption: 'Turn the tiles until every line meets a line on the next tile. A line pointing at the edge, or at nothing, is not connected.',
-      glyph: () => {
-        const root = new Container();
-        const left = this.miniTile(cell, N);
-        const right = this.miniTile(cell, W);
-        left.root.x = -cell * 0.6;
-        right.root.x = cell * 0.6;
-        const finger = makeFinger();
-        root.addChild(left.root, right.root, finger);
-        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
-        tapAt(tl, finger, -cell * 0.6, 0, 0.6)
-          .to(left.pipes, { rotation: Math.PI / 2, duration: loopStyle.rotateSeconds, ease: easings.tileSnap }, '<')
-          .set(left.lit, { rotation: Math.PI / 2 })
-          .to([left.lit, right.lit], { alpha: 1, duration: 0.5 })
-          .call(() => liftFinger(gsap.timeline(), finger, 0))
-          .to([left.lit, right.lit], { alpha: 0, duration: 0.4, delay: 1.2 })
-          .set(left.pipes, { rotation: 0 });
-        root.on('destroyed', () => tl.kill());
-        return root;
-      },
-    });
-    // 2. Controls.
-    pages.push({
-      caption: isTouch() ? 'Tap a tile to turn it. Hold a tile to turn it the other way.' : 'Click a tile to turn it. Right-click (or shift-click) to turn it the other way.',
-      glyph: () => {
-        const root = new Container();
-        const tile = this.miniTile(cell, N | E);
-        const finger = makeFinger();
-        const ring = new Graphics();
-        root.addChild(tile.root, ring, finger);
-        const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
-        tapAt(tl, finger, 0, 0, 0.5).to(tile.pipes, { rotation: `+=${Math.PI / 2}`, duration: loopStyle.rotateSeconds, ease: easings.tileSnap }, '<');
-        liftFinger(tl, finger);
-        if (isTouch()) holdAt(tl, finger, ring, 0, 0, 0.7, 0.6);
-        else tapAt(tl, finger, 0, 0, 0.6).set(finger, { tint: this.accent });
-        tl.to(tile.pipes, { rotation: `-=${Math.PI / 2}`, duration: loopStyle.rotateSeconds, ease: easings.tileSnap });
-        liftFinger(tl, finger).set(finger, { tint: 0xffffff });
-        root.on('destroyed', () => tl.kill());
-        return root;
-      },
-    });
-    // 3. Locked tiles.
-    if (this.level.chapter >= 2 && this.level.cells.some((c) => c?.locked)) {
-      pages.push({
-        caption: 'A tile with a small ring in its corner is already correct and cannot turn.',
-        glyph: () => {
-          const root = new Container();
-          const tile = this.miniTile(cell, N | S, { locked: true });
-          const finger = makeFinger();
-          root.addChild(tile.root, finger);
-          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
-          tapAt(tl, finger, 0, 0, 0.6);
-          refuse(tl, tile.root);
-          liftFinger(tl, finger);
-          root.on('destroyed', () => tl.kill());
-          return root;
-        },
-      });
-    }
-    // 4. Linked tiles.
-    if (this.level.links?.length) {
-      pages.push({
-        caption: 'Two tiles with the same coloured border are linked: turning one turns the other as well.',
-        glyph: () => {
-          const root = new Container();
-          const a = this.miniTile(cell, N | E, { links: 1 });
-          const b = this.miniTile(cell, S | W, { links: 1 });
-          a.root.x = -cell * 0.6;
-          b.root.x = cell * 0.6;
-          const finger = makeFinger();
-          root.addChild(a.root, b.root, finger);
-          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1 });
-          tapAt(tl, finger, -cell * 0.6, 0, 0.6).to([a.pipes, b.pipes], { rotation: `+=${Math.PI / 2}`, duration: loopStyle.rotateSeconds, ease: easings.tileSnap }, '<');
-          liftFinger(tl, finger);
-          root.on('destroyed', () => tl.kill());
-          return root;
-        },
-      });
-    }
-    // 5. Several loops.
-    if (this.level.chapter >= 3) {
-      pages.push({
-        caption: 'A larger board may hold more than one separate loop. Every line still has to meet another.',
-        glyph: () => {
-          const root = new Container();
-          const small = 30;
-          const loops = [
-            { x: -small * 1.6, masks: [E | S, S | W, N | E, N | W] },
-            { x: small * 1.6, masks: [E | S, S | W, N | E, N | W] },
-          ];
-          loops.forEach((loop, n) => {
-            loop.masks.forEach((mask, k) => {
-              const t = this.miniTile(small, mask);
-              t.root.position.set(loop.x + ((k % 2) - 0.5) * small, (Math.floor(k / 2) - 0.5) * small);
-              t.lit.alpha = 1;
-              root.addChild(t.root);
-              gsap.to(t.lit, { alpha: 0.5, duration: 1.6 + n * 0.4, yoyo: true, repeat: -1, ease: easings.ambient });
-            });
-          });
-          root.on('destroyed', () => gsap.killTweensOf(root.children));
-          return root;
-        },
-      });
-    }
-    return pages;
-  }
-
-
-  // Dev only: faint correct connectors on every tile. Stripped from production by the caller's DEV guard.
-  showSolutionOverlay(): void {
-    this.views.forEach((v, i) => {
-      if (!v) return;
-      const tile = this.board.cells[i]!;
-      const ghost = new Graphics();
-      ghost.position.copyFrom(v.root.position);
-      this.drawPipes(ghost, rotateMask(tile.mask, this.level.solution[i]!), palette.pearl, 0.18);
-      this.ghostLayer.addChild(ghost);
-    });
   }
 }

@@ -110,11 +110,11 @@ Game/
     └── regions/
         ├── types.ts             # PuzzleModule interface (below)
         ├── registry.ts          # ordered list of the 5 regions
-        ├── tidepools/           # Region 1 — Loop
+        ├── tidepools/           # Region 1 — Shells and Stones
         ├── nightsky/            # Region 2 — Constellation
         ├── stonegarden/         # Region 3 — Silhouette
         ├── crystalcaves/        # Region 4 — Prism
-        ├── moonlake/            # Region 5 — Ripple
+        ├── moonlake/            # Region 5 — Lanterns on the lake
         └── shadowterrace/       # Region 6 — Shadows (3D)
 ```
 
@@ -213,7 +213,7 @@ Quicksand, light weight, generous letter-spacing. It is used only for the title 
 | Night Sky | glassy FM celesta / bells | high shimmering pad |
 | Stone Garden | kalimba-like pluck | warm low hum, occasional wooden click |
 | Crystal Caves | singing-bowl sines with long tails | crystalline harmonics |
-| Moon Lake | warm electric-piano pad | deep slow swells |
+| Moon Lake | warm electric-piano tone as a lantern settles, a softer low one as it is lifted | deep slow swells |
 | Shadow Terrace | soft wooden blocks climbing with each stone | koto-like plucks over a breathy low pad |
 
 - **Interaction sounds** are always pentatonic notes, so there are no "wrong" notes.
@@ -272,11 +272,11 @@ The owner asked for hints that "get me to the next step a little easier" and for
 
 | Region | Nudge | Ghost |
 |---|---|---|
-| Tidepools | ring around a wrong tile (edge-forced first) | faint lines of how it should face |
+| Tidepools | ring around the point or clue that decides the next line, with the reason | a faint line where the water runs (or a drawn line that cannot stay pulses) |
 | Night Sky | the start star ringed (with the odd-star reason) | the next two lines of a working stroke, up to half the path |
 | Stone Garden | the next stone pulses (biggest first), or a misplaced one to take out | outline of where it belongs, turned and flipped |
 | Crystal Caves | ring around the first wrong piece the beam meets | faint shape of its right angle |
-| Moon Lake | three pads ringed, one of which is right | the right pad glows ("twice" when needed) |
+| Moon Lake | ring around the rock or dark patch that decides the next lantern, with the reason (or around a lantern that cannot stay) | a faint lantern where one belongs (or the wrong lantern pulses) |
 | Shadow Terrace | a stack marked on the floor, its row and column faintly lit | pale outline of its right height |
 
 ### Tips
@@ -299,23 +299,14 @@ For every region:
 - (Retired: the handcrafted picture levels. Every level after the tutorial is generated, so difficulty never dips.)
 - All other levels are generated from seeds.
 
-### Region 1 — Tidepools (Loop) · accent `mint`
-- **Being tested: Shells and Stones** (`tidepools/shells/`), a deduction puzzle to replace tile turning, which the owner found too random. The player draws one closed loop of tide through the pool's points from clues: a **shell** is passed straight through with a turn just before or after it; a **stone** turns the tide, which runs straight on one more step each side. Every pool has exactly one answer and is solvable by reasoning alone (`solveByLogic`, a person-like solver that records why each line follows; it also drives the hints). Levels 1–7 are Shells and Stones: a teaching ramp (1: four stones on a 3×3 pool, with a faint loop and a finger that traces it; 2: shells only; 3: stones only; 4: both, gently), then three test pools (5 gentle, 6 fewest clues, 7 needs the "no small loop" insight). Levels 8–10 are still tile turning until the owner decides. The card states the goal plainly (one closed loop through every shell and every stone, not every point), shows only the clues the level uses, and has an erase page; while it is open the board is hidden. A closed loop that is not right pulses the unmet clues and says why. The card teaches by **right and wrong examples side by side** (small pools ticked or crossed, each verified against the rule checker), and every clue answers live while drawing (`clueState`: mint once met, peach as soon as a line breaks it).
-- **Board:** a grid of tiles. Each tile has 0–4 connectors (end, straight, corner, T, cross). Every level of every region is verified solvable by its solver in tests (`src/regions/allLevels.test.ts` plus per-region suites).
-- **Input:** click to rotate clockwise; right-click (or Shift-click) rotates counter-clockwise. Rotation is a smooth 90° tween with a slight overshoot.
-- **Win condition:** every connector meets a matching connector, with no open ends. Accept **any** valid configuration, not just the stored one.
-- **Generator:** randomly create consistent connections between neighbouring cells, derive the tile types, then scramble the rotations. Reject levels where the scrambled board is already solved or has more than 20% blank tiles.
-- **Solver:** constraint propagation plus backtracking. It is used for validation and for current-state clues.
-- **Chapters:**
-  1. 3×3 to 4×4 grids
-  2. 5×5 to 6×6 grids
-  3. Irregular board shapes plus locked (pre-set) tiles
-  4. 7×7 to 9×9 grids, where multiple separate loops are required
-- **Signature twist — linked tiles:** from chapter 3 some tiles are tied in pairs, each pair marked by a coloured border of its own (lavender, peach, sky…); when one turns, its partner's border flashes as it turns too. Tiles that cannot turn wear a small hollow ring in a corner, so the two marks never look alike. Turning one turns its partner too, and locking one locks both. The solver keeps all rotations for linked cells and propagates each choice to the partner.
-- **Clues:**
-  One wrong tile turns into place and locks (see §7).
-- **Feel:** closed loops fill with flowing light as you connect them.
-- **Solve animation:** light flows through every loop, a ripple radiates outward, and the tiles gently bob like water.
+### Region 1 — Tidepools (Shells and Stones) · accent `mint`
+- **The puzzle** (`tidepools/`): draw one closed loop of water through the pool's points from clues (it replaced tile turning, which the owner found too random). A **shell** is passed straight through, with a turn at the very next point on at least one side; a **stone** turns the water, which then runs straight on for one more step each side. The loop need not touch every point. Every pool has exactly one answer and is solvable by reasoning alone.
+- **Look:** a tide pool of wet sand (grains seeded per pool) with a soft rim; the points are small drops of water. Shells are drawn as peach scallop shells, stones as smooth lavender pebbles (`drawShell`, `drawPebble` in `view.ts`, also used on the instruction card). Drawn lines are water: a soft glow, a mint body and a bright core, with glints of light flowing along every stream and around closed loops (`findRuns`, `drawFlow`). Clues answer live (`clueState`): a mint glow once met, a slow rose pulse as soon as a line breaks the rule. A closed loop that is not right pulses the unmet clues and says why.
+- **Input:** drag from point to point to draw; drag back over a line to erase it; tap a point to clear its lines. A point never takes a third line.
+- **Solver** (`solver.ts`): a person-like logic solver whose rules (point, stone, shell, shell-turn, small-loop, and a short "what if" contradiction step) each record why a line follows; it proves every pool fair, counts answers, and drives the hints.
+- **Levels** (`bake.ts`, each made from a fixed seed, so baking again gives the same pools): 1 four stones on a 3×3 pool, with a faint loop and a finger that traces it; 2 shells only; 3 stones only; 4 both, gently; 5 gentle; 6 fewest clues; 7 needs the "no small loop" insight; 8–10 wider pools (7×7, 7×7, 8×8) that need that insight several times, sorted easiest first.
+- **Instruction card:** states the goal plainly, teaches by right and wrong examples side by side (each verified against the rule checker), shows only the clues the level uses, and has an erase page; while it is open the board is hidden.
+- **Solve animation:** the water rushes round the loop, a ripple radiates outward, and the glow swells.
 
 ### Region 2 — Night Sky (Constellation, one-stroke drawing) · accent `lavender`
 - **Board:** stars (nodes) connected by faint lines (edges).
@@ -387,22 +378,16 @@ For every region:
   One wrong piece turns and locks, following the beam (see §7).
 - **Solve animation:** targets bloom into crystals, the beams shimmer, and refraction sparkles drift up.
 
-### Region 5 — Moon Lake (Ripple / Lights-Out) · accent `rose`
-- **Board:** lily-pad nodes on a graph (grids, rings, irregular clusters).
-- **Input:** clicking a node toggles it and its neighbours, with a ripple animation spreading outward.
-- **Win condition:** every node is lit.
-  - In chapter 3+, nodes have 3 states (dark, half-lit, lit) and a click advances each affected node one step (mod 3).
-- **Generator:** start from the solved board and apply a random set of presses; that set is the stored solution. Reject levels whose minimum solution length is below the chapter's threshold.
-- **Solver:** Gaussian elimination over GF(2) (or GF(3) for 3-state levels). It gives the minimum presses from **any** current state.
-- **Chapters:**
-  1. Small grids (3×3, 4×4)
-  2. Rings and irregular pond shapes
-  3. Three-state nodes
-  4. Wide-ripple nodes (affect neighbours 2 steps away), plus larger boards
-- **Signature twist — stone pads:** from chapter 3 some pads are grey stone. They cannot be pressed, only changed by their neighbours' ripples, and they still have to end up lit. The solver drops their press variable.
-- **Clues:**
-  One pad of a shortest way glows (see §7).
-- **Solve animation:** the whole lake lights up, concentric ripples spread across it, and a moon reflection rises.
+### Region 5 — Moon Lake (Lanterns on the lake) · accent `rose`
+- **The puzzle** (`moonlake/`, a light-up puzzle; it replaced the lily-pad presses, which the owner found too random): float paper lanterns on the dark lake until every patch of water glows. A lantern's light runs straight across the water in four directions until it meets a rock or the shore. Two lanterns may never shine on each other. A rock with dots has exactly that many lanterns right beside it (above, below, left, right; corners do not count); a ring means none. Plain rocks only block light. Every lake has exactly one answer and is solvable by reasoning alone.
+- **Look:** the lake is one dark body of water with a soft shoreline, faint seams between patches and moonlit streaks; later lakes are rounded coves with a ragged shore (`' '` cells in `grid`). Lanterns are Japanese paper lanterns (chōchin: ribbed peach paper glowing lemon inside, dark caps, a hanging loop and tassel, `drawLantern`) that bob and sway, with a flickering warm halo (additive) and a reflection on the water. Lit water is washed in warm light with soft beams along each lantern's rows. The warm glow uses `lemon` and `peach`, an owner-approved exception like the profile colours. Lanterns that shine on each other are joined by a pulsing rose beam; a rock with too many lanterns gets a rose ring; a rock's dots glow lemon once met. The lake stirs by itself now and then with one faint ripple (every 3.5–7.5 s, never distracting), and every lantern set down or lifted sends a small ripple.
+- **Input:** tap the water to float a lantern; tap it again to lift it away.
+- **Win condition:** every water patch lit, no two lanterns seeing each other, every dotted rock exact.
+- **Model** (`model.ts`): `grid` rows of `.` water, `#` rock, `0`–`4` dotted rock, ` ` shore; `solution` holds the lantern cells.
+- **Solver** (`solver.ts`): person-like rules, each recording why: `sees` (nothing in a lantern's light holds another), `rock` (a rock's dots against its open sides), `only-light` (a dark patch that only one place can still light), and `what-if` (one lantern tried in the head leads to a contradiction). `countSolutions` adds a little search (a search cut short counts as "not unique").
+- **Generator** (`generator.ts`): lay out rocks (square lake or cove), float lanterns on any patch still dark, number every rock, then take away as many numbers as possible while the lake keeps one answer that reasoning can reach (gentler lakes get some back). Chapters: 1 small square lakes, every step direct; 2 wider lakes, dark patches only one place can light; 3 rounder coves with now and then a step to think through; 4 coves that need looking ahead; the last lake the widest cove with the most looking ahead. Level 1 is handcrafted: one rock with four dots in a 3×3 lake, with a finger that taps the four lanterns in.
+- **Instruction card:** how to float and lift a lantern (an animated lake lit by three taps), how light runs and that lanterns may not see each other (✓/✗ examples), and, when the level has them, what a rock's dots mean (✓/✗ examples).
+- **Solve animation:** the lanterns brighten and lift a little off the water, wide warm ripples cross the lake, the moon's reflection rises and warm sparks drift up. The region finale sends warm lantern light drifting up the whole screen.
 
 ### Region 6 — Shadow Terrace (Shadows, three-dimensional) · accent `sage`
 - **Board:** an n×n terrace drawn in isometric 3D (`view.ts` projects grid points through a view angle; stacks are sorted back to front and drawn as cubes with three shaded faces). Light falls from behind (no visible lamps: they were a distraction); every stack throws a shadow on the sand in front, one bar per row along each near edge, whose length is the tallest stone in that row (per-column and per-row maxima of the heightmap).
@@ -441,8 +426,8 @@ For every region:
 
 | Action | Input |
 |---|---|
-| Main interaction | Mouse, trackpad or touch (tap/drag). Touch: hold a Loop tile to turn it back; hold a stone to flip it |
-| Restart level | `R` in Loop/Prism/Ripple, or the restart icon. Stone Garden uses `R` to rotate, so restart there is the icon or `Backspace`. |
+| Main interaction | Mouse, trackpad or touch (tap/drag). Tidepools: drag between points to draw water. Moon Lake: tap water for a lantern. Touch: hold a stone to flip it |
+| Restart level | `R` in Tidepools/Prism/Moon Lake, or the restart icon. Stone Garden uses `R` to rotate, so restart there is the icon or `Backspace`. |
 | Clue | `H` or click the orb |
 | Mute | `M` |
 | Back to region / map | `Esc` |
@@ -458,6 +443,8 @@ Add `?dev=1` to the URL to enable:
 - `?locks=1`: keep progress locks and the paywall in force while testing
 - `?story=all` (or one scene id) to preview the story
 - a solution overlay, only with `?solution=1` as well (it gives every answer away, so `?dev=1` alone never shows it)
+
+Headless screenshots must use software WebGL (`--use-angle=swiftshader --enable-unsafe-swiftshader --disable-gpu-compositing`): with `--disable-gpu` Pixi falls back to its canvas renderer, whose blending makes every board look see-through over the scenery, which is not how the game looks on a phone.
 
 Dev features are stripped from production builds with `import.meta.env.DEV` guards. **The solution overlay must never exist in production.**
 

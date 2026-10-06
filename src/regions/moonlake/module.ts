@@ -5,12 +5,14 @@ import { palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
 import { progression } from '../../core/progress';
 import levelsJson from './levels.json';
-import type { RippleLevel } from './model';
-import { RippleLevelScene } from './view';
+import type { LanternLevel } from './model';
+import { LanternLakeScene } from './view';
 
-const levels = levelsJson as RippleLevel[];
+// Lanterns on the lake: float lanterns until every patch of water glows.
+const levels = levelsJson as LanternLevel[];
 
-// Region finale: a full moon rises over the whole lake while ripples cross the screen.
+// Region finale: a full moon rises over the whole lake, ripples cross the screen and warm
+// lantern light drifts up into the night.
 function playFinale(ctx: ShellContext): Promise<void> {
   const total = scaled(durations.completion) * 1.4;
   const moon = new Graphics().circle(0, 0, Math.min(ctx.width, ctx.height) * 0.12).fill({ color: palette.pearl, alpha: 0.35 });
@@ -46,7 +48,7 @@ function playFinale(ctx: ShellContext): Promise<void> {
       ctx.particles.emit({
         x: ctx.rng.next() * ctx.width,
         y: ctx.height * (0.5 + ctx.rng.next() * 0.5),
-        color: ctx.rng.chance(0.7) ? palette.rose : palette.pearl,
+        color: ctx.rng.chance(0.5) ? palette.lemon : ctx.rng.chance(0.5) ? palette.peach : palette.rose,
         vx: 0,
         vy: -10 - ctx.rng.next() * 20,
         life: 2 + ctx.rng.next() * 1.5,
@@ -62,6 +64,6 @@ export const moonlakeModule: PuzzleModule = {
   id: 'moonlake',
   accent: 'rose',
   levelCount: progression.levelsPerRegion,
-  createLevel: (ctx, levelIndex) => new RippleLevelScene(ctx, levels[levelIndex]!, levelIndex === 0),
+  createLevel: (ctx, levelIndex) => new LanternLakeScene(ctx, levels[levelIndex]!, levelIndex === 0),
   playRegionFinale: playFinale,
 };

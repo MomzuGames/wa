@@ -7,16 +7,16 @@ import stonegarden from './stonegarden/levels.json';
 import crystalcaves from './crystalcaves/levels.json';
 import moonlake from './moonlake/levels.json';
 import shadowterrace from './shadowterrace/levels.json';
-import { boardFromLevel, type LoopLevel } from './tidepools/model';
-import { solve as solveLoop } from './tidepools/solver';
+import { type ShellLevel } from './tidepools/model';
+import { solveByLogic as solvePool } from './tidepools/solver';
 import { type SkyLevel } from './nightsky/model';
 import { validStarts } from './nightsky/solver';
 import { type StoneLevel } from './stonegarden/model';
 import { solveStone } from './stonegarden/solver';
 import { initialOrients, type PrismLevel } from './crystalcaves/model';
 import { solvePrism } from './crystalcaves/solver';
-import { type RippleLevel } from './moonlake/model';
-import { solveRipple } from './moonlake/solver';
+import { type LanternLevel } from './moonlake/model';
+import { solveByLogic as solveLake } from './moonlake/solver';
 import { type ShadowLevel } from './shadowterrace/model';
 import { solveShadow } from './shadowterrace/solver';
 
@@ -37,11 +37,11 @@ describe('every level in every region', () => {
   });
 
   it('is solvable from its start state', () => {
-    (tidepools as LoopLevel[]).forEach((l) => expect(solveLoop(boardFromLevel(l)).solution, l.seed).not.toBeNull());
+    (tidepools as ShellLevel[]).forEach((l) => expect(solvePool(l).solved, l.seed).toBe(true));
     (nightsky as SkyLevel[]).forEach((l) => expect(validStarts(l).length, l.seed).toBeGreaterThan(0));
     (stonegarden as StoneLevel[]).forEach((l) => expect(solveStone(l).placements, l.seed).not.toBeNull());
     (crystalcaves as PrismLevel[]).forEach((l) => expect(solvePrism(l, initialOrients(l)).orients, l.seed).not.toBeNull());
-    (moonlake as RippleLevel[]).forEach((l) => expect(solveRipple(l, l.start).presses, l.seed).not.toBeNull());
+    (moonlake as LanternLevel[]).forEach((l) => expect(solveLake(l).solved, l.seed).toBe(true));
     (shadowterrace as ShadowLevel[]).forEach((l) => expect(solveShadow(l).heights, l.seed).not.toBeNull());
   });
 });

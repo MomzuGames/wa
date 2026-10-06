@@ -1,198 +1,171 @@
-// Loop puzzle: a grid of tiles with connectors that must all meet a partner.
+// Shells and stones: draw one closed loop of tide through the pool, from clues.
+// The pool is a grid of points (cells); the loop runs along the lines between neighbours,
+// enters and leaves every point it visits exactly once, and must pass every clue:
+//   shell — the loop goes straight through it, and turns on at least one point beside it;
+//   stone — the loop turns on it, and runs straight on for one more step on both sides.
 
-export const N = 1;
-export const E = 2;
-export const S = 4;
-export const W = 8;
-export const DIRS = [N, E, S, W] as const;
-export type Dir = (typeof DIRS)[number];
+export type ClueKind = 'shell' | 'stone';
 
-export const DELTA: Record<Dir, { dx: number; dy: number }> = {
-  [N]: { dx: 0, dy: -1 },
-  [E]: { dx: 1, dy: 0 },
-  [S]: { dx: 0, dy: 1 },
-  [W]: { dx: -1, dy: 0 },
-};
-
-export function opposite(dir: Dir): Dir {
-  return (((dir << 2) | (dir >> 2)) & 15) as Dir;
+export interface Clue {
+  x: number;
+  y: number;
+  kind: ClueKind;
 }
 
-// Rotates a connector mask clockwise by `quarterTurns`.
-export function rotateMask(mask: number, quarterTurns: number): number {
-  const k = ((quarterTurns % 4) + 4) % 4;
-  return ((mask << k) | (mask >> (4 - k))) & 15;
-}
-
-export function bitCount(mask: number): number {
-  let n = 0;
-  for (const d of DIRS) if (mask & d) n++;
-  return n;
-}
-
-export type TileKind = 'blank' | 'end' | 'straight' | 'corner' | 'tee' | 'cross';
-
-export function tileKind(mask: number): TileKind {
-  switch (bitCount(mask)) {
-    case 0:
-      return 'blank';
-    case 1:
-      return 'end';
-    case 2:
-      return mask === (N | S) || mask === (E | W) ? 'straight' : 'corner';
-    case 3:
-      return 'tee';
-    default:
-      return 'cross';
-  }
-}
-
-// Number of visually distinct rotations for a mask (a straight has 2, a cross 1).
-export function distinctRotations(mask: number): number {
-  const seen = new Set<number>();
-  for (let k = 0; k < 4; k++) seen.add(rotateMask(mask, k));
-  return seen.size;
-}
-
-export interface Tile {
-  mask: number;
-  rotation: number;
-  locked: boolean;
-}
-
-export interface Board {
-  width: number;
-  height: number;
-  cells: (Tile | null)[];
-  // Linked pairs always share the same rotation: turning one turns the other.
-  links?: Array<[number, number]>;
-}
-
-export interface LoopLevel {
+export interface ShellLevel {
   seed: string;
   chapter: number;
-  handcrafted?: boolean;
   width: number;
   height: number;
-  cells: (Tile | null)[];
-  links?: Array<[number, number]>;
-  solution: number[];
+  clues: Clue[];
+  solution: number[]; // the edges of the one loop
   difficulty: number;
 }
 
-export function index(board: Board, x: number, y: number): number {
-  return y * board.width + x;
+export type Dir = 0 | 1 | 2 | 3; // N, E, S, W
+export const DIRS: readonly Dir[] = [0, 1, 2, 3];
+export const STEP: Record<Dir, { dx: number; dy: number }> = { 0: { dx: 0, dy: -1 }, 1: { dx: 1, dy: 0 }, 2: { dx: 0, dy: 1 }, 3: { dx: -1, dy: 0 } };
+export const opposite = (d: Dir): Dir => ((d + 2) % 4) as Dir;
+export const horizontal = (d: Dir) => d === 1 || d === 3;
+
+export function edgeCount(w: number, h: number): number {
+  return h * (w - 1) + (h - 1) * w;
 }
 
-export function inBounds(board: Board, x: number, y: number): boolean {
-  return x >= 0 && y >= 0 && x < board.width && y < board.height;
+// The edge leaving (x, y) in direction d, or -1 off the pool.
+export function edgeAt(w: number, h: number, x: number, y: number, d: Dir): number {
+  const { dx, dy } = STEP[d];
+  const nx = x + dx;
+  const ny = y + dy;
+  if (nx < 0 || ny < 0 || nx >= w || ny >= h) return -1;
+  if (dy === 0) return y * (w - 1) + Math.min(x, nx);
+  return h * (w - 1) + Math.min(y, ny) * w + x;
 }
 
-export function tileAt(board: Board, x: number, y: number): Tile | null {
-  return inBounds(board, x, y) ? board.cells[index(board, x, y)]! : null;
-}
-
-export function currentMask(tile: Tile): number {
-  return rotateMask(tile.mask, tile.rotation);
-}
-
-export function cloneBoard(board: Board): Board {
-  return { width: board.width, height: board.height, cells: board.cells.map((c) => (c ? { ...c } : null)), links: board.links };
-}
-
-export function linkPartner(board: Board, index: number): number | null {
-  for (const [a, b] of board.links ?? []) {
-    if (a === index) return b;
-    if (b === index) return a;
+// The two points an edge joins.
+export function edgeEnds(w: number, h: number, e: number): [{ x: number; y: number }, { x: number; y: number }] {
+  const horizontalCount = h * (w - 1);
+  if (e < horizontalCount) {
+    const y = Math.floor(e / (w - 1));
+    const x = e % (w - 1);
+    return [{ x, y }, { x: x + 1, y }];
   }
-  return null;
+  const k = e - horizontalCount;
+  const y = Math.floor(k / w);
+  const x = k % w;
+  return [{ x, y }, { x, y: y + 1 }];
 }
 
-export function linkGroup(board: Board, index: number): number {
-  return (board.links ?? []).findIndex(([a, b]) => a === index || b === index);
+export function clueAt(level: Pick<ShellLevel, 'clues'>, x: number, y: number): ClueKind | null {
+  return level.clues.find((c) => c.x === x && c.y === y)?.kind ?? null;
 }
 
-// True when every connector meets a connector on the neighbouring tile.
-export function connectorMatched(board: Board, x: number, y: number, dir: Dir): boolean {
-  const tile = tileAt(board, x, y);
-  if (!tile) return false;
-  const has = (currentMask(tile) & dir) !== 0;
-  const { dx, dy } = DELTA[dir];
-  const other = tileAt(board, x + dx, y + dy);
-  const otherHas = other ? (currentMask(other) & opposite(dir)) !== 0 : false;
-  return has === otherHas;
+// Which directions the drawn loop leaves a point by.
+export function exits(level: Pick<ShellLevel, 'width' | 'height'>, on: ReadonlySet<number>, x: number, y: number): Dir[] {
+  return DIRS.filter((d) => {
+    const e = edgeAt(level.width, level.height, x, y, d);
+    return e >= 0 && on.has(e);
+  });
 }
 
-export function tileMatched(board: Board, x: number, y: number): boolean {
-  return DIRS.every((d) => connectorMatched(board, x, y, d));
+const straightThrough = (ds: Dir[]) => ds.length === 2 && ds[0] === opposite(ds[1]!);
+const turnsAt = (ds: Dir[]) => ds.length === 2 && ds[0] !== opposite(ds[1]!);
+
+// Whether one clue is met by the drawn lines (used for the gentle glow on satisfied clues).
+export function clueMet(level: Pick<ShellLevel, 'width' | 'height'>, on: ReadonlySet<number>, clue: Clue): boolean {
+  const here = exits(level, on, clue.x, clue.y);
+  if (clue.kind === 'shell') {
+    if (!straightThrough(here)) return false;
+    return here.some((d) => {
+      const { dx, dy } = STEP[d];
+      return turnsAt(exits(level, on, clue.x + dx, clue.y + dy));
+    });
+  }
+  if (!turnsAt(here)) return false;
+  return here.every((d) => {
+    const { dx, dy } = STEP[d];
+    const beyond = edgeAt(level.width, level.height, clue.x + dx, clue.y + dy, d);
+    return beyond >= 0 && on.has(beyond);
+  });
 }
 
-export function isSolved(board: Board): boolean {
-  for (let y = 0; y < board.height; y++) {
-    for (let x = 0; x < board.width; x++) {
-      if (board.cells[index(board, x, y)] && !tileMatched(board, x, y)) return false;
+// The drawn lines make one closed loop (clues aside): used to say "closed, but not right yet".
+export function isClosedLoop(level: Pick<ShellLevel, 'width' | 'height'>, on: ReadonlySet<number>): boolean {
+  if (on.size < 4) return false;
+  const { width: w, height: h } = level;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const n = exits(level, on, x, y).length;
+      if (n !== 0 && n !== 2) return false;
     }
   }
-  return true;
-}
-
-// Connected groups of tiles joined by matched connectors, with each group's "all satisfied" flag.
-export interface Component {
-  cells: number[];
-  complete: boolean;
-}
-
-export function components(board: Board): Component[] {
-  const seen = new Set<number>();
-  const out: Component[] = [];
-  for (let y = 0; y < board.height; y++) {
-    for (let x = 0; x < board.width; x++) {
-      const start = index(board, x, y);
-      const tile = board.cells[start];
-      if (!tile || seen.has(start) || currentMask(tile) === 0) continue;
-      const cells: number[] = [];
-      const stack = [start];
-      seen.add(start);
-      let complete = true;
-      while (stack.length) {
-        const i = stack.pop()!;
-        const cx = i % board.width;
-        const cy = Math.floor(i / board.width);
-        cells.push(i);
-        const t = board.cells[i]!;
-        if (!tileMatched(board, cx, cy)) complete = false;
-        for (const d of DIRS) {
-          if (!(currentMask(t) & d)) continue;
-          const { dx, dy } = DELTA[d];
-          const nx = cx + dx;
-          const ny = cy + dy;
-          const nt = tileAt(board, nx, ny);
-          if (!nt || !(currentMask(nt) & opposite(d))) continue;
-          const ni = index(board, nx, ny);
-          if (!seen.has(ni)) {
-            seen.add(ni);
-            stack.push(ni);
-          }
+  const start = [...on][0]!;
+  const seen = new Set<number>([start]);
+  const queue = [start];
+  while (queue.length) {
+    for (const p of edgeEnds(w, h, queue.pop()!)) {
+      for (const d of DIRS) {
+        const n = edgeAt(w, h, p.x, p.y, d);
+        if (n >= 0 && on.has(n) && !seen.has(n)) {
+          seen.add(n);
+          queue.push(n);
         }
       }
-      out.push({ cells, complete });
     }
   }
-  return out;
+  return seen.size === on.size;
 }
 
-export function boardFromLevel(level: LoopLevel): Board {
-  return { width: level.width, height: level.height, cells: level.cells.map((c) => (c ? { ...c } : null)), links: level.links };
+// How a clue stands right now, for live feedback while drawing: met, broken (the lines
+// already drawn cannot be part of an answer that meets it), or still open.
+export function clueState(level: Pick<ShellLevel, 'width' | 'height'>, on: ReadonlySet<number>, clue: Clue): 'met' | 'broken' | 'open' {
+  if (clueMet(level, on, clue)) return 'met';
+  const here = exits(level, on, clue.x, clue.y);
+  const beyondOn = (d: Dir) => {
+    const { dx, dy } = STEP[d];
+    const e = edgeAt(level.width, level.height, clue.x + dx, clue.y + dy, d);
+    return e >= 0 && on.has(e);
+  };
+  const neighbourTurns = (d: Dir) => {
+    const { dx, dy } = STEP[d];
+    return exits(level, on, clue.x + dx, clue.y + dy).some((k) => horizontal(k) !== horizontal(d));
+  };
+  if (clue.kind === 'shell') {
+    if (turnsAt(here)) return 'broken';
+    if (straightThrough(here) && here.every((d) => beyondOn(d))) return 'broken';
+    return 'open';
+  }
+  if (straightThrough(here)) return 'broken';
+  if (here.some((d) => neighbourTurns(d))) return 'broken';
+  return 'open';
 }
 
-export function linksConsistent(board: Board): boolean {
-  return (board.links ?? []).every(([a, b]) => board.cells[a]?.rotation === board.cells[b]?.rotation);
-}
-
-export function isSolutionValid(level: LoopLevel): boolean {
-  const board = boardFromLevel(level);
-  board.cells.forEach((c, i) => {
-    if (c) c.rotation = level.solution[i]!;
-  });
-  return isSolved(board) && linksConsistent(board);
+// One closed loop, every point visited in and out once, every clue met.
+export function isSolved(level: ShellLevel, on: ReadonlySet<number>): boolean {
+  if (on.size === 0) return false;
+  const { width: w, height: h } = level;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const n = exits(level, on, x, y).length;
+      if (n !== 0 && n !== 2) return false;
+    }
+  }
+  if (!level.clues.every((c) => clueMet(level, on, c))) return false;
+  // A single cycle: walk from one edge and count.
+  const start = [...on][0]!;
+  const seen = new Set<number>([start]);
+  const queue = [start];
+  while (queue.length) {
+    const e = queue.pop()!;
+    for (const p of edgeEnds(w, h, e)) {
+      for (const d of DIRS) {
+        const n = edgeAt(w, h, p.x, p.y, d);
+        if (n >= 0 && on.has(n) && !seen.has(n)) {
+          seen.add(n);
+          queue.push(n);
+        }
+      }
+    }
+  }
+  return seen.size === on.size;
 }

@@ -1,128 +1,82 @@
 import { createRng, type Rng } from '../../core/rng';
-import { type PadNode, type RippleLevel, applyPresses, isConnected, isLit, pressCount } from './model';
-import { solveRipple } from './solver';
+import { type LanternLevel, besides, cellCount, isWater, lightCounts, sightLines } from './model';
+import { countSolutions, solveByLogic } from './solver';
 
-export type PondShape = 'grid' | 'ring' | 'cluster';
-
-export interface RippleParams {
-  shape: PondShape;
-  size: [number, number]; // grid side, ring count, or cluster node count
-  states: 2 | 3;
-  wideNodes: [number, number];
-  frozenNodes?: [number, number]; // stone pads that cannot be pressed
-  presses: [number, number]; // presses applied from the solved board
-  minSolution: number; // reject boards solvable in fewer presses
+export interface LanternParams {
+  width: number;
+  height: number;
+  shape: 'open' | 'cove'; // a square lake, or a rounder one with shore biting into it
+  rocks: [number, number]; // share of the lake that is rock
+  keepExtra: number; // 0..1: dotted rocks kept beyond the fewest needed (gentler lakes keep more)
+  whatIf: [number, number]; // how many "try it in your head" steps the lake may (and must) need
 }
 
-interface Pond {
-  nodes: PadNode[];
-  edges: Array<[number, number]>;
-}
-
-function grid(n: number): Pond {
-  const nodes: PadNode[] = [];
-  const edges: Array<[number, number]> = [];
-  for (let y = 0; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      nodes.push({ x: (x + 0.5) / n, y: (y + 0.5) / n, wide: false });
-      if (x > 0) edges.push([y * n + x - 1, y * n + x]);
-      if (y > 0) edges.push([(y - 1) * n + x, y * n + x]);
+// Which cells are lake: all of them, or a rounded cove with a ragged shore.
+function lakeMask(rng: Rng, w: number, h: number, shape: LanternParams['shape']): boolean[] {
+  const mask = Array.from({ length: w * h }, () => true);
+  if (shape === 'open') return mask;
+  const cx = (w - 1) / 2;
+  const cy = (h - 1) / 2;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const d = ((x - cx) / (w / 2)) ** 2 + ((y - cy) / (h / 2)) ** 2;
+      if (d > 0.95 + rng.next() * 0.35) mask[y * w + x] = false;
     }
   }
-  return { nodes, edges };
+  return mask;
 }
 
-function ring(rng: Rng, n: number): Pond {
-  const nodes: PadNode[] = [];
-  const edges: Array<[number, number]> = [];
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
-    nodes.push({ x: 0.5 + Math.cos(a) * 0.42, y: 0.5 + Math.sin(a) * 0.42, wide: false });
-    edges.push([i, (i + 1) % n]);
-  }
-  // A centre pad joined to a few petals, or a couple of chords, keeps rings from being trivial.
-  if (rng.chance(0.6)) {
-    nodes.push({ x: 0.5, y: 0.5, wide: false });
-    for (let i = 0; i < n; i += rng.chance(0.5) ? 1 : 2) edges.push([i, n]);
-  } else {
-    for (let k = 0; k < rng.int(1, 2); k++) {
-      const a = rng.int(0, n - 1);
-      const b = (a + Math.floor(n / 2) + rng.int(-1, 1) + n) % n;
-      if (a !== b && !edges.some(([x, y]) => (x === a && y === b) || (x === b && y === a))) edges.push([a, b]);
-    }
-  }
-  return { nodes, edges };
-}
-
-function cluster(rng: Rng, count: number): Pond {
-  const nodes: PadNode[] = [];
-  let guard = 0;
-  while (nodes.length < count && guard++ < 2000) {
-    const p = { x: 0.1 + rng.next() * 0.8, y: 0.1 + rng.next() * 0.8, wide: false };
-    if (nodes.every((n) => Math.hypot(n.x - p.x, n.y - p.y) > 0.17)) nodes.push(p);
-  }
-  const edges: Array<[number, number]> = [];
-  const key = (a: number, b: number) => (a < b ? `${a}-${b}` : `${b}-${a}`);
-  const have = new Set<string>();
-  nodes.forEach((n, i) => {
-    const near = nodes
-      .map((m, j) => ({ j, d: Math.hypot(m.x - n.x, m.y - n.y) }))
-      .filter((c) => c.j !== i)
-      .sort((a, b) => a.d - b.d)
-      .slice(0, rng.int(2, 3));
-    for (const c of near) {
-      if (!have.has(key(i, c.j))) {
-        have.add(key(i, c.j));
-        edges.push([i, c.j]);
-      }
-    }
-  });
-  return { nodes, edges };
-}
-
-function build(rng: Rng, params: RippleParams): RippleLevel | null {
-  const size = rng.int(params.size[0], params.size[1]);
-  const pond = params.shape === 'grid' ? grid(size) : params.shape === 'ring' ? ring(rng, size) : cluster(rng, size);
-  if (pond.nodes.length < 3 || !isConnected(pond)) return null;
-  const wideCount = rng.int(params.wideNodes[0], params.wideNodes[1]);
-  const order = rng.shuffle(pond.nodes.map((_, i) => i));
-  for (const i of order.slice(0, wideCount)) pond.nodes[i]!.wide = true;
-  const frozenCount = params.frozenNodes ? rng.int(params.frozenNodes[0], params.frozenNodes[1]) : 0;
-  for (const i of order.slice(wideCount, wideCount + frozenCount)) pond.nodes[i]!.frozen = true;
-
-  const level: RippleLevel = {
-    seed: '',
-    chapter: 0,
-    states: params.states,
-    nodes: pond.nodes,
-    edges: pond.edges,
-    start: pond.nodes.map(() => params.states - 1),
-    solution: [],
-    difficulty: 0,
-  };
-  // Scramble by pressing from the solved board; the reverse presses are one solution.
-  const count = Math.min(pond.nodes.length, rng.int(params.presses[0], params.presses[1]));
-  const presses = pond.nodes.map(() => 0);
-  const pressable = rng.shuffle(pond.nodes.map((_, i) => i).filter((i) => !pond.nodes[i]!.frozen));
-  for (const i of pressable.slice(0, count)) presses[i] = rng.int(1, params.states - 1);
-  level.start = applyPresses(level, level.start, presses);
-  if (isLit(level, level.start)) return null;
-  const solved = solveRipple(level, level.start);
-  if (!solved.presses) return null;
-  if (pressCount(solved.presses) < params.minSolution) return null;
-  level.solution = solved.presses;
-  level.difficulty = pressCount(solved.presses) * 12 + pond.nodes.length * 2 + (params.states === 3 ? 20 : 0) + wideCount * 8 + frozenCount * 10;
-  return level;
-}
-
-export function generateRippleLevel(seed: string, chapter: number, params: RippleParams): RippleLevel | null {
+// Lakes are made backwards: lay out rocks, float lanterns until the water is lit, then put
+// dots on the rocks and take away as many as possible while the lake keeps one answer that
+// can be reasoned out.
+export function generateLanternLevel(seed: string, chapter: number, params: LanternParams): LanternLevel | null {
   const rng = createRng(seed);
-  for (let attempt = 0; attempt < 100; attempt++) {
-    const level = build(rng, params);
-    if (!level) continue;
-    level.seed = seed;
-    level.chapter = chapter;
-    return level;
+  const { width: w, height: h } = params;
+  const mask = lakeMask(rng, w, h, params.shape);
+  const lakeCells = mask.filter(Boolean).length;
+  const rows: string[][] = Array.from({ length: h }, (_, y) => Array.from({ length: w }, (_, x) => (mask[y * w + x] ? '.' : ' ')));
+  const rockShare = params.rocks[0] + rng.next() * (params.rocks[1] - params.rocks[0]);
+  const lake = rng.shuffle(mask.flatMap((m, i) => (m ? [i] : [])));
+  for (const i of lake.slice(0, Math.round(lakeCells * rockShare))) rows[Math.floor(i / w)]![i % w] = '#';
+  const make = (r: string[][], solution: number[]): LanternLevel => ({ seed, chapter, width: w, height: h, grid: r.map((row) => row.join('')), solution, difficulty: 0 });
+
+  // Float lanterns: any patch still dark gets one, in a random order.
+  const bare = make(rows, []);
+  const sight = sightLines(bare);
+  const lanterns = new Set<number>();
+  for (const i of rng.shuffle([...Array(cellCount(bare)).keys()])) {
+    if (!isWater(bare, i)) continue;
+    if (lightCounts(bare, lanterns, sight)[i] === 0) lanterns.add(i);
   }
-  return null;
+  if (lanterns.size < 3) return null;
+  const solution = [...lanterns].sort((a, b) => a - b);
+
+  // Every rock shows how many lanterns sit beside it...
+  const rocks = [...Array(cellCount(bare)).keys()].filter((i) => rows[Math.floor(i / w)]![i % w] === '#');
+  for (const r of rocks) rows[Math.floor(r / w)]![r % w] = String(besides(bare, r).filter((j) => lanterns.has(j)).length);
+  const fair = (r: string[][]) => {
+    const level = make(r, solution);
+    const logic = solveByLogic(level);
+    return logic.solved && logic.whatIfSteps <= params.whatIf[1] && countSolutions(level, 2) === 1;
+  };
+  if (!fair(rows)) return null;
+  // ...then as many dots as possible go, while the lake stays fair.
+  const removable: number[] = [];
+  for (const r of rng.shuffle(rocks.slice())) {
+    const keep = rows[Math.floor(r / w)]![r % w]!;
+    rows[Math.floor(r / w)]![r % w] = '#';
+    if (fair(rows)) removable.push(r);
+    else rows[Math.floor(r / w)]![r % w] = keep;
+  }
+  // Gentler lakes get some dots back.
+  for (const r of removable.slice(0, Math.round(removable.length * params.keepExtra))) {
+    rows[Math.floor(r / w)]![r % w] = String(besides(bare, r).filter((j) => lanterns.has(j)).length);
+  }
+  const level = make(rows, solution);
+  const logic = solveByLogic(level);
+  if (!logic.solved || logic.whatIfSteps < params.whatIf[0] || logic.whatIfSteps > params.whatIf[1]) return null;
+  // Difficulty: how much reasoning the lake asks for, the harder kinds weighing more.
+  const weight = { sees: 0, rock: 1, 'only-light': 3, 'what-if': 14 } as const;
+  const effort = logic.deductions.reduce((sum, d) => sum + weight[d.reason], 0);
+  return { ...level, difficulty: Math.round(effort + lakeCells / 3) };
 }

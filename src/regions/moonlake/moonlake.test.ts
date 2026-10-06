@@ -1,111 +1,65 @@
 import { describe, expect, it } from 'vitest';
 import levelsJson from './levels.json';
-import { type RippleLevel, affectLists, applyPresses, isLit, isSolutionValid, press, pressCount } from './model';
-import { solveRipple } from './solver';
-import { stepClue } from './clues';
-import { generateRippleLevel } from './generator';
+import { type LanternLevel, clashing, isSolved, lightCounts, rockState, sightLines } from './model';
+import { countSolutions, solveByLogic } from './solver';
+import { generateLanternLevel } from './generator';
+import { paramsForChapter } from './bake';
 
-const levels = levelsJson as RippleLevel[];
+const levels = levelsJson as LanternLevel[];
 
-describe('ripple model', () => {
-  const line: RippleLevel = {
-    seed: 'line',
-    chapter: 0,
-    states: 2,
-    nodes: [{ x: 0, y: 0, wide: false }, { x: 0.5, y: 0, wide: false }, { x: 1, y: 0, wide: true }, { x: 1, y: 1, wide: false }],
-    edges: [[0, 1], [1, 2], [2, 3]],
-    start: [0, 0, 0, 0],
-    solution: [],
-    difficulty: 0,
-  };
+describe('lantern rules', () => {
+  const lake: LanternLevel = { seed: 'rules', chapter: 0, width: 3, height: 1, grid: ['.#.'], solution: [], difficulty: 0 };
 
-  it('advances a pad and its neighbours, further for wide pads', () => {
-    expect(affectLists(line)[1]).toEqual([0, 1, 2]);
-    expect(affectLists(line)[2]).toEqual([0, 1, 2, 3]);
-    expect(press(line, [0, 0, 0, 0], 1)).toEqual([1, 1, 1, 0]);
+  it('light stops at a rock, so lanterns on either side do not clash', () => {
+    expect(clashing(lake, new Set([0, 2])).size).toBe(0);
+    const open = { ...lake, grid: ['...'] };
+    expect(clashing(open, new Set([0, 2])).size).toBe(2);
   });
 
-  it('wraps three-state pads', () => {
-    const three = { ...line, states: 3 as const };
-    expect(applyPresses(three, [2, 2, 2, 2], [0, 1, 0, 0])).toEqual([0, 0, 0, 2]);
+  it('a lantern lights its own row and column up to rocks and the shore', () => {
+    const square: LanternLevel = { seed: 'sq', chapter: 0, width: 3, height: 3, grid: ['...', '.#.', '. .'], solution: [], difficulty: 0 };
+    const lit = lightCounts(square, new Set([0]), sightLines(square));
+    expect([...lit]).toEqual([1, 1, 1, 1, 0, 0, 1, 0, 0]);
   });
-});
 
-describe('ripple solver', () => {
-  it('finds the minimum presses over GF(2) and GF(3)', () => {
-    const square: RippleLevel = {
-      seed: 'sq',
-      chapter: 0,
-      states: 2,
-      nodes: [{ x: 0, y: 0, wide: false }, { x: 1, y: 0, wide: false }, { x: 0, y: 1, wide: false }, { x: 1, y: 1, wide: false }],
-      edges: [[0, 1], [0, 2], [1, 3], [2, 3]],
-      start: [0, 0, 0, 0],
-      solution: [],
-      difficulty: 0,
-    };
-    // Pressing every pad lights the whole square from dark; the solver may find something shorter but never fail.
-    const r2 = solveRipple(square, square.start);
-    expect(r2.presses).not.toBeNull();
-    expect(isLit(square, applyPresses(square, square.start, r2.presses!))).toBe(true);
-    const three = { ...square, states: 3 as const, start: [2, 1, 1, 1] };
-    const r3 = solveRipple(three, three.start);
-    expect(r3.presses).not.toBeNull();
-    expect(isLit(three, applyPresses(three, three.start, r3.presses!))).toBe(true);
+  it('a rock with dots wants exactly that many lanterns beside it, corners not counting', () => {
+    const rock: LanternLevel = { seed: 'r', chapter: 0, width: 3, height: 2, grid: ['.2.', '...'], solution: [], difficulty: 0 };
+    expect(rockState(rock, new Set([0, 2]), 1)).toBe('met');
+    expect(rockState(rock, new Set([0]), 1)).toBe('open');
+    expect(rockState(rock, new Set([0, 2, 4]), 1)).toBe('over');
+    expect(rockState(rock, new Set([3, 5]), 1)).toBe('open');
   });
 });
 
-describe('ripple generator', () => {
+describe('lantern generator', () => {
   it('is deterministic for a seed', () => {
-    const params = { shape: 'cluster' as const, size: [7, 9] as [number, number], states: 2 as const, wideNodes: [0, 1] as [number, number], presses: [3, 5] as [number, number], minSolution: 3 };
-    expect(generateRippleLevel('det', 1, params)).toEqual(generateRippleLevel('det', 1, params));
+    expect(generateLanternLevel('same', 0, paramsForChapter(0, false))).toEqual(generateLanternLevel('same', 0, paramsForChapter(0, false)));
   });
 });
 
-describe('baked moonlake levels', () => {
-  it('has 10 levels', () => {
+describe('baked moon lake levels', () => {
+  it('has ten lakes that never get easier after the first few', () => {
     expect(levels).toHaveLength(10);
+    for (let i = 4; i < levels.length; i++) expect(levels[i]!.difficulty).toBeGreaterThanOrEqual(levels[i - 1]!.difficulty);
   });
 
   levels.forEach((level, i) => {
-    describe(`level ${i + 1} (${level.seed})`, () => {
-      it('is not lit at its start state', () => {
-        expect(isLit(level, level.start)).toBe(false);
+    describe(`lake ${i + 1} (${level.seed})`, () => {
+      it('its stored lanterns solve it', () => {
+        expect(isSolved(level, new Set(level.solution))).toBe(true);
       });
-
-      it('has a valid stored solution', () => {
-        expect(isSolutionValid(level)).toBe(true);
+      it('has exactly one answer', () => {
+        expect(countSolutions(level, 2)).toBe(1);
       });
-
-      it('is solvable by the solver with no more presses than stored', () => {
-        const r = solveRipple(level, level.start);
-        expect(r.presses).not.toBeNull();
-        expect(pressCount(r.presses!)).toBeLessThanOrEqual(pressCount(level.solution));
+      it('can be solved by reasoning alone, no guessing', () => {
+        expect(solveByLogic(level).solved).toBe(true);
       });
-
-      it('hints glow pads of a shortest way, one at a time, never the last one', () => {
-        const hinted = new Set<number>();
-        for (let step = stepClue(level, level.start, hinted, `t${hinted.size}`); step; step = stepClue(level, level.start, hinted, `t${hinted.size}`)) {
-          expect(hinted.has(step.pad)).toBe(false);
-          expect(level.nodes[step.pad]!.frozen).toBeFalsy();
-          hinted.add(step.pad);
-        }
-        const sites = solveRipple(level, level.start).presses!.filter((c) => c > 0).length;
-        expect(hinted.size).toBe(Math.max(0, sites - 1));
-        // Pressing every glowing pad the number of times asked still leaves the lake unlit.
-        const presses = solveRipple(level, level.start).presses!.map((c, i) => (hinted.has(i) ? c : 0));
-        expect(isLit(level, applyPresses(level, level.start, presses))).toBe(false);
+      it('starts dark and unsolved', () => {
+        expect(isSolved(level, new Set())).toBe(false);
       });
-
-      if (level.chapter === 2) {
-        it('uses three states in chapter 3', () => {
-          expect(level.states).toBe(3);
-        });
-      }
-      if (level.chapter === 3) {
-        it('has wide pads in chapter 4', () => {
-          expect(level.nodes.some((n) => n.wide)).toBe(true);
-        });
-      }
+      it('the last lakes ask for looking ahead', () => {
+        if (i >= 8) expect(solveByLogic(level).whatIfSteps).toBeGreaterThan(0);
+      });
     });
   });
 });
