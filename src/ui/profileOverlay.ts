@@ -1,8 +1,9 @@
 import { createProfile, currentProfile, deleteProfile, exportBackup, importBackup, listProfiles, selectProfile, type Profile, type ProfileColor } from '../core/save';
 import { cssHex } from '../design/palette';
 import { installLink } from '../core/install';
-import { IS_APP } from '../config/platform';
+import { IS_APP, TEST_TOOLS, previewEnding, setPreviewEnding } from '../config/platform';
 import { LIGHT_COLORS } from '../story/family';
+import { events } from '../core/events';
 
 // The one piece of DOM in the game: choosing which light you are. Each light is a
 // named profile with its own save on this device. No accounts, nothing leaves the device.
@@ -120,6 +121,39 @@ export class ProfileOverlay {
     links.append(backup, restore);
     if (!IS_APP) links.append(share);
     card.appendChild(links);
+    if (TEST_TOOLS) card.appendChild(this.testing());
+  }
+
+  // Test builds only: see the world before and after every land is finished, and play the
+  // opening or the ending, without touching anyone's progress.
+  private testing(): HTMLElement {
+    const box = document.createElement('div');
+    box.className = 'links';
+    const title = document.createElement('p');
+    title.textContent = 'Testing';
+    const finished = document.createElement('a');
+    const label = () => (finished.textContent = `World finished: ${previewEnding() ? 'On' : 'Off'}`);
+    label();
+    finished.addEventListener('click', () => {
+      setPreviewEnding(!previewEnding());
+      label();
+      this.close();
+      events.emit('test:map');
+    });
+    const opening = document.createElement('a');
+    opening.textContent = 'Watch the opening';
+    opening.addEventListener('click', () => {
+      this.close();
+      events.emit('test:opening');
+    });
+    const ending = document.createElement('a');
+    ending.textContent = 'Watch the ending';
+    ending.addEventListener('click', () => {
+      this.close();
+      events.emit('test:ending');
+    });
+    box.append(title, finished, opening, ending);
+    return box;
   }
 
   // Sends the game's address with the phone's share sheet, or copies it.

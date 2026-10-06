@@ -38,6 +38,9 @@ export interface GameEvents {
   // A paid level was chosen: open the unlock card. And: the full journey was unlocked or locked again.
   // The book icon: replay the story so far.
   'story:book': void;
+  'test:map': void; // test builds: show the map again (after the finished-world switch)
+  'test:opening': void; // test builds: play the first-time opening
+  'test:ending': void; // test builds: play the last land coming home and the ending
   // A situational tip from a region (a refused star, a stroke let go too soon); shown once ever.
   'level:tip': { id: string; text: string };
 }

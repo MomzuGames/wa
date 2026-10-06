@@ -14,7 +14,7 @@ import { RegionNode, type RegionState, regionNodeStyle } from './regionNode';
 import { events } from '../core/events';
 import { reducedMotion } from '../design/motion';
 import { createRng } from '../core/rng';
-import { PREVIEW_ENDING } from '../config/platform';
+import { previewEnding } from '../config/platform';
 
 const mapStyle = {
   spreadX: 0.7,
@@ -138,8 +138,14 @@ export class WorldMapScene implements Scene {
     });
   }
 
+  // A land is finished when all its levels are solved (or, in a test build, when the
+  // finished-world switch is on).
+  private finished(id: RegionId): boolean {
+    return previewEnding() || isRegionComplete(solvedCount(id));
+  }
+
   private stateFor(id: RegionId): RegionState {
-    if (isRegionComplete(solvedCount(id))) return 'complete';
+    if (this.finished(id)) return 'complete';
     return regionUnlocked(id) ? 'unlocked' : 'locked';
   }
 
@@ -236,6 +242,11 @@ export class WorldMapScene implements Scene {
     );
   }
 
+  // The world as it was: every land in its full colour (and full brightness) again.
+  async brighten(): Promise<void> {
+    await Promise.all(REGION_ORDER.map((id) => this.nodes.get(id)!.setColour(1, mapStyle.drainSeconds * 0.6)));
+  }
+
   // For the book's replay: the world shows its colour again for a moment, then the Silence
   // drains it away as it did that night.
   async playSilence(): Promise<void> {
@@ -302,7 +313,7 @@ export class WorldMapScene implements Scene {
 
   // Where the journey stands: the first region that is not finished yet.
   private firstUnfinished(): RegionId {
-    for (const id of REGION_ORDER) if (!isRegionComplete(solvedCount(id))) return id;
+    for (const id of REGION_ORDER) if (!this.finished(id)) return id;
     return REGION_ORDER[0]!;
   }
 
@@ -318,8 +329,8 @@ export class WorldMapScene implements Scene {
 
   private allFinished(): boolean {
     // Dev: ?alive=1 shows the living world without finishing every land.
-    if (PREVIEW_ENDING || (import.meta.env.DEV && new URLSearchParams(location.search).has('alive'))) return true;
-    return REGION_ORDER.every((id) => isRegionComplete(solvedCount(id)));
+    if (import.meta.env.DEV && new URLSearchParams(location.search).has('alive')) return true;
+    return REGION_ORDER.every((id) => this.finished(id));
   }
 
   // The whole world in tune: the sky fills with aurora, sparks rise from every land, more
@@ -425,7 +436,7 @@ export class WorldMapScene implements Scene {
     for (let i = 0; i < REGION_ORDER.length - 1; i++) {
       const a = REGION_ORDER[i]!;
       const b = REGION_ORDER[i + 1]!;
-      if (!isRegionComplete(solvedCount(a)) || a === this.pendingReveal) continue;
+      if (!this.finished(a) || a === this.pendingReveal) continue;
       // One pearl light per finished trail; once the world is alive, more, in the lands' colours.
       const count = this.alive.v > 0 ? mapStyle.alivePulses : 1;
       for (let k = 0; k < count; k++) {
@@ -515,7 +526,7 @@ export class WorldMapScene implements Scene {
       const a = REGION_ORDER[i]!;
       const b = REGION_ORDER[i + 1]!;
       const isAnimating = a === animatingFrom && b === animatingTo;
-      const settled = isRegionComplete(solvedCount(a)) && a !== this.pendingReveal;
+      const settled = this.finished(a) && a !== this.pendingReveal;
       const lit = isAnimating ? progress : settled ? 1 : 0;
       if (lit <= 0) continue;
       // A soft drawn glow under each lit trail (no filter: those cost a full-screen pass a frame).

@@ -25,7 +25,7 @@ import { TitleScene } from '../scenes/title';
 import { WorldMapScene, type MapReveal } from '../map/worldMap';
 import { RegionScene } from '../map/regionScene';
 import { haptic } from './native';
-import { IS_APP, PREVIEW_ENDING } from '../config/platform';
+import { IS_APP, TEST_TOOLS, previewEnding, setPreviewEnding } from '../config/platform';
 import { LevelShellScene, type LevelResult } from '../scenes/levelScene';
 
 export interface GameDeps {
@@ -44,13 +44,23 @@ const ALL_SCENES: SceneId[] = ['prologue', ...REGION_ORDER.map((id) => `asleep:$
 export class Game {
   private storyPlaying = false;
   private holdingScore = false; // a replay keeps one score going across its parts
+  private forceOpening = false; // test builds: play the opening again without marking it seen
   private previewingStory = false;
   private inOpening = false;
 
   constructor(private deps: GameDeps) {
     events.on('input:back', () => this.back());
     // The book icon: the story so far, from the beginning.
-    events.on('story:book', () => void this.replay(PREVIEW_ENDING ? ALL_SCENES : earnedScenes(this.solved())));
+    events.on('story:book', () => void this.replay(previewEnding() ? ALL_SCENES : earnedScenes(this.solved())));
+    if (TEST_TOOLS) {
+      events.on('test:map', () => this.showMap());
+      events.on('test:opening', () => {
+        this.forceOpening = true;
+        this.showMap();
+      });
+      // The last land comes home, the ending plays, and the world comes alive.
+      events.on('test:ending', () => void this.testEnding());
+    }
     events.on('progress:changed', () => this.showFamily(!(this.deps.scenes.scene instanceof LevelShellScene)));
     // The iPhone app may play sound at once: its web view needs no gesture for audio.
     if (IS_APP) void deps.audio.start();
@@ -123,9 +133,9 @@ export class Game {
     this.deps.hud.setAccountButton(() => this.deps.openAccount());
     // A new light's journey opens with the story of how it began; the map waits, dreaming,
     // and stays hushed (the world is quiet) until the light decides to set out.
-    const opening = !reveal && !seenStory().has('prologue') && !this.previewingStory;
+    const opening = this.forceOpening || (!reveal && !seenStory().has('prologue') && !this.previewingStory);
     // Every land in tune again: the map plays its celebration instead of the journey theme.
-    const allDone = PREVIEW_ENDING || REGION_ORDER.every((id) => landDone(this.solved()[id])) || (devFlags.enabled && new URLSearchParams(location.search).has('alive'));
+    const allDone = previewEnding() || REGION_ORDER.every((id) => landDone(this.solved()[id])) || (devFlags.enabled && new URLSearchParams(location.search).has('alive'));
     this.deps.audio.setScene(opening ? 'quiet' : allDone ? 'celebration' : 'map');
     this.showFamily(true);
     const map = new WorldMapScene((id) => this.showRegion(id), reveal, opening);
@@ -199,7 +209,9 @@ export class Game {
     this.deps.audio.storyStart();
     this.deps.audio.storyMood('harmony');
     await new Promise((r) => gsap.delayedCall(scaled(storyInterlude.brightWorld), r));
-    await this.playStory(['prologue'], true, () => map.drainColour());
+    const remember = !this.forceOpening;
+    this.forceOpening = false;
+    await this.playStory(['prologue'], remember, () => map.drainColour());
     if (this.deps.scenes.scene !== map) {
       hud.visible = true;
       this.inOpening = false;
@@ -238,15 +250,38 @@ export class Game {
     // One score carries through the whole replay, the lights falling into the lands included.
     this.holdingScore = true;
     this.deps.audio.storyStart();
+    this.deps.audio.storyMood('harmony');
+    // The story is told over the map: go there first if the book was opened elsewhere.
+    if (!(this.deps.scenes.scene instanceof WorldMapScene)) {
+      this.showMap();
+      await new Promise((r) => gsap.delayedCall(scaled(durations.sceneTransition) * 1.5, r));
+    }
     const map = this.deps.scenes.scene;
     const onMap = map instanceof WorldMapScene ? map : null;
-    await this.playStory(['prologue'], false, onMap ? () => onMap.playSilence() : undefined);
+    // The world as it was, bright and singing, before the story begins.
+    if (onMap) {
+      this.inOpening = true;
+      await onMap.brighten();
+      await new Promise((r) => gsap.delayedCall(scaled(storyInterlude.brightWorld), r));
+      this.inOpening = false;
+    }
+    await this.playStory(['prologue'], false, onMap ? () => onMap.drainColour() : undefined);
     if (onMap) await onMap.playArrival(this.hue());
     await this.playStory(ids.filter((id) => id !== 'prologue'), false);
     this.holdingScore = false;
     this.deps.audio.storyEnd();
     // The lands the player has finished take their colour back.
     if (onMap) await onMap.restoreColours();
+  }
+
+  // Test builds: the last land comes home, the ending plays, and the map shows the world
+  // finished, its colour washing back and the celebration beginning.
+  private async testEnding(): Promise<void> {
+    if (this.storyPlaying || this.inOpening) return;
+    const last = REGION_ORDER[REGION_ORDER.length - 1]!;
+    await this.playStory([`home:${last}`, 'finale'], false);
+    setPreviewEnding(true);
+    this.showMap({ completed: last });
   }
 
   private hue(): PaletteToken {
