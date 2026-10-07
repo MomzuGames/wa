@@ -152,7 +152,10 @@ export class ProfileOverlay {
       this.close();
       events.emit('test:ending');
     });
-    box.append(title, finished, opening, ending);
+    const samples = document.createElement('a');
+    samples.textContent = 'Style samples (A · B · C)';
+    samples.addEventListener('click', () => (location.href = 'samples.html'));
+    box.append(title, finished, opening, ending, samples);
     return box;
   }
 

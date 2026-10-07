@@ -37,6 +37,12 @@ export default defineConfig(({ command, mode }) => ({
       },
     }),
   ],
+  // Test builds (VITE_TEST_TOOLS=1) also carry the style-sample page; released ones never do.
+  build: {
+    rollupOptions: {
+      input: process.env.VITE_TEST_TOOLS === '1' ? { main: 'index.html', samples: 'samples.html' } : { main: 'index.html' },
+    },
+  },
   test: {
     environment: 'node',
   },
