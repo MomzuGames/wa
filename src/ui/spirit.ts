@@ -81,6 +81,8 @@ export class Spirit extends Container {
   private path: Array<{ x: number; y: number }> = [];
   private pace = 0; // smoothed speed of the light, px per second
   private bubble: Container | null = null;
+  // The scene's camera (see 'spirit:camera'); the light keeps its own size whatever the zoom.
+  private camera = { x: 0, y: 0, scale: 1 };
   private sayToken = 0;
 
   constructor(private particles: ParticleSystem) {
@@ -114,6 +116,17 @@ export class Spirit extends Container {
     events.on('spirit:joy', ({ x, y }) => void this.joy(x, y));
     events.on('spirit:dive', ({ x, y }) => void this.dive(x, y));
     events.on('spirit:family', (tokens) => this.setFamily(tokens));
+    events.on('spirit:camera', (c) => {
+      this.camera = c;
+      if (this.parent?.parent) {
+        this.parent.position.set(c.x, c.y);
+        this.parent.scale.set(c.scale);
+      }
+      const inv = 1 / c.scale;
+      this.sway.scale.set(inv);
+      this.followers.forEach((f) => f.view.scale.set(inv));
+      this.bubble?.scale.set(inv);
+    });
     events.on('spirit:say', ({ lines, done }) => void this.say(lines).then(() => done?.()));
     this.scheduleIdle();
   }
@@ -153,6 +166,7 @@ export class Spirit extends Container {
           .fill({ color: palette.void, alpha: 0.85 }),
       );
       this.familyLayer.addChild(view);
+      view.scale.set(1 / this.camera.scale);
       return { view, x: this.x, y: this.y, phase: k * 1.1, color: palette[token] };
     });
   }
@@ -244,10 +258,19 @@ export class Spirit extends Container {
   private placeBubble(): void {
     const b = this.bubble;
     if (!b || b.destroyed) return;
-    const half = b.width / 2;
-    const min = speechStyle.margin + half - this.x;
-    const max = window.innerWidth - speechStyle.margin - half - this.x;
-    b.x = Math.max(min, Math.min(max, 0));
+    const s = this.camera.scale;
+    b.scale.set(1 / s);
+    // Kept on screen: measured in screen px, then back into the scene's units.
+    const half = (b.width * s) / 2;
+    const at = this.x * s + this.camera.x;
+    const target = Math.max(speechStyle.margin + half, Math.min(window.innerWidth - speechStyle.margin - half, at));
+    b.x = (target - at) / s;
+  }
+
+  // Particles live on the screen; the light lives in the scene's coordinates.
+  private emitAt(o: Parameters<ParticleSystem['emit']>[0]): void {
+    const c = this.camera;
+    this.particles.emit({ ...o, x: o.x * c.scale + c.x, y: o.y * c.scale + c.y });
   }
 
   show(x?: number, y?: number): void {
@@ -350,7 +373,7 @@ export class Spirit extends Container {
             this.moving = null;
             for (let i = 0; i < 16; i++) {
               const a = Math.random() * Math.PI * 2;
-              this.particles.emit({ x, y, color: palette[this.hue], vx: Math.cos(a) * 40, vy: Math.sin(a) * 40, life: 0.9, alphaFrom: 0.8, scaleFrom: 0.3, scaleTo: 0.05 });
+              this.emitAt({ x, y, color: palette[this.hue], vx: Math.cos(a) * 40, vy: Math.sin(a) * 40, life: 0.9, alphaFrom: 0.8, scaleFrom: 0.3, scaleTo: 0.05 });
             }
             this.face.lookAt(0, 0);
             resolve();
@@ -452,7 +475,7 @@ export class Spirit extends Container {
           .to(this.body.scale, { x: 1, y: 1, duration: durations.microFeedback, ease: easings.tileSnap });
         for (let i = 0; i < 18; i++) {
           const a = Math.random() * Math.PI * 2;
-          this.particles.emit({
+          this.emitAt({
             x: this.x,
             y: this.y,
             color: palette[this.hue],
@@ -556,7 +579,7 @@ export class Spirit extends Container {
     const bx = (from.x - this.x) / moved;
     const by = (from.y - this.y) / moved;
     for (let k = 0; k < 2; k++) {
-      this.particles.emit({
+      this.emitAt({
         x: this.x + (Math.random() - 0.5) * 6,
         y: this.y + (Math.random() - 0.5) * 6,
         color: k === 0 ? palette[this.hue] : palette.pearl,
@@ -579,7 +602,7 @@ export class Spirit extends Container {
       return;
     }
     const me = this.sway.getGlobalPosition();
-    const scale = this.worldTransform.a;
+    const scale = this.sway.worldTransform.a;
     setLightSpots([
       { x: me.x, y: me.y, color: palette[this.hue], size: spiritStyle.radius * scale, alpha: seen },
       ...this.followers.map((f) => {

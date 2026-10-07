@@ -214,7 +214,22 @@ export class RegionNode extends Container {
   }
 
   // Phones show the map smaller, with tighter names, so six regions fit without touching.
+  // The scrolling journey (phones): the land drawn large, its name kept at a reading size.
+  setJourney(scale: number): void {
+    this.baseScale = scale;
+    this.scale.set(scale);
+    this.nameLabel.style.fontSize = 14;
+    this.nameLabel.style.letterSpacing = 4;
+    this.nameLabel.scale.set(1 / scale);
+    this.nameLabel.y = regionNodeStyle.size * 0.8;
+  }
+
+  get restingScale(): number {
+    return this.baseScale;
+  }
+
   setCompact(compact: boolean): void {
+    this.nameLabel.scale.set(1);
     this.baseScale = compact ? 0.72 : 1;
     this.scale.set(this.baseScale);
     this.nameLabel.style.fontSize = compact ? 13 : 15;

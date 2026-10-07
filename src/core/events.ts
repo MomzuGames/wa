@@ -16,6 +16,9 @@ export interface GameEvents {
   'spirit:dive': { x: number; y: number };
   // Where the light is, every frame, so scenes can brighten what it passes.
   'spirit:at': { x: number; y: number };
+  // The scene's camera: the light's coordinates are the scene's; on screen they are scaled by
+  // `scale` and moved by (x, y). The scrolling world map sets it every frame; a scene change resets it.
+  'spirit:camera': { x: number; y: number; scale: number };
   'spirit:tint': PaletteToken;
   // The family lights that follow the light (one per land finished), in their colours.
   'spirit:family': PaletteToken[];

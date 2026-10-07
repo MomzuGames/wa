@@ -1,4 +1,5 @@
 import gsap from 'gsap';
+import { Container } from 'pixi.js';
 import './style.css';
 import { Stage3D, setStage3D } from './three/stage3d';
 import '@fontsource/quicksand/300.css';
@@ -62,7 +63,10 @@ async function main() {
   const profiles = new ProfileOverlay(() => game.profileChanged());
   const game = new Game({ app, scenes, audio, particles, hud, settings, openAccount: () => profiles.open() });
 
-  app.stage.addChild(background.container, scenes.root, particles.container, spirit, hud, settings);
+  // The light sits in its own layer, which the scrolling world map moves and zooms.
+  const spiritLayer = new Container();
+  spiritLayer.addChild(spirit);
+  app.stage.addChild(background.container, scenes.root, particles.container, spiritLayer, hud, settings);
   // The 2D vignette and dust would grey out the 3D world: they fade away while it shows.
   stage3D.onActive = (active) => gsap.to(background.container, { alpha: active ? 0 : 1, duration: 0.8, ease: 'sine.inOut' });
 

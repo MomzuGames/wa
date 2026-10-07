@@ -1,5 +1,6 @@
 import { Container } from 'pixi.js';
 import { crossFade } from '../fx/transitions';
+import { events } from './events';
 
 export interface Scene {
   readonly container: Container;
@@ -27,6 +28,8 @@ export class SceneManager {
   }
 
   private async transition(next: Scene): Promise<void> {
+    // A new scene starts with the light in plain screen coordinates.
+    events.emit('spirit:camera', { x: 0, y: 0, scale: 1 });
     const previous = this.current;
     this.current = next;
     next.resize?.(this.width, this.height);

@@ -37,11 +37,45 @@ function soft(color: number, opts: THREE.MeshStandardMaterialParameters = {}): T
 }
 
 // The island itself: a grassy top with a rounded rim over a smooth tapering root of rock.
-function islandBase(): { group: THREE.Group; top: THREE.MeshStandardMaterial; rock: THREE.MeshStandardMaterial } {
+// A small seeded random for each land, so its pebbles and grass always sit in the same places.
+function seeded(id: string): () => number {
+  let seed = 7;
+  for (const ch of id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+  return () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+}
+
+// Shades a turned shape from light at its top to deep at its tip (multiplying its colour).
+function shadeDown(geo: THREE.BufferGeometry, top: number, bottom: number, light: number, deep: number): void {
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const colors = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const t = Math.max(0, Math.min(1, (top - pos.getY(i)) / (top - bottom)));
+    const v = light + (deep - light) * Math.pow(t, 0.8);
+    colors.set([v, v, v], i * 3);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+}
+
+interface IslandBase {
+  group: THREE.Group;
+  top: THREE.MeshStandardMaterial;
+  rock: THREE.MeshStandardMaterial;
+  lumps: THREE.MeshStandardMaterial;
+  pebbles: THREE.MeshStandardMaterial;
+  grass: THREE.MeshStandardMaterial;
+  sway: Array<(t: number) => void>;
+}
+
+function islandBase(id: string): IslandBase {
   const group = new THREE.Group();
+  const rand = seeded(id);
   const r = islandStyle.rimRound;
   const top = soft(palette.earth);
-  const rock = soft(palette.earth);
+  const rock = soft(palette.earth, { vertexColors: true });
+  const lumps = soft(palette.earth);
+  const pebbles = soft(palette.earthLight, { roughness: 0.7 });
+  const grass = soft(palette.sage, { roughness: 0.9 });
+  const sway: Array<(t: number) => void> = [];
   const cap = new THREE.Mesh(
     new THREE.LatheGeometry(profile([[0, 0.02], [0.6, 0.022], [1 - r, 0.012], [1, -r * 0.6], [0.995, -r * 1.3]], 12).reverse(), islandStyle.segments),
     top,
@@ -53,8 +87,48 @@ function islandBase(): { group: THREE.Group; top: THREE.MeshStandardMaterial; ro
     ),
     rock,
   );
+  shadeDown(root.geometry, 0, -0.82, 1, 0.38);
   group.add(cap, root);
-  return { group, top, rock };
+  // A few rounded lumps of rock beneath, so the root is never a plain bowl.
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + rand() * 0.9;
+    const size = 0.16 + rand() * 0.12;
+    const lump = new THREE.Mesh(new THREE.SphereGeometry(size, 24, 16), lumps);
+    const depth = 0.3 + rand() * 0.3;
+    const reach = 0.82 - depth * 0.75;
+    lump.position.set(Math.cos(a) * reach, -depth, Math.sin(a) * reach);
+    lump.scale.set(1, 1.3, 1);
+    group.add(lump);
+  }
+  // Pebbles along the rim, and small tufts of grass that sway in the wind.
+  for (let k = 0; k < 7; k++) {
+    const a = rand() * Math.PI * 2;
+    const d = 0.8 + rand() * 0.12;
+    const size = 0.03 + rand() * 0.035;
+    const pebble = new THREE.Mesh(new THREE.SphereGeometry(size, 16, 10), pebbles);
+    pebble.scale.set(1.3, 0.6, 1);
+    pebble.position.set(Math.cos(a) * d, 0.02 + size * 0.3, Math.sin(a) * d);
+    group.add(pebble);
+  }
+  const blade = new THREE.ConeGeometry(0.014, 1, 6);
+  blade.translate(0, 0.5, 0);
+  for (let k = 0; k < 5; k++) {
+    const a = rand() * Math.PI * 2;
+    const d = 0.74 + rand() * 0.18;
+    const tuft = new THREE.Group();
+    for (let b = 0; b < 5; b++) {
+      const m = new THREE.Mesh(blade, grass);
+      m.scale.y = 0.07 + rand() * 0.08;
+      m.position.set((rand() - 0.5) * 0.05, 0, (rand() - 0.5) * 0.05);
+      m.rotation.set((rand() - 0.5) * 0.6, 0, (rand() - 0.5) * 0.6);
+      tuft.add(m);
+    }
+    tuft.position.set(Math.cos(a) * d, 0.02, Math.sin(a) * d);
+    group.add(tuft);
+    const phase = rand() * 6;
+    sway.push((t) => (tuft.rotation.z = 0.12 * Math.sin(t * 1.4 + phase)));
+  }
+  return { group, top, rock, lumps, pebbles, grass, sway };
 }
 
 // A thin flat ring lying on the ground.
@@ -86,11 +160,11 @@ function crescent(): THREE.BufferGeometry {
 }
 
 export function makeIsland(id: RegionId, accent: number): Island {
-  const { group, top, rock } = islandBase();
+  const { group, top, rock, lumps, pebbles, grass, sway } = islandBase(id);
   // Parts in the land's colour: `tone` mixes the colour with pearl (lighter) or dim (deeper).
   const tinted: Array<{ m: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial; tone: number }> = [];
   const fading: Array<{ m: THREE.Material & { opacity: number }; base: number }> = [];
-  const movers: Array<(t: number) => void> = [];
+  const movers: Array<(t: number) => void> = [...sway];
   const part = (tone: number, opts: THREE.MeshStandardMaterialParameters = {}) => {
     const m = soft(accent, { emissiveIntensity: islandStyle.emissive, ...opts });
     tinted.push({ m, tone });
@@ -138,7 +212,7 @@ export function makeIsland(id: RegionId, accent: number): Island {
       hill.scale.set(1, 0.35, 1);
       group.add(hill);
       const sky = new THREE.Group();
-      const pts = [[-0.55, 0.85, 0.15], [-0.2, 1.2, -0.2], [0.18, 1.0, 0.1], [0.55, 1.3, -0.15], [0.42, 0.78, 0.4]].map(([x, y, z]) => new THREE.Vector3(x, y, z));
+      const pts = [[-0.5, 0.42, 0.15], [-0.2, 0.68, -0.2], [0.16, 0.55, 0.1], [0.5, 0.75, -0.15], [0.4, 0.38, 0.4]].map(([x, y, z]) => new THREE.Vector3(x, y, z));
       const lineMat = part(-0.3, { opacity: 0.45, emissiveIntensity: 0.2 });
       for (let k = 0; k < pts.length - 1; k++) {
         const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(pts[k]!, pts[k + 1]!), 1, 0.008, 8), lineMat);
@@ -208,14 +282,15 @@ export function makeIsland(id: RegionId, accent: number): Island {
         lantern.group.position.y = 0.22 + 0.025 * Math.sin(t * 1.1);
         lantern.group.rotation.z = 0.04 * Math.sin(t * 0.8);
       });
-      const moon = new THREE.Mesh(crescent(), neutral(mixColor(palette.lemon, palette.pearl, 0.5), { emissive: col(palette.lemon), emissiveIntensity: 0.25 }));
-      moon.position.set(-0.35, 1.25, -0.2);
+      const moon = new THREE.Mesh(crescent(), neutral(mixColor(palette.lemon, palette.pearl, 0.4), { emissive: col(palette.lemon), emissiveIntensity: 0.08 }));
+      moon.scale.setScalar(0.6);
+      moon.position.set(-0.4, 1.05, -0.25);
       moon.rotation.z = 0.5;
-      const moonGlow = glowSprite(palette.lemon, 1.1, 0.12);
+      const moonGlow = glowSprite(palette.lemon, 0.8, 0.06);
       moonGlow.position.copy(moon.position);
-      fading.push({ m: moonGlow.material, base: 0.12 });
+      fading.push({ m: moonGlow.material, base: 0.06 });
       group.add(moon, moonGlow);
-      movers.push((t) => (moon.position.y = 1.25 + 0.03 * Math.sin(t * 0.6)));
+      movers.push((t) => (moon.position.y = 1.05 + 0.03 * Math.sin(t * 0.6)));
       break;
     }
     case 'shadowterrace': {
@@ -247,6 +322,9 @@ export function makeIsland(id: RegionId, accent: number): Island {
       // Light pastel tops and warm stone: a land's colour is never muddied into a dark purple.
       top.color.set(mixColor(color, palette.earthLight, 0.22));
       rock.color.set(mixColor(palette.earthLight, color, 0.12));
+      lumps.color.set(mixColor(palette.earth, color, 0.1));
+      pebbles.color.set(mixColor(mixColor(palette.earthLight, palette.pearl, 0.35), color, 0.15));
+      grass.color.set(mixColor(palette.sage, color, 0.35));
       for (const { m, tone } of tinted) {
         const c = tone >= 0 ? mixColor(color, palette.earthLight, tone * 0.6) : mixColor(color, palette.pearl, -tone);
         m.color.set(c);
@@ -257,11 +335,12 @@ export function makeIsland(id: RegionId, accent: number): Island {
     setOpacity(alpha) {
       fade = alpha;
       group.userData.fade = alpha;
-      top.opacity = alpha;
-      rock.opacity = alpha;
       const solid = alpha > 0.99;
-      top.transparent = rock.transparent = !solid;
-      top.depthWrite = rock.depthWrite = true;
+      for (const m of [top, rock, lumps, pebbles, grass]) {
+        m.opacity = alpha;
+        m.transparent = !solid;
+        m.depthWrite = true;
+      }
       for (const { m, base } of fading) m.opacity = base * alpha;
       halo.material.opacity = (islandStyle.glowIdle + (islandStyle.glowSung - islandStyle.glowIdle) * sungAmount) * fade;
     },

@@ -218,7 +218,7 @@ export class Game {
     }
     // Nothing moves on until the player taps the light; then the map wakes.
     await map.waitForLightTap(spot);
-    events.emit('spirit:joy', { x: spot.x, y: spot.y });
+    events.emit('spirit:joy', map.toMapLocal(spot));
     map.wakeUp();
     // The journey begins, and so does the map's music.
     this.deps.audio.setScene('map');
@@ -238,7 +238,7 @@ export class Game {
     while (map.centreScreen().x <= 0) await new Promise((r) => gsap.delayedCall(0.05, r));
     const opening = new OpeningCinematic(map, this.hue(), this.deps.audio, this.width, this.height);
     const spot = await opening.play();
-    events.emit('spirit:show', spot);
+    events.emit('spirit:show', map.toMapLocal(spot));
     opening.destroy();
     if (!this.holdingScore) this.deps.audio.storyEnd();
     return spot;

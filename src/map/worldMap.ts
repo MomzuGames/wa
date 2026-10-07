@@ -52,6 +52,20 @@ const mapStyle = {
   sparkSpeed: 0.22, // rises per second
   alivePulses: 3, // lights travelling each trail at once
   waveStagger: 0.35, // seconds between lands as the colour sweeps across them
+  // The scrolling journey on a phone: the lands drawn large down a long winding path that a
+  // swipe scrolls; the camera glides, and drifts after the little light when left alone.
+  journey: {
+    islandWidth: 0.48, // of the screen width: how wide a land's island is
+    step: 0.37, // of the screen height between one land and the next
+    first: 0.3, // of the screen height: where the first land sits when scrolled to the top
+    last: 0.68, // and the last when scrolled to the bottom
+    swing: 0.5, // how far the path swings from side to side (of the screen width, by LAYOUT)
+    glide: 4, // per second: how fast the camera follows its target
+    flick: 0.92, // how a released swipe eases out
+    idleFollow: 5, // seconds after a swipe before the camera follows the light again
+    band: [0.24, 0.7] as const, // the light is kept within this part of the screen's height
+    overviewFill: 0.74, // the opening's view of the whole world: this much of the height
+  },
 } as const;
 
 // Region positions as fractions of the screen, forming a gentle winding journey.
@@ -87,6 +101,7 @@ export class WorldMapScene implements Scene {
   private time = 0;
   private seeds: number[] = [];
   private parallax = { x: 0, y: 0 };
+  private drift = { x: 0, y: 0 }; // the map's slow drift and lean toward the pointer
   private chosen: RegionId | null = null;
   private unsubscribe: () => void = () => {};
   private world3d: OverlayWorld | null = null;
@@ -97,6 +112,16 @@ export class WorldMapScene implements Scene {
   // Dreaming: the opening's last moments. The lands are dim and cannot be chosen, and the
   // light stays put, until the player taps it and the map wakes (see wakeUp).
   private dreaming: boolean;
+  // The camera over the map: zoom, and which local height sits in the middle of the screen.
+  private journey = false;
+  private cam = { z: 1, cy: 0 };
+  private camTarget = { z: 1, cy: 0 };
+  private swipe: { y: number; last: number; moved: boolean; v: number } | null = null;
+  private flickV = 0;
+  private sinceTouch = 99;
+  private dragMoved = false;
+  private lightAt: { x: number; y: number } | null = null;
+  private hitArea = new Graphics();
 
   constructor(
     private onSelect: (id: RegionId) => void,
@@ -126,7 +151,7 @@ export class WorldMapScene implements Scene {
         const node = this.nodes.get(id)!;
         const island = makeIsland(id, node.accent);
         node.showFigure(false);
-        this.world3d.add(island.group, () => node.getGlobalPosition(), () => regionNodeStyle.size * 0.5 * node.scale.x);
+        this.world3d.add(island.group, () => node.getGlobalPosition(), () => regionNodeStyle.size * 0.5 * node.worldTransform.a);
         this.islands.set(id, island);
       }
       this.twinkles.visible = false;
@@ -144,13 +169,44 @@ export class WorldMapScene implements Scene {
     this.container.on('globalpointermove', (e: FederatedPointerEvent) => {
       this.parallax = { x: e.global.x / Math.max(1, this.width) - 0.5, y: e.global.y / Math.max(1, this.height) - 0.5 };
     });
+    // The light moves in the map's own coordinates (the map hands it its camera).
     this.unsubscribe = events.on('spirit:at', ({ x, y }) => {
+      this.lightAt = { x, y };
       for (const id of REGION_ORDER) {
         const p = this.position(id);
-        const d = Math.hypot(p.x + this.world.x - x, p.y + this.world.y - y);
-        this.nodes.get(id)!.setNear(1 - Math.min(1, d / regionNodeStyle.nearRadius));
+        const reach = regionNodeStyle.nearRadius * this.nodes.get(id)!.restingScale;
+        const d = Math.hypot(p.x - x, p.y - y);
+        this.nodes.get(id)!.setNear(1 - Math.min(1, d / reach));
       }
     });
+    // A swipe up or down travels the journey.
+    this.hitArea.eventMode = 'static';
+    this.container.addChildAt(this.hitArea, 0);
+    this.container.on('pointerdown', (e: FederatedPointerEvent) => {
+      if (!this.journey || this.dreaming) return;
+      this.swipe = { y: e.global.y, last: e.global.y, moved: false, v: 0 };
+      this.dragMoved = false;
+      this.flickV = 0;
+    });
+    this.container.on('globalpointermove', (e: FederatedPointerEvent) => {
+      const s = this.swipe;
+      if (!s) return;
+      if (!s.moved && Math.abs(e.global.y - s.y) > 10) s.moved = this.dragMoved = true;
+      if (!s.moved) return;
+      const dy = (e.global.y - s.last) / this.cam.z;
+      s.v = dy;
+      s.last = e.global.y;
+      this.camTarget.cy = this.clampCy(this.camTarget.cy - dy);
+      this.cam.cy = this.camTarget.cy;
+      this.sinceTouch = 0;
+    });
+    const release = () => {
+      if (this.swipe?.moved) this.flickV = this.swipe.v;
+      this.swipe = null;
+      this.sinceTouch = 0;
+    };
+    this.container.on('pointerup', release);
+    this.container.on('pointerupoutside', release);
   }
 
   // A land is finished when all its levels are solved (or, in a test build, when the
@@ -182,6 +238,7 @@ export class WorldMapScene implements Scene {
 
   private spiritSpot(id: RegionId): { x: number; y: number } {
     const p = this.position(id);
+    if (this.journey) return { x: p.x, y: p.y - regionNodeStyle.size * 0.5 * this.nodes.get(id)!.restingScale - 26 };
     // Never up among the icons at the top of the screen.
     return { x: p.x, y: Math.max(p.y + mapStyle.spiritOffsetY, hud.top() + mapStyle.belowHud) };
   }
@@ -196,7 +253,67 @@ export class WorldMapScene implements Scene {
 
   // The middle of the screen, in the map's own coordinates and on the screen.
   centreLocal(): { x: number; y: number } {
-    return { x: this.width / 2 - this.world.x, y: this.height * 0.48 - this.world.y };
+    const z = this.world.scale.x || 1;
+    return { x: (this.width / 2 - this.world.x) / z, y: (this.height * 0.48 - this.world.y) / z };
+  }
+
+  // A screen point in the map's own coordinates (where the light lives on the map).
+  toMapLocal(p: { x: number; y: number }): { x: number; y: number } {
+    const z = this.world.scale.x || 1;
+    return { x: (p.x - this.world.x) / z, y: (p.y - this.world.y) / z };
+  }
+
+  // ----- the camera -----
+
+  private journeyBounds(): { top: number; bottom: number } {
+    return { top: this.position(REGION_ORDER[0]!).y, bottom: this.position(REGION_ORDER[REGION_ORDER.length - 1]!).y };
+  }
+
+  // The height in the middle of the screen, kept so the first and last lands never scroll away.
+  private clampCy(cy: number): number {
+    if (!this.journey) return this.height / 2;
+    const j = mapStyle.journey;
+    const b = this.journeyBounds();
+    const min = b.top + this.height * (0.5 - j.first);
+    const max = b.bottom - this.height * (j.last - 0.5);
+    return Math.max(min, Math.min(max, cy));
+  }
+
+  // Glide (or jump) to a land.
+  focus(id: RegionId, instant = false): void {
+    if (!this.journey) return;
+    this.camTarget = { z: 1, cy: this.clampCy(this.position(id).y) };
+    if (instant) this.cam = { ...this.camTarget };
+  }
+
+  // The whole world at once, for the opening story.
+  overview(instant = false): void {
+    if (!this.journey) return;
+    const b = this.journeyBounds();
+    const span = b.bottom - b.top + regionNodeStyle.size * this.nodes.get(REGION_ORDER[0]!)!.restingScale;
+    this.camTarget = { z: Math.min(1, (this.height * mapStyle.journey.overviewFill) / span), cy: (b.top + b.bottom) / 2 };
+    if (instant) this.cam = { ...this.camTarget };
+  }
+
+  private moveCamera(dt: number): void {
+    const j = mapStyle.journey;
+    this.sinceTouch += dt;
+    if (!this.swipe && Math.abs(this.flickV) > 0.05) {
+      this.camTarget.cy = this.clampCy(this.camTarget.cy - this.flickV);
+      this.cam.cy = this.camTarget.cy;
+      this.flickV *= j.flick;
+    }
+    // Left alone, the camera drifts after the little light so it never wanders off screen.
+    if (this.journey && !this.dreaming && !this.swipe && this.sinceTouch > j.idleFollow && this.lightAt && this.cam.z > 0.99) {
+      const sy = this.height / 2 + (this.lightAt.y - this.cam.cy);
+      const lo = this.height * j.band[0];
+      const hi = this.height * j.band[1];
+      if (sy < lo) this.camTarget.cy = this.clampCy(this.cam.cy - (lo - sy));
+      else if (sy > hi) this.camTarget.cy = this.clampCy(this.cam.cy + (sy - hi));
+    }
+    const k = 1 - Math.exp(-dt * j.glide);
+    this.cam.z += (this.camTarget.z - this.cam.z) * k;
+    this.cam.cy += (this.camTarget.cy - this.cam.cy) * k;
   }
 
   centreScreen(): { x: number; y: number } {
@@ -276,6 +393,8 @@ export class WorldMapScene implements Scene {
   // Lands cannot be chosen while the story is told over the map.
   setDreaming(on: boolean): void {
     this.dreaming = on;
+    // The story is told over the whole world, seen from further back.
+    if (on) this.overview();
     for (const node of this.nodes.values()) node.eventMode = on ? 'none' : 'static';
   }
 
@@ -324,15 +443,17 @@ export class WorldMapScene implements Scene {
     gsap.to(this.paths, { alpha: 1, duration: scaled(mapStyle.wakeSeconds) });
     gsap.to(this, { starDim: 1, duration: scaled(mapStyle.wakeSeconds) });
     this.roam(this.firstUnfinished());
+    this.focus(this.firstUnfinished());
   }
 
   // Choosing a region: its name lights fully and the light leaps into the figure.
   private select(id: RegionId): void {
-    if (this.chosen) return;
+    if (this.chosen || this.dragMoved) return;
     this.chosen = id;
     const p = this.position(id);
     for (const other of REGION_ORDER) this.nodes.get(other)!.setChosen(other === id);
-    events.emit('spirit:dive', { x: p.x + this.world.x, y: p.y + this.world.y - regionNodeStyle.size * 0.1 });
+    this.focus(id);
+    events.emit('spirit:dive', { x: p.x, y: p.y - regionNodeStyle.size * 0.1 * this.nodes.get(id)!.restingScale });
     gsap.delayedCall(scaled(spiritStyle.diveSeconds) * 1.05, () => this.onSelect(id));
   }
 
@@ -383,6 +504,12 @@ export class WorldMapScene implements Scene {
 
   update(dt: number): void {
     this.time += dt;
+    this.moveCamera(dt);
+    const z = this.cam.z;
+    this.world.scale.set(z);
+    this.world.x = (this.width / 2) * (1 - z) + this.drift.x;
+    this.world.y = this.height / 2 - this.cam.cy * z + this.drift.y;
+    events.emit('spirit:camera', { x: this.world.x, y: this.world.y, scale: z });
     if (this.world3d) {
       for (const id of REGION_ORDER) {
         const node = this.nodes.get(id)!;
@@ -398,8 +525,8 @@ export class WorldMapScene implements Scene {
     const k = Math.min(1, dt * 3);
     const px = -this.parallax.x * mapStyle.parallax;
     const py = -this.parallax.y * mapStyle.parallax * 0.7;
-    this.world.x += (Math.sin(this.time * mapStyle.driftSpeed) * mapStyle.driftAmount + px - this.world.x) * k;
-    this.world.y += (Math.cos(this.time * mapStyle.driftSpeed * 0.7) * mapStyle.driftAmount * 0.6 + py - this.world.y) * k;
+    this.drift.x += (Math.sin(this.time * mapStyle.driftSpeed) * mapStyle.driftAmount + px - this.drift.x) * k;
+    this.drift.y += (Math.cos(this.time * mapStyle.driftSpeed * 0.7) * mapStyle.driftAmount * 0.6 + py - this.drift.y) * k;
     // The star field sits further back, so it shifts less than the regions.
     this.twinkles.x = px * 0.35;
     this.twinkles.y = py * 0.35;
@@ -497,6 +624,7 @@ export class WorldMapScene implements Scene {
       if (this.allFinished()) this.celebrate(true);
       return;
     }
+    this.focus(next);
     await this.drawLitPath(completed, next);
     this.pendingReveal = null;
     await this.nodes.get(next)!.setState(this.stateFor(next), false);
@@ -506,6 +634,11 @@ export class WorldMapScene implements Scene {
 
   private position(id: RegionId): { x: number; y: number } {
     const f = LAYOUT[id];
+    if (this.journey) {
+      // The scrolling journey: one land after another down a long path, swinging side to side.
+      const j = mapStyle.journey;
+      return { x: this.width / 2 + f.y * this.width * j.swing, y: this.height * j.first + REGION_ORDER.indexOf(id) * this.height * j.step };
+    }
     if (this.height > this.width) {
       // Portrait: the journey winds down the screen instead of across it, swinging wide
       // from side to side so neighbouring figures and names never meet.
@@ -519,8 +652,14 @@ export class WorldMapScene implements Scene {
   }
 
   private curve(from: RegionId, to: RegionId, t: number): { x: number; y: number } {
-    const a = this.position(from);
-    const b = this.position(to);
+    const a = { ...this.position(from) };
+    const b = { ...this.position(to) };
+    if (this.journey) {
+      // The path leaves from under one island and arrives at the rim of the next, never
+      // crossing over them.
+      a.y += regionNodeStyle.size * 0.5 * this.nodes.get(from)!.restingScale * 0.75;
+      b.y -= regionNodeStyle.size * 0.5 * this.nodes.get(to)!.restingScale * 0.42;
+    }
     const cx = (a.x + b.x) / 2;
     // Cubic ease between the two, bending horizontally so the trail winds rather than zig-zags.
     const u = 1 - t;
@@ -575,14 +714,26 @@ export class WorldMapScene implements Scene {
   }
 
   resize(width: number, height: number): void {
+    const first = this.width === 0;
     this.width = width;
     this.height = height;
+    // Phones (portrait) get the scrolling journey with large lands; wide screens keep the
+    // whole world on one screen.
+    this.journey = height > width;
     const compact = isCompact(width) || height > width;
+    const journeyScale = (width * mapStyle.journey.islandWidth) / regionNodeStyle.size;
     for (const id of REGION_ORDER) {
       const node = this.nodes.get(id)!;
       node.setCompact(compact);
+      if (this.journey) node.setJourney(journeyScale);
       node.position.copyFrom(this.position(id));
     }
+    this.hitArea.clear().rect(0, 0, width, height).fill({ color: palette.pearl, alpha: 0.001 });
+    if (!this.journey) this.camTarget = this.cam = { z: 1, cy: height / 2 };
+    else if (first) {
+      if (this.dreaming) this.overview(true);
+      else this.focus(this.reveal?.completed ?? this.firstUnfinished(), true);
+    } else this.camTarget.cy = this.clampCy(this.camTarget.cy);
     this.paths.clear();
     for (let i = 0; i < REGION_ORDER.length - 1; i++) {
       this.strokePath(this.paths, REGION_ORDER[i]!, REGION_ORDER[i + 1]!, 1);
