@@ -4,6 +4,8 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { mixColor, palette } from '../design/palette';
 import type { RegionId } from '../regions/types';
 import { col, glowSprite, glowTexture, paperLantern } from '../three/kit';
+import { LEVEL_NAMES } from '../regions/catalog';
+import { levelProp, propMaterials } from './levelProps';
 
 // The six lands on the world map, each a small floating island carrying its land in 3D:
 // a tide pool with ripples, a constellation over a hill, balanced pebbles on raked sand,
@@ -364,9 +366,9 @@ function fadeOf(group: THREE.Group): number {
 
 // A level on a land's trail: a small floating island of its own, like the lands on the
 // map (pastel top, shaded rock with lumps beneath, pebbles and swaying grass), each one
-// different (its seed gives its shape, its pebbles and grass, and a little piece of its
-// land set off to one side: a pool, a star, a cairn, a crystal, a lantern's glow, blocks).
-// Locked islands are muted and plain; an open one carries a soft ring of the land's colour;
+// different (its seed gives its shape, its pebbles and grass).
+// The centrepiece shows the level's name (`levelProps.ts`). Locked islands are muted; an open
+// one carries a soft ring of the land's colour around its edge;
 // a solved one is washed in it, with a faint glow beneath.
 export interface StepStone {
   group: THREE.Group;
@@ -379,113 +381,22 @@ export function makeLevelIsland(region: RegionId, index: number): StepStone {
   const { group, top, rock, lumps, pebbles, grass } = base;
   const rand = seeded(`${region}:prop:${index}`);
   const movers: Array<(t: number) => void> = [...base.sway];
-  const prop = soft(palette.earthLight, { roughness: 0.6 });
-  const propGlow: THREE.Sprite[] = [];
-  // The little piece of the land, off to one side so the middle stays clear for the ring.
-  const a = rand() * Math.PI * 2;
-  const at = new THREE.Vector3(Math.cos(a) * 0.5, 0, Math.sin(a) * 0.5);
-  const piece = new THREE.Group();
-  piece.position.copy(at);
-  group.add(piece);
-  switch (region) {
-    case 'tidepools': {
-      const pool = new THREE.Mesh(new THREE.CircleGeometry(0.17 + rand() * 0.05, 40), prop);
-      pool.rotation.x = -Math.PI / 2;
-      pool.position.y = 0.03;
-      const lip = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.025, 12, 40), soft(mixColor(palette.peach, palette.earthLight, 0.5)));
-      lip.rotation.x = -Math.PI / 2;
-      lip.position.y = 0.03;
-      piece.add(pool, lip);
-      break;
-    }
-    case 'nightsky': {
-      const count = 1 + Math.floor(rand() * 2);
-      for (let k = 0; k < count; k++) {
-        const star = new THREE.Mesh(new THREE.SphereGeometry(0.045, 20, 14), prop);
-        const y = 0.35 + rand() * 0.3;
-        star.position.set((rand() - 0.5) * 0.3, y, (rand() - 0.5) * 0.3);
-        const halo = glowSprite(palette.pearl, 0.35, 0.18);
-        halo.position.copy(star.position);
-        propGlow.push(halo);
-        piece.add(star, halo);
-        const phase = rand() * 6;
-        movers.push((t) => {
-          star.position.y = y + 0.03 * Math.sin(t * 0.9 + phase);
-          halo.position.y = star.position.y;
-        });
-      }
-      break;
-    }
-    case 'stonegarden': {
-      const count = 2 + Math.floor(rand() * 2);
-      let y = 0.02;
-      for (let k = 0; k < count; k++) {
-        const r = 0.13 - k * 0.03;
-        const stone = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 20), prop);
-        stone.scale.set(1, 0.5, 1);
-        y += r * 0.5;
-        stone.position.y = y;
-        y += r * 0.45;
-        piece.add(stone);
-      }
-      break;
-    }
-    case 'crystalcaves': {
-      const count = 1 + Math.floor(rand() * 2);
-      for (let k = 0; k < count; k++) {
-        const h = 0.22 + rand() * 0.18;
-        const r = 0.05 + rand() * 0.025;
-        const crystal = new THREE.Group();
-        const column = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.05, h, 6), prop);
-        column.position.y = h / 2;
-        const tip = new THREE.Mesh(new THREE.ConeGeometry(r, r * 1.6, 6), prop);
-        tip.position.y = h + r * 0.8;
-        crystal.add(column, tip);
-        crystal.position.set((k - (count - 1) / 2) * 0.12, 0, 0);
-        crystal.rotation.z = (rand() - 0.5) * 0.4;
-        piece.add(crystal);
-      }
-      break;
-    }
-    case 'moonlake': {
-      const pond = new THREE.Mesh(new THREE.CircleGeometry(0.18, 40), soft(mixColor(palette.sky, palette.earthLight, 0.45)));
-      pond.rotation.x = -Math.PI / 2;
-      pond.position.y = 0.025;
-      const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.06, 24, 16), prop);
-      lantern.scale.set(1, 1.2, 1);
-      lantern.position.y = 0.12;
-      const glow = glowSprite(palette.lemon, 0.5, 0.2);
-      glow.position.y = 0.12;
-      propGlow.push(glow);
-      piece.add(pond, lantern, glow);
-      const phase = rand() * 6;
-      movers.push((t) => {
-        lantern.position.y = 0.12 + 0.015 * Math.sin(t * 1.1 + phase);
-        glow.position.y = lantern.position.y;
-      });
-      break;
-    }
-    case 'shadowterrace': {
-      // The same soft rounded blocks as the land's island on the map.
-      const block = new RoundedBoxGeometry(0.17, 0.1, 0.17, 4, 0.03);
-      const stacks = 1 + Math.floor(rand() * 3);
-      for (let k = 0; k < stacks; k++) {
-        const height = 1 + Math.floor(rand() * 3);
-        for (let j = 0; j < height; j++) {
-          const cube = new THREE.Mesh(block, prop);
-          cube.position.set((k % 2) * 0.19 - 0.09, 0.05 + j * 0.105, Math.floor(k / 2) * 0.19 - 0.05);
-          piece.add(cube);
-        }
-      }
-      break;
-    }
-  }
+  // The centrepiece: a small picture of the level's name (see levelProps.ts).
+  const mats = propMaterials();
+  const piece = levelProp(LEVEL_NAMES[region][index] ?? '', mats, rand);
+  piece.group.rotation.y = rand() * Math.PI * 2;
+  piece.group.scale.setScalar(1.4);
+  group.add(piece.group);
+  movers.push(...piece.movers);
+  const prop = mats.main;
+  const propGlow = piece.glows;
+  const glowBase = propGlow.map((g) => g.material.opacity);
   // The level's mark in the middle: a soft ring while open, a wash of colour once solved.
   const ringMat = soft(palette.earthLight, { roughness: 0.4 });
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.035, 16, 64), ringMat);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.64, 0.025, 16, 96), ringMat);
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.04;
-  const wash = new THREE.Mesh(new THREE.CircleGeometry(0.3, 48), new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, opacity: 0, depthWrite: false }));
+  const wash = new THREE.Mesh(new THREE.CircleGeometry(0.66, 64), new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, opacity: 0, depthWrite: false }));
   wash.rotation.x = -Math.PI / 2;
   wash.position.y = 0.035;
   const halo = glowSprite(palette.pearl, 3, 0);
@@ -504,11 +415,11 @@ export function makeLevelIsland(region: RegionId, index: number): StepStone {
       pebbles.color.set(mixColor(mixColor(palette.earthLight, palette.pearl, 0.35), color, 0.15));
       grass.color.set(mixColor(palette.sage, color, 0.35));
       prop.color.set(mixColor(color, palette.pearl, 0.25));
-      propGlow.forEach((g) => (g.material.opacity = sung ? 0.18 : 0.06));
+      propGlow.forEach((g, k) => (g.material.opacity = (glowBase[k] ?? 0.2) * (sung ? 1 : 0.35)));
       ring.visible = state === 'unlocked';
       ringMat.color.set(mixColor(accent, palette.pearl, 0.1));
       wash.material.color.set(accent);
-      wash.material.opacity = state === 'solved' ? 0.35 : 0;
+      wash.material.opacity = state === 'solved' ? 0.25 : 0;
       halo.material.color.set(accent);
       halo.material.opacity = state === 'solved' ? 0.1 : 0;
     },
