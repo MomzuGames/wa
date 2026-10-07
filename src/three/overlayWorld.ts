@@ -36,9 +36,9 @@ export class OverlayWorld {
     moon.position.set(-8, 14, 6);
     this.scene.add(moon);
     // Looking down on the map at a gentle angle: the islands read as solid, the map as flat.
-    this.camera.position.set(0, 30, 36);
+    this.camera.position.set(0, 22, 40);
     this.camera.lookAt(0, 0, 0);
-    this.world = { scene: this.scene, camera: this.camera, bloom: () => 0.42 };
+    this.world = { scene: this.scene, camera: this.camera, bloom: () => 0.22 };
     stage3d()?.show(this.world);
   }
 
@@ -106,7 +106,7 @@ export class OverlayWorld {
       g.pool.position.set(under.x, 0.02, under.z);
       g.pool.scale.setScalar(spot.size * 7 * unitsPerPx);
       g.pool.material.color.set(spot.color);
-      g.pool.material.opacity = 0.22 * spot.alpha;
+      g.pool.material.opacity = 0.12 * spot.alpha;
     });
   }
 

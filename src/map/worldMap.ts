@@ -124,7 +124,7 @@ export class WorldMapScene implements Scene {
       this.world3d = new OverlayWorld(MAP_MOOD);
       for (const id of REGION_ORDER) {
         const node = this.nodes.get(id)!;
-        const island = makeIsland(id);
+        const island = makeIsland(id, node.accent);
         node.showFigure(false);
         this.world3d.add(island.group, () => node.getGlobalPosition(), () => regionNodeStyle.size * 0.42 * node.scale.x);
         this.islands.set(id, island);
@@ -387,7 +387,7 @@ export class WorldMapScene implements Scene {
       for (const id of REGION_ORDER) {
         const node = this.nodes.get(id)!;
         const island = this.islands.get(id)!;
-        island.setTint(node.tint);
+        island.setTint(node.tint, node.colourAmount);
         island.setOpacity(Math.max(0.15, node.alpha) * this.container.alpha);
         island.update(this.time);
       }

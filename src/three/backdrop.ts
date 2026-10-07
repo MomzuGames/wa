@@ -68,7 +68,7 @@ const LAND: Record<Exclude<RegionId, 'moonlake'>, BackdropMood> = {
 };
 
 // The world map: a calm, even night that belongs to no single land.
-export const MAP_MOOD: BackdropMood = mood({ top: sky(0.18), horizon: low(mixColor(palette.peach, palette.rose, 0.3), 0.52), clouds: mixColor(palette.pearl, palette.peach, 0.25), cloudAmount: 0.35, moonSize: 0.03, hills: hillsOf(palette.sage) });
+export const MAP_MOOD: BackdropMood = mood({ top: sky(0.18), horizon: low(mixColor(palette.peach, palette.rose, 0.3), 0.52), clouds: mixColor(palette.pearl, palette.peach, 0.25), cloudAmount: 0.35, moonSize: 0, hills: hillsOf(palette.sage) });
 
 export function moodFor(region: RegionId, levelIndex: number, levelName: string): BackdropMood {
   if (region === 'moonlake') return MOON_LAKE[levelName] ?? MOON_LAKE.Firefly!;
@@ -137,11 +137,13 @@ export class Backdrop {
             vec2 mp = vec2(0.72 - pan * 0.03, 0.8);
             vec2 d = (uv - mp) * vec2(aspect, 1.0);
             float r = length(d);
-            float disc = smoothstep(moonSize, moonSize * 0.93, r);
-            float bite = smoothstep(moonSize, moonSize * 0.93, length(d - vec2(moonSize * 0.55 * crescent * 1.6, moonSize * 0.15 * crescent)));
-            disc *= 1.0 - bite * step(0.01, crescent);
-            c += moonCol * exp(-r / (moonSize * 2.5)) * 0.16 * step(0.001, moonSize);
-            c = mix(c, moonCol * 0.82, disc * 0.9);
+            if (moonSize > 0.001) {
+              float disc = smoothstep(moonSize, moonSize * 0.93, r);
+              float bite = smoothstep(moonSize, moonSize * 0.93, length(d - vec2(moonSize * 0.55 * crescent * 1.6, moonSize * 0.15 * crescent)));
+              disc *= 1.0 - bite * step(0.01, crescent);
+              c += moonCol * exp(-r / (moonSize * 2.5)) * 0.16;
+              c = mix(c, moonCol * 0.82, disc * 0.9);
+            }
             // Slow pastel clouds drifting across the middle of the sky.
             vec2 cp = vec2(uv.x * aspect * 1.6 + time * 0.012 + pan * 0.08, uv.y * 4.0);
             float cl = smoothstep(0.52, 0.78, fbm(cp)) * smoothstep(0.35, 0.6, uv.y) * smoothstep(0.98, 0.7, uv.y);

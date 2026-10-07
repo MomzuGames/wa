@@ -119,7 +119,7 @@ export class RegionScene implements Scene {
       this.atmosphere.container.visible = false;
       this.nodes.forEach((node, i) => {
         const stone = makeStepStone(i);
-        this.world3d!.add(stone.group, () => node.root.getGlobalPosition(), () => node.radius * node.root.scale.x);
+        this.world3d!.add(stone.group, () => node.root.getGlobalPosition(), () => node.radius * 1.45 * node.root.scale.x);
         this.stones.push(stone);
       });
     }
@@ -167,6 +167,7 @@ export class RegionScene implements Scene {
     if (stone) {
       stone.set(state, this.accent);
       disc.visible = false;
+      node.glow.visible = false;
     }
     disc.clear();
     switch (state) {

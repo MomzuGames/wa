@@ -18,6 +18,7 @@ export const regionNodeStyle = {
   auraIdle: 0.25,
   auraNear: 0.9,
   nearRadius: 190, // px: how close the light must come for a region to brighten
+  silenceColour: 0.55, // even under the Silence a land keeps this much of its colour (never black and white)
   nearColour: 0.65, // how much colour a grey land shows while the little light is over it
   colourEase: 2.5, // per second: how quickly a land's shown colour follows its target
 } as const;
@@ -234,7 +235,7 @@ export class RegionNode extends Container {
 
   // The colour the land shows right now (grey under the Silence, its own once it sings).
   get tint(): number {
-    return this._state === 'locked' ? palette.dim : this.shade;
+    return this.shade;
   }
 
   // The 3D map draws the land as an island: the flat figure steps aside, the name stays.
@@ -264,7 +265,8 @@ export class RegionNode extends Container {
     // A deliberate change (the Silence falling, a land finished) follows its own easing.
     if (gsap.isTweening(this.colourBase)) this.colour = want;
     else this.colour += (want - this.colour) * Math.min(1, dt * regionNodeStyle.colourEase);
-    this.shade = mixColor(drained(this.accent), this.accent, this.colour);
+    const floor = regionNodeStyle.silenceColour;
+    this.shade = mixColor(drained(this.accent), this.accent, floor + (1 - floor) * this.colour);
     this.aura.tint = this.shade;
     this.redrawFigure();
     const lift = this.chosen ? 1 : this.hovered ? 0.9 : this.near;

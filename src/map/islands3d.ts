@@ -1,154 +1,283 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mixColor, palette } from '../design/palette';
 import type { RegionId } from '../regions/types';
 import { col, glowSprite, paperLantern } from '../three/kit';
 
 // The six lands on the world map, each a small floating island carrying its land in 3D:
-// a pool with rings of water, stars hanging over a dark rock, balanced stones, crystals, a
-// lake with a lantern under a crescent, a stepped terrace. One unit is the island's radius.
-// Their colour follows the map: grey while the Silence holds a land, its own colour once
-// it sings again (`setTint`); they fade with the map (`setOpacity`), and breathe gently.
+// a tide pool with ripples, a constellation over a hill, balanced pebbles on raked sand,
+// crystals, a lake with a lantern under a crescent moon, a stepped terrace. Everything is
+// turned or rounded (lathe profiles, rounded boxes, many segments, smooth shading), so no
+// edge looks sharp. One unit is the island's radius. The colour follows the map (`setTint`:
+// muted while the Silence holds the land, its own once it sings) and the glow stays soft.
+
+const islandStyle = {
+  segments: 56, // around a turned shape
+  rimRound: 0.07, // the soft roll of the island's edge
+  glowIdle: 0.05, // the halo under a land still in the Silence
+  glowSung: 0.14, // and under a finished land: soft, never bright
+  emissive: 0.05, // features barely light themselves; the bloom does the rest
+} as const;
 
 export interface Island {
   group: THREE.Group;
-  setTint(color: number): void;
+  setTint(color: number, sung: number): void;
   setOpacity(alpha: number): void;
   update(t: number): void;
 }
 
-function islandBase(): { group: THREE.Group; mats: THREE.Material[] } {
-  const group = new THREE.Group();
-  const rock = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.pearl, 0.12)), flatShading: true, transparent: true });
-  const top = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.sage, 0.3)), flatShading: true, transparent: true });
-  // A rough cone of rock hanging below a flat top.
-  const under = new THREE.Mesh(new THREE.ConeGeometry(1, 1.3, 9, 1), rock);
-  under.rotation.x = Math.PI;
-  under.position.y = -0.75;
-  const cap = new THREE.Mesh(new THREE.CylinderGeometry(1, 0.98, 0.22, 9), top);
-  cap.position.y = -0.11;
-  group.add(under, cap);
-  return { group, mats: [rock, top] };
+// A smooth curve through a few points, as a lathe profile.
+function profile(points: Array<[number, number]>, count = 20): THREE.Vector2[] {
+  const curve = new THREE.SplineCurve(points.map(([x, y]) => new THREE.Vector2(x, y)));
+  return curve.getPoints(count).map((p) => new THREE.Vector2(Math.max(0, p.x), p.y));
 }
 
-export function makeIsland(id: RegionId): Island {
-  const { group, mats } = islandBase();
-  const tinted: Array<THREE.MeshStandardMaterial | THREE.MeshBasicMaterial> = [];
-  const glows: THREE.Sprite[] = [];
+function soft(color: number, opts: THREE.MeshStandardMaterialParameters = {}): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color: col(color), roughness: 0.85, metalness: 0, transparent: true, ...opts });
+}
+
+// The island itself: a grassy top with a rounded rim over a smooth tapering root of rock.
+function islandBase(): { group: THREE.Group; top: THREE.MeshStandardMaterial; rock: THREE.MeshStandardMaterial } {
+  const group = new THREE.Group();
+  const r = islandStyle.rimRound;
+  const top = soft(palette.dim);
+  const rock = soft(palette.dim);
+  const cap = new THREE.Mesh(
+    new THREE.LatheGeometry(profile([[0, 0.02], [0.6, 0.022], [1 - r, 0.012], [1, -r * 0.6], [0.995, -r * 1.3]], 12).reverse(), islandStyle.segments),
+    top,
+  );
+  const root = new THREE.Mesh(
+    new THREE.LatheGeometry(
+      profile([[0.995, -r * 1.2], [0.97, -0.18], [0.88, -0.36], [0.7, -0.55], [0.46, -0.7], [0.2, -0.79], [0, -0.82]]).reverse(),
+      islandStyle.segments,
+    ),
+    rock,
+  );
+  group.add(cap, root);
+  return { group, top, rock };
+}
+
+// A thin flat ring lying on the ground.
+function flatRing(radius: number, width: number, material: THREE.Material): THREE.Mesh {
+  const ring = new THREE.Mesh(new THREE.RingGeometry(radius - width / 2, radius + width / 2, 64), material);
+  ring.rotation.x = -Math.PI / 2;
+  return ring;
+}
+
+// The crescent moon: a smooth bevelled sliver.
+function crescent(): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  const outer = { r: 0.3, a: 2.02 }; // the outer circle, from -a to a
+  const inner = { cx: -0.12, r: 0.27, a: 1.613 };
+  for (let k = 0; k <= 32; k++) {
+    const a = -outer.a + (2 * outer.a * k) / 32;
+    const x = Math.cos(a) * outer.r;
+    const y = Math.sin(a) * outer.r;
+    if (k === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+  for (let k = 0; k <= 32; k++) {
+    const a = inner.a - (2 * inner.a * k) / 32;
+    shape.lineTo(inner.cx + Math.cos(a) * inner.r, Math.sin(a) * inner.r);
+  }
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.04, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.02, bevelSegments: 6, curveSegments: 32 });
+  geo.center();
+  return geo;
+}
+
+export function makeIsland(id: RegionId, accent: number): Island {
+  const { group, top, rock } = islandBase();
+  // Parts in the land's colour: `tone` mixes the colour with pearl (lighter) or dim (deeper).
+  const tinted: Array<{ m: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial; tone: number }> = [];
+  const fading: Array<{ m: THREE.Material & { opacity: number }; base: number }> = [];
   const movers: Array<(t: number) => void> = [];
-  const std = (opts: THREE.MeshStandardMaterialParameters = {}) => {
-    const m = new THREE.MeshStandardMaterial({ roughness: 0.55, flatShading: true, transparent: true, ...opts });
-    tinted.push(m);
+  const part = (tone: number, opts: THREE.MeshStandardMaterialParameters = {}) => {
+    const m = soft(accent, { emissiveIntensity: islandStyle.emissive, ...opts });
+    tinted.push({ m, tone });
+    fading.push({ m, base: opts.opacity ?? 1 });
     return m;
   };
+  const neutral = (color: number, opts: THREE.MeshStandardMaterialParameters = {}) => {
+    const m = soft(color, opts);
+    fading.push({ m, base: opts.opacity ?? 1 });
+    return m;
+  };
+  const sand = mixColor(palette.peach, palette.dim, 0.55);
   switch (id) {
     case 'tidepools': {
-      const pool = new THREE.Mesh(new THREE.CircleGeometry(0.72, 28), std({ emissiveIntensity: 0.25 }));
-      pool.rotation.x = -Math.PI / 2;
-      pool.position.y = 0.01;
-      group.add(pool);
-      [0.25, 0.48].forEach((r, k) => {
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.035, 8, 32), std({ emissiveIntensity: 0.4 }));
-        ring.rotation.x = -Math.PI / 2;
+      // A shallow pool with a sandy lip and rings of water rolling slowly outward.
+      const lip = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.05, 20, 64), neutral(sand));
+      lip.rotation.x = -Math.PI / 2;
+      lip.position.y = 0.035;
+      const water = new THREE.Mesh(new THREE.CircleGeometry(0.62, 64), part(0.15, { roughness: 0.25, opacity: 0.9 }));
+      water.rotation.x = -Math.PI / 2;
+      water.position.y = 0.03;
+      group.add(lip, water);
+      for (let k = 0; k < 3; k++) {
+        const m = new THREE.MeshBasicMaterial({ color: col(palette.pearl), transparent: true, opacity: 0, depthWrite: false });
+        const ring = flatRing(1, 0.02, m);
         ring.position.y = 0.04;
         group.add(ring);
-        movers.push((t) => ring.scale.setScalar(1 + 0.08 * Math.sin(t * 1.6 - k * 1.1)));
+        movers.push((t) => {
+          const p = ((t / 4.5 + k / 3) % 1 + 1) % 1;
+          ring.scale.setScalar(0.08 + p * 0.5);
+          m.opacity = 0.35 * Math.sin(Math.PI * p) * fadeOf(group);
+        });
+      }
+      [[0.3, 0.35], [-0.42, -0.2]].forEach(([x, z]) => {
+        const pebble = new THREE.Mesh(new THREE.SphereGeometry(0.06, 24, 16), neutral(mixColor(sand, palette.pearl, 0.3)));
+        pebble.scale.set(1.3, 0.55, 1);
+        pebble.position.set(x!, 0.04, z!);
+        group.add(pebble);
       });
       break;
     }
     case 'nightsky': {
-      const pts = [[-0.6, 0.9, 0.2], [-0.2, 1.3, -0.3], [0.2, 1.05, 0.1], [0.6, 1.4, -0.2], [0.45, 0.8, 0.45]];
-      const stars = pts.map(([x, y, z], k) => {
-        const s = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 8), new THREE.MeshBasicMaterial({ transparent: true }));
-        tinted.push(s.material);
-        s.position.set(x!, y!, z!);
-        group.add(s);
-        const g = glowSprite(palette.pearl, 0.6, 0.35);
-        g.position.copy(s.position);
-        glows.push(g);
-        group.add(g);
-        movers.push((t) => s.position.setY(y! + 0.05 * Math.sin(t * 0.9 + k * 1.3)));
-        return s;
+      // A soft round hill with a small constellation hanging over it.
+      const hill = new THREE.Mesh(new THREE.SphereGeometry(0.55, 40, 12, 0, Math.PI * 2, 0, Math.PI / 2), part(0.55));
+      hill.scale.set(1, 0.35, 1);
+      group.add(hill);
+      const sky = new THREE.Group();
+      const pts = [[-0.55, 0.85, 0.15], [-0.2, 1.2, -0.2], [0.18, 1.0, 0.1], [0.55, 1.3, -0.15], [0.42, 0.78, 0.4]].map(([x, y, z]) => new THREE.Vector3(x, y, z));
+      const lineMat = part(-0.3, { opacity: 0.45, emissiveIntensity: 0.2 });
+      for (let k = 0; k < pts.length - 1; k++) {
+        const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(pts[k]!, pts[k + 1]!), 1, 0.008, 8), lineMat);
+        sky.add(tube);
+      }
+      pts.forEach((p, k) => {
+        const star = new THREE.Mesh(new THREE.SphereGeometry(0.05, 24, 16), part(-0.6, { emissiveIntensity: 0.25 }));
+        star.position.copy(p);
+        const halo = glowSprite(palette.pearl, 0.4, 0.2);
+        halo.position.copy(p);
+        fading.push({ m: halo.material, base: 0.2 });
+        sky.add(star, halo);
+        movers.push((t) => halo.scale.setScalar(0.4 * (0.85 + 0.15 * Math.sin(t * 1.3 + k * 1.7))));
       });
-      const line = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.6 });
-      tinted.push(line as unknown as THREE.MeshBasicMaterial);
-      const seg = new THREE.Line(new THREE.BufferGeometry().setFromPoints(stars.map((s) => s.position)), line);
-      group.add(seg);
-      movers.push(() => seg.geometry.setFromPoints(stars.map((s) => s.position)));
+      group.add(sky);
+      movers.push((t) => (sky.position.y = 0.04 * Math.sin(t * 0.7)));
       break;
     }
     case 'stonegarden': {
-      [[0.5, 0.18, 0.12], [0.36, 0.15, 0.4], [0.24, 0.12, 0.64]].forEach(([r, h, y], k) => {
-        const stone = new THREE.Mesh(new THREE.SphereGeometry(r!, 14, 10), std());
+      // Raked rings in the sand around three balanced pebbles.
+      const rake = neutral(mixColor(sand, palette.pearl, 0.25), { opacity: 0.5 });
+      [0.5, 0.62, 0.74].forEach((r) => {
+        const ring = flatRing(r, 0.018, rake);
+        ring.position.y = 0.025;
+        group.add(ring);
+      });
+      [[0.34, 0.12, 0.1], [0.25, 0.1, 0.3], [0.16, 0.08, 0.46]].forEach(([r, h, y], k) => {
+        const stone = new THREE.Mesh(new THREE.SphereGeometry(r!, 32, 20), part(0.25 + k * 0.1, { roughness: 0.7 }));
         stone.scale.set(1, h! / r!, 1);
         stone.position.y = y!;
         group.add(stone);
-        movers.push((t) => (stone.rotation.z = 0.05 * Math.sin(t * 1.1 + k)));
+        movers.push((t) => (stone.rotation.z = 0.035 * Math.sin(t * 0.9 + k)));
       });
       break;
     }
     case 'crystalcaves': {
-      [[-0.35, 0.7, 0.18], [0.05, 1.15, 0.24], [0.4, 0.8, 0.17]].forEach(([x, h, r], k) => {
-        const c = new THREE.Mesh(new THREE.OctahedronGeometry(r!, 0), std({ emissiveIntensity: 0.3, roughness: 0.2 }));
-        c.scale.set(1, h! / r! / 2, 1);
-        c.position.set(x!, h! / 2, (k - 1) * 0.15);
-        group.add(c);
-        movers.push((t) => (c.rotation.y = t * 0.3 + k));
+      // A cluster of clear crystals, each a six-sided column with a pointed top.
+      [[-0.3, 0.55, 0.11, -0.15], [0.02, 0.85, 0.15, 0], [0.3, 0.6, 0.1, 0.2], [0.12, 0.4, 0.08, 0.35]].forEach(([x, h, r, tilt], k) => {
+        const crystal = new THREE.Group();
+        const glass = part(-0.2 - k * 0.05, { roughness: 0.15, opacity: 0.88, emissiveIntensity: 0.1 });
+        const column = new THREE.Mesh(new THREE.CylinderGeometry(r!, r! * 1.05, h!, 6), glass);
+        column.position.y = h! / 2;
+        const tip = new THREE.Mesh(new THREE.ConeGeometry(r!, r! * 1.6, 6), glass);
+        tip.position.y = h! + r! * 0.8;
+        crystal.add(column, tip);
+        crystal.position.set(x!, 0, (k % 2) * 0.18 - 0.08);
+        crystal.rotation.z = tilt!;
+        group.add(crystal);
+        movers.push((t) => (glass.emissiveIntensity = 0.08 + 0.05 * Math.sin(t * 0.8 + k * 1.4)));
       });
       break;
     }
     case 'moonlake': {
-      const lake = new THREE.Mesh(new THREE.CircleGeometry(0.75, 28), std({ emissiveIntensity: 0.2 }));
+      // A round lake with a paper lantern on it, under a crescent moon.
+      const lip = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.045, 20, 64), neutral(mixColor(sand, palette.dim, 0.3)));
+      lip.rotation.x = -Math.PI / 2;
+      lip.position.y = 0.035;
+      const lake = new THREE.Mesh(new THREE.CircleGeometry(0.66, 64), part(0.25, { roughness: 0.2, opacity: 0.92 }));
       lake.rotation.x = -Math.PI / 2;
-      lake.position.y = 0.01;
-      group.add(lake);
+      lake.position.y = 0.03;
+      group.add(lip, lake);
       const lantern = paperLantern();
-      lantern.group.scale.setScalar(0.7);
-      lantern.group.position.set(0.1, 0.3, 0.1);
+      lantern.group.scale.setScalar(0.6);
+      lantern.group.position.set(0.12, 0.22, 0.1);
       group.add(lantern.group);
-      movers.push((t) => lantern.group.position.setY(0.3 + 0.03 * Math.sin(t * 1.2)));
-      const moon = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.07, 10, 28, Math.PI * 1.25), new THREE.MeshBasicMaterial({ transparent: true }));
-      tinted.push(moon.material);
-      moon.position.set(-0.3, 1.35, -0.2);
-      moon.rotation.z = 0.9;
-      group.add(moon);
-      movers.push((t) => (moon.rotation.z = 0.9 + 0.08 * Math.sin(t * 0.6)));
+      movers.push((t) => {
+        lantern.group.position.y = 0.22 + 0.025 * Math.sin(t * 1.1);
+        lantern.group.rotation.z = 0.04 * Math.sin(t * 0.8);
+      });
+      const moon = new THREE.Mesh(crescent(), neutral(mixColor(palette.lemon, palette.pearl, 0.5), { emissive: col(palette.lemon), emissiveIntensity: 0.25 }));
+      moon.position.set(-0.35, 1.25, -0.2);
+      moon.rotation.z = 0.5;
+      const moonGlow = glowSprite(palette.lemon, 1.1, 0.12);
+      moonGlow.position.copy(moon.position);
+      fading.push({ m: moonGlow.material, base: 0.12 });
+      group.add(moon, moonGlow);
+      movers.push((t) => (moon.position.y = 1.25 + 0.03 * Math.sin(t * 0.6)));
       break;
     }
     case 'shadowterrace': {
-      const steps: Array<[number, number, number]> = [[-0.35, -0.35, 3], [0.05, -0.35, 2], [-0.35, 0.05, 2], [0.05, 0.05, 1], [0.45, 0.05, 1], [0.05, 0.45, 1]];
+      // Rounded stone blocks stepping up toward the back.
+      const steps: Array<[number, number, number]> = [[-0.3, -0.3, 3], [0.06, -0.3, 2], [-0.3, 0.06, 2], [0.06, 0.06, 1], [0.42, 0.06, 1], [0.06, 0.42, 1]];
+      const block = new RoundedBoxGeometry(0.33, 0.19, 0.33, 4, 0.05);
       steps.forEach(([x, z, n], k) => {
         for (let j = 0; j < n; j++) {
-          const cube = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.2, 0.36), std());
-          cube.position.set(x, 0.1 + j * 0.21, z);
+          const cube = new THREE.Mesh(block, part(0.35 - j * 0.12, { roughness: 0.8 }));
+          cube.position.set(x, 0.115 + j * 0.2, z);
           group.add(cube);
-          movers.push((t) => cube.position.setY(0.1 + j * 0.21 + 0.015 * Math.sin(t * 1.3 + k)));
+          movers.push((t) => (cube.position.y = 0.115 + j * 0.2 + 0.008 * Math.sin(t * 1.1 + k)));
         }
       });
       break;
     }
   }
+  // A soft halo of the land's colour beneath the island.
+  const halo = glowSprite(accent, 3.4, islandStyle.glowIdle);
+  halo.position.y = -0.3;
+  group.add(halo);
+  let sungAmount = 0;
+  let fade = 1;
+  group.userData.fade = 1;
   return {
     group,
-    setTint(color) {
-      for (const m of tinted) {
-        (m as THREE.MeshBasicMaterial).color.set(color);
+    setTint(color, sung) {
+      sungAmount = sung;
+      top.color.set(mixColor(color, palette.dim, 0.38));
+      rock.color.set(mixColor(mixColor(palette.dim, palette.pearl, 0.22), color, 0.18));
+      for (const { m, tone } of tinted) {
+        const c = tone >= 0 ? mixColor(color, palette.dim, tone) : mixColor(color, palette.pearl, -tone);
+        m.color.set(c);
         if ('emissive' in m) (m as THREE.MeshStandardMaterial).emissive.set(color);
       }
-      glows.forEach((g) => g.material.color.set(color));
+      halo.material.color.set(color);
     },
     setOpacity(alpha) {
-      for (const m of [...mats, ...tinted]) (m as THREE.Material).opacity = alpha;
-      glows.forEach((g) => (g.material.opacity = 0.35 * alpha));
+      fade = alpha;
+      group.userData.fade = alpha;
+      top.opacity = alpha;
+      rock.opacity = alpha;
+      const solid = alpha > 0.99;
+      top.transparent = rock.transparent = !solid;
+      top.depthWrite = rock.depthWrite = true;
+      for (const { m, base } of fading) m.opacity = base * alpha;
+      halo.material.opacity = (islandStyle.glowIdle + (islandStyle.glowSung - islandStyle.glowIdle) * sungAmount) * fade;
     },
     update(t) {
-      group.position.y = 0.06 * Math.sin(t * 0.8 + id.length);
+      group.position.y = 0.05 * Math.sin(t * 0.6 + id.length);
       movers.forEach((f) => f(t));
     },
   };
 }
 
-// A level on a land's trail: a small floating stepping stone. Locked stones are dark,
-// open ones carry a ring of the land's colour, solved ones glow with it.
+function fadeOf(group: THREE.Group): number {
+  return (group.userData.fade as number | undefined) ?? 1;
+}
+
+// A level on a land's trail: a small floating stepping stone, turned smooth like the
+// islands. Locked stones are plain, open ones carry a ring of the land's colour, solved
+// ones a soft wash of it.
 export interface StepStone {
   group: THREE.Group;
   set(state: 'locked' | 'unlocked' | 'solved', accent: number): void;
@@ -157,30 +286,41 @@ export interface StepStone {
 
 export function makeStepStone(seed: number): StepStone {
   const group = new THREE.Group();
-  const rock = new THREE.Mesh(new THREE.CylinderGeometry(1, 0.8, 0.45, 10), new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.pearl, 0.12)), flatShading: true }));
-  rock.position.y = -0.22;
-  const under = new THREE.Mesh(new THREE.ConeGeometry(0.8, 0.7, 10), new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.ink, 0.3)), flatShading: true }));
-  under.rotation.x = Math.PI;
-  under.position.y = -0.8;
-  const face = new THREE.Mesh(new THREE.CircleGeometry(0.78, 24), new THREE.MeshBasicMaterial({ color: col(palette.void) }));
+  const r = islandStyle.rimRound * 1.4;
+  const stoneColor = mixColor(palette.dim, palette.pearl, 0.2);
+  const body = new THREE.Mesh(
+    new THREE.LatheGeometry(
+      profile([[0, 0.02], [0.7, 0.02], [1 - r, 0.01], [1, -r], [0.96, -0.22], [0.78, -0.42], [0.45, -0.56], [0, -0.6]], 18).reverse(),
+      islandStyle.segments,
+    ),
+    soft(stoneColor),
+  );
+  const face = new THREE.Mesh(new THREE.CircleGeometry(0.72, 72), soft(palette.void, { roughness: 0.5 }));
   face.rotation.x = -Math.PI / 2;
-  face.position.y = 0.005;
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.78, 0.06, 8, 32), new THREE.MeshBasicMaterial({ color: col(palette.dim) }));
+  face.position.y = 0.025;
+  const ringMat = soft(palette.dim, { emissiveIntensity: 0.15 });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.045, 16, 64), ringMat);
   ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.02;
-  const halo = glowSprite(palette.pearl, 2.6, 0);
-  halo.position.y = 0.3;
-  group.add(under, rock, face, ring, halo);
+  ring.position.y = 0.03;
+  const halo = glowSprite(palette.pearl, 2.4, 0);
+  halo.position.y = 0.1;
+  group.add(body, face, ring, halo);
   return {
     group,
     set(state, accent) {
-      ring.material.color.set(state === 'locked' ? palette.dim : accent);
-      face.material.color.set(state === 'solved' ? mixColor(accent, palette.void, 0.2) : palette.void);
+      // Locked: a plain stone. Open: a ring of the land's colour. Solved: a soft wash of it.
+      ringMat.color.set(state === 'locked' ? mixColor(palette.dim, palette.pearl, 0.15) : mixColor(accent, palette.pearl, 0.15));
+      ringMat.emissive.set(state === 'locked' ? palette.void : accent);
+      ringMat.emissiveIntensity = state === 'unlocked' ? 0.25 : 0.1;
+      face.material.color.set(
+        state === 'solved' ? mixColor(accent, palette.dim, 0.25) : state === 'unlocked' ? mixColor(accent, palette.dim, 0.72) : mixColor(palette.dim, palette.pearl, 0.08),
+      );
+      (body.material as THREE.MeshStandardMaterial).color.set(mixColor(stoneColor, accent, state === 'locked' ? 0.08 : 0.25));
       halo.material.color.set(accent);
-      halo.material.opacity = state === 'solved' ? 0.4 : 0;
+      halo.material.opacity = state === 'solved' ? 0.1 : 0;
     },
     update(t) {
-      group.position.y = 0.08 * Math.sin(t * 0.9 + seed * 1.7);
+      group.position.y = 0.06 * Math.sin(t * 0.7 + seed * 1.7);
     },
   };
 }
