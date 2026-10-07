@@ -5,7 +5,8 @@ import { durations, scaled } from '../../design/motion';
 import { progression } from '../../core/progress';
 import levelsJson from './levels.json';
 import type { PrismLevel } from './model';
-import { PrismLevelScene } from './view';
+import { Prism3DScene } from './view3d';
+import { LEVEL_NAMES } from '../catalog';
 
 const levels = levelsJson as PrismLevel[];
 
@@ -34,6 +35,6 @@ export const crystalcavesModule: PuzzleModule = {
   id: 'crystalcaves',
   accent: 'sky',
   levelCount: progression.levelsPerRegion,
-  createLevel: (ctx, levelIndex) => new PrismLevelScene(ctx, levels[levelIndex]!, levelIndex === 0),
+  createLevel: (ctx, levelIndex) => new Prism3DScene(ctx, levels[levelIndex]!, levelIndex === 0, levelIndex, LEVEL_NAMES.crystalcaves[levelIndex] ?? ''),
   playRegionFinale: playFinale,
 };

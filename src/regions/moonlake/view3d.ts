@@ -88,7 +88,7 @@ export class LanternLake3DScene implements LevelScene {
     this.sight = sightLines(level);
     this.logic = solveByLogic(level).deductions;
     this.orbit = new OrbitView(this.camera, Math.hypot(level.width / 2 + 0.6, level.height / 2 + 0.6));
-    this.backdrop = new Backdrop(this.scene, glowTexture(), moodFor(levelName));
+    this.backdrop = new Backdrop(this.scene, glowTexture(), moodFor('moonlake', 0, levelName));
     // A soft sky fill and the moon, high to one side: every stone has a lit face and a shaded one.
     this.scene.add(new THREE.HemisphereLight(col(mixColor(palette.sky, palette.pearl, 0.5)), col(palette.ink), 0.75));
     const moon = new THREE.DirectionalLight(col(palette.pearl), 1.2);

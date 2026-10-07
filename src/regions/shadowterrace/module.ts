@@ -6,7 +6,8 @@ import { durations, easings, scaled } from '../../design/motion';
 import { progression } from '../../core/progress';
 import levelsJson from './levels.json';
 import type { ShadowLevel } from './model';
-import { ShadowLevelScene } from './view';
+import { Shadow3DScene } from './view3d';
+import { LEVEL_NAMES } from '../catalog';
 
 const levels = levelsJson as ShadowLevel[];
 
@@ -64,6 +65,6 @@ export const shadowterraceModule: PuzzleModule = {
   id: 'shadowterrace',
   accent: 'sage',
   levelCount: progression.levelsPerRegion,
-  createLevel: (ctx, levelIndex) => new ShadowLevelScene(ctx, levels[levelIndex]!, levelIndex === 0),
+  createLevel: (ctx, levelIndex) => new Shadow3DScene(ctx, levels[levelIndex]!, levelIndex === 0, levelIndex, LEVEL_NAMES.shadowterrace[levelIndex] ?? ''),
   playRegionFinale: playFinale,
 };

@@ -123,6 +123,11 @@ export class OrbitView {
     return this.drag !== null;
   }
 
+  // The finger has travelled far enough that this touch is a swipe, not a tap or a hold.
+  get moved(): boolean {
+    return !!this.drag?.moved;
+  }
+
   down(x: number, y: number): void {
     this.drag = { x, y, sx: x, sy: y, moved: false };
     this.spin = 0;
@@ -139,6 +144,11 @@ export class OrbitView {
     }
     d.x = x;
     d.y = y;
+  }
+
+  // A quarter turn (keyboard players), gliding like a swipe.
+  turnBy(quarters: number): void {
+    this.targetYaw += (quarters * Math.PI) / 2;
   }
 
   // Returns true when the touch was a tap (it hardly moved).

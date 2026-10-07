@@ -40,47 +40,47 @@ const NUDGE: Record<Reason, string> = {
 
 export class ShellPoolScene implements LevelScene {
   readonly container = new Container();
-  private water = new Graphics();
-  private points = new Graphics();
-  private glow = new Graphics();
-  private lines = new Graphics();
-  private flow = new Graphics();
-  private clueLayer = new Graphics();
+  protected water = new Graphics();
+  protected points = new Graphics();
+  protected glow = new Graphics();
+  protected lines = new Graphics();
+  protected flow = new Graphics();
+  protected clueLayer = new Graphics();
   // The drawn water as runs of points (open streams and closed loops), for the moving light.
-  private runs: Array<Array<{ x: number; y: number }>> = [];
-  private flowBoost = 1;
-  private hintLayer = new Container();
-  private hit = new Graphics();
-  private drawn = new Set<number>();
-  private handlers: Record<'attempt' | 'solved' | 'move', Handler[]> = { attempt: [], solved: [], move: [] };
-  private cell = 40;
-  private origin = { x: 0, y: 0 };
-  private dragging: { last: { x: number; y: number }; mode: 'draw' | 'erase' | null; changed: boolean; start: { x: number; y: number } } | null = null;
-  private solved = false;
-  private voice: TidepoolsVoice;
-  private accent = palette.mint;
-  private time = 0;
+  protected runs: Array<Array<{ x: number; y: number }>> = [];
+  protected flowBoost = 1;
+  protected hintLayer = new Container();
+  protected hit = new Graphics();
+  protected drawn = new Set<number>();
+  protected handlers: Record<'attempt' | 'solved' | 'move', Handler[]> = { attempt: [], solved: [], move: [] };
+  protected cell = 40;
+  protected origin = { x: 0, y: 0 };
+  protected dragging: { last: { x: number; y: number }; mode: 'draw' | 'erase' | null; changed: boolean; start: { x: number; y: number } } | null = null;
+  protected solved = false;
+  protected voice: TidepoolsVoice;
+  protected accent = palette.mint;
+  protected time = 0;
   // Hints never draw for the player: a nudge rings where to look, then a faint line shows
   // the next stretch of tide (or a drawn line pulses when it cannot be right).
-  private logic: Deduction[];
-  private hintTarget: Deduction | null = null;
-  private nudge: { g: Graphics; tween: gsap.core.Tween } | null = null;
-  private ghosts = new Map<number, Graphics>();
-  private hintCount = 0;
-  private moveCount = 0;
+  protected logic: Deduction[];
+  protected hintTarget: Deduction | null = null;
+  protected nudge: { g: Graphics; tween: gsap.core.Tween } | null = null;
+  protected ghosts = new Map<number, Graphics>();
+  protected hintCount = 0;
+  protected moveCount = 0;
   // A touch cut short ends the drawing stroke where it was, and is never read as a tap.
-  private offCancel = events.on('input:cancel', () => {
+  protected offCancel = events.on('input:cancel', () => {
     dlog('pool-cancel', { dragging: !!this.dragging });
     this.dragging = null;
   });
 
   // Level 1: a faint loop and a finger show how to draw, until the first line is drawn.
-  private demo: { line: Graphics; finger: Graphics; tl: gsap.core.Timeline } | null = null;
-  private closedNote = '';
+  protected demo: { line: Graphics; finger: Graphics; tl: gsap.core.Timeline } | null = null;
+  protected closedNote = '';
 
   constructor(
     ctx: ShellContext,
-    private level: ShellLevel,
+    protected level: ShellLevel,
     private tutorial = false,
   ) {
     this.voice = createTidepoolsVoice(ctx.audio);
@@ -100,7 +100,7 @@ export class ShellPoolScene implements LevelScene {
     this.handlers[event].push(cb);
   }
 
-  private emit(event: 'attempt' | 'solved' | 'move'): void {
+  protected emit(event: 'attempt' | 'solved' | 'move'): void {
     this.handlers[event].forEach((h) => h());
   }
 
@@ -155,15 +155,15 @@ export class ShellPoolScene implements LevelScene {
     this.layout(width, height);
   }
 
-  private px(x: number): number {
+  protected px(x: number): number {
     return this.origin.x + x * this.cell;
   }
 
-  private py(y: number): number {
+  protected py(y: number): number {
     return this.origin.y + y * this.cell;
   }
 
-  private redraw(): void {
+  protected redraw(): void {
     const { width: w, height: h } = this.level;
     const lw = this.cell * poolStyle.lineWidth;
     this.lines.clear();
@@ -191,7 +191,7 @@ export class ShellPoolScene implements LevelScene {
     this.drawClues();
   }
 
-  private drawClues(): void {
+  protected drawClues(): void {
     const g = this.clueLayer;
     g.clear();
     const r = this.cell * poolStyle.clueRadius;
@@ -211,7 +211,7 @@ export class ShellPoolScene implements LevelScene {
   }
 
   // The drawn water as runs of points: open streams from end to end, then closed loops.
-  private findRuns(): Array<Array<{ x: number; y: number }>> {
+  protected findRuns(): Array<Array<{ x: number; y: number }>> {
     const { width: w, height: h } = this.level;
     const seen = new Set<number>();
     const runs: Array<Array<{ x: number; y: number }>> = [];
@@ -235,7 +235,7 @@ export class ShellPoolScene implements LevelScene {
   }
 
   // Glints of light travel along the water, around closed loops and down open streams.
-  private drawFlow(): void {
+  protected drawFlow(): void {
     const g = this.flow;
     g.clear();
     if (this.runs.length === 0) return;
@@ -258,7 +258,7 @@ export class ShellPoolScene implements LevelScene {
 
   // ----- drawing the tide -----
 
-  private pointNear(gx: number, gy: number): { x: number; y: number } | null {
+  protected pointNear(gx: number, gy: number): { x: number; y: number } | null {
     const local = this.container.toLocal({ x: gx, y: gy });
     const x = Math.round((local.x - this.origin.x) / this.cell);
     const y = Math.round((local.y - this.origin.y) / this.cell);
@@ -267,7 +267,7 @@ export class ShellPoolScene implements LevelScene {
     return { x, y };
   }
 
-  private onDown(e: FederatedPointerEvent): void {
+  protected onDown(e: FederatedPointerEvent): void {
     if (this.solved) return;
     const p = this.pointNear(e.global.x, e.global.y);
     dlog('pool-down', { at: [Math.round(e.global.x), Math.round(e.global.y)], point: p, dragging: !!this.dragging });
@@ -275,7 +275,7 @@ export class ShellPoolScene implements LevelScene {
     this.dragging = { last: p, mode: null, changed: false, start: p };
   }
 
-  private onMove(e: FederatedPointerEvent): void {
+  protected onMove(e: FederatedPointerEvent): void {
     this.moveCount++;
     const drag = this.dragging;
     if (!drag || this.solved) return;
@@ -291,7 +291,7 @@ export class ShellPoolScene implements LevelScene {
     }
   }
 
-  private stroke(drag: NonNullable<ShellPoolScene['dragging']>, a: { x: number; y: number }, b: { x: number; y: number }): void {
+  protected stroke(drag: NonNullable<ShellPoolScene['dragging']>, a: { x: number; y: number }, b: { x: number; y: number }): void {
     const dir = DIRS.find((d) => edgeAt(this.level.width, this.level.height, a.x, a.y, d) === edgeAt(this.level.width, this.level.height, b.x, b.y, ((d + 2) % 4) as 0))!;
     const e = edgeAt(this.level.width, this.level.height, a.x, a.y, dir);
     if (e < 0) return;
@@ -310,7 +310,7 @@ export class ShellPoolScene implements LevelScene {
     this.changed();
   }
 
-  private onUp(): void {
+  protected onUp(): void {
     const drag = this.dragging;
     this.dragging = null;
     dlog('pool-up', { had: !!drag, changed: drag?.changed ?? null, gameMoves: this.moveCount });
@@ -326,7 +326,7 @@ export class ShellPoolScene implements LevelScene {
     if (cleared) this.changed();
   }
 
-  private changed(): void {
+  protected changed(): void {
     this.stopDemo();
     this.emit('move');
     this.redraw();
@@ -354,7 +354,7 @@ export class ShellPoolScene implements LevelScene {
   }
 
   // Unsatisfied clues pulse for a moment.
-  private pulseUnmet(): void {
+  protected pulseUnmet(): void {
     const r = this.cell * poolStyle.clueRadius;
     for (const c of this.level.clues) {
       if (clueMet(this.level, this.drawn, c)) continue;
@@ -371,7 +371,7 @@ export class ShellPoolScene implements LevelScene {
     if (this.tutorial && this.drawn.size === 0) gsap.delayedCall(0.6, () => this.startDemo());
   }
 
-  private loopPoints(): Array<{ x: number; y: number }> {
+  protected loopPoints(): Array<{ x: number; y: number }> {
     const { width: w, height: h } = this.level;
     const sol = new Set(this.level.solution);
     const start = edgeEnds(w, h, this.level.solution[0]!)[0];
@@ -395,7 +395,7 @@ export class ShellPoolScene implements LevelScene {
     return order;
   }
 
-  private startDemo(): void {
+  protected startDemo(): void {
     if (this.demo || this.drawn.size > 0 || this.solved) return;
     const pts = this.loopPoints();
     // The whole loop shows faintly at once; the finger then traces it.
@@ -418,7 +418,7 @@ export class ShellPoolScene implements LevelScene {
     this.demo = { line, finger, tl };
   }
 
-  private stopDemo(): void {
+  protected stopDemo(): void {
     if (!this.demo) return;
     this.demo.tl.kill();
     this.demo.line.destroy();
@@ -442,13 +442,13 @@ export class ShellPoolScene implements LevelScene {
 
   // The first step of pure reasoning the player has not made yet: a line that should be
   // drawn, or one they drew that cannot be part of the tide.
-  private nextStep(): Deduction | null {
+  protected nextStep(): Deduction | null {
     const wrong = this.logic.find((d) => !d.on && this.drawn.has(d.edge));
     if (wrong) return wrong;
     return this.logic.find((d) => d.on && !this.drawn.has(d.edge)) ?? null;
   }
 
-  private stepDone(d: Deduction): boolean {
+  protected stepDone(d: Deduction): boolean {
     return d.on ? this.drawn.has(d.edge) : !this.drawn.has(d.edge);
   }
 
@@ -481,7 +481,7 @@ export class ShellPoolScene implements LevelScene {
     return more.length === 1 ? 'One more stretch of tide shows faintly.' : 'Two more stretches of tide show faintly.';
   }
 
-  private showNudge(x: number, y: number): void {
+  protected showNudge(x: number, y: number): void {
     this.clearNudge();
     const g = new Graphics().circle(0, 0, this.cell * 0.42).stroke({ color: palette.pearl, width: 1.5, alpha: 0.9 });
     g.position.set(this.px(x), this.py(y));
@@ -490,13 +490,13 @@ export class ShellPoolScene implements LevelScene {
     this.nudge = { g, tween };
   }
 
-  private clearNudge(): void {
+  protected clearNudge(): void {
     this.nudge?.tween.kill();
     this.nudge?.g.destroy();
     this.nudge = null;
   }
 
-  private addGhost(e: number, on: boolean): void {
+  protected addGhost(e: number, on: boolean): void {
     const [a, b] = edgeEnds(this.level.width, this.level.height, e);
     const g = new Graphics()
       .moveTo(this.px(a.x), this.py(a.y))
@@ -507,7 +507,7 @@ export class ShellPoolScene implements LevelScene {
     this.ghosts.set(e, g);
   }
 
-  private settleHints(): void {
+  protected settleHints(): void {
     for (const [e, g] of this.ghosts) {
       const shouldBeOn = this.level.solution.includes(e);
       if (this.drawn.has(e) === shouldBeOn) {
@@ -522,7 +522,7 @@ export class ShellPoolScene implements LevelScene {
     }
   }
 
-  private rebuildHints(): void {
+  protected rebuildHints(): void {
     const kept = [...this.ghosts.keys()];
     this.ghosts.forEach((g) => {
       gsap.killTweensOf(g);
@@ -533,7 +533,7 @@ export class ShellPoolScene implements LevelScene {
     if (this.hintTarget) this.showNudge(this.hintTarget.x, this.hintTarget.y);
   }
 
-  private clearHints(): void {
+  protected clearHints(): void {
     this.clearNudge();
     this.ghosts.forEach((g) => {
       gsap.killTweensOf(g);

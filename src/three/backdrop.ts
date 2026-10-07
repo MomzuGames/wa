@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mixColor, palette } from '../design/palette';
+import type { RegionId } from '../regions/types';
 
 // A serene pastel backdrop behind the 3D puzzle, set by the land and the level: a soft
 // gradient sky, slow pastel clouds, the moon, misty hills on the horizon, and fireflies
@@ -17,6 +18,7 @@ export interface BackdropMood {
   mist: number; // 0..1, the haze over the hills
   fireflies: number; // how many drift around the board
   hills: [number, number]; // far and near hill colours
+  glimmer?: number; // the drifting glows' colour (fireflies by default)
 }
 
 // Moon Lake: each level its own night, calm and pastel, and never all one hue: a cool sky
@@ -50,8 +52,26 @@ export const MOON_LAKE: Record<string, BackdropMood> = {
   'Full Moon': mood({ top: sky(0.2), horizon: low(mixColor(palette.pearl, palette.sky, 0.4), 0.5), clouds: palette.pearl, moonSize: 0.06, moonWarm: 0.05, mist: 0.4, fireflies: 40, hills: hillsOf(palette.sky) }),
 };
 
-export function moodFor(levelName: string): BackdropMood {
-  return MOON_LAKE[levelName] ?? MOON_LAKE.Firefly!;
+// The other lands: each its own pastel night, varied a little level by level (the moon
+// grows through a land's levels, clouds come and go, a few more glimmers each time).
+const LAND: Record<Exclude<RegionId, 'moonlake'>, BackdropMood> = {
+  // Tidepools: a sea-green night over the shore, a peach glow where the sun went down.
+  tidepools: mood({ top: mixColor(palette.void, palette.mint, 0.15), horizon: low(palette.peach, 0.5), clouds: mixColor(palette.pearl, palette.mint, 0.2), hills: hillsOf(palette.mint), glimmer: palette.mint }),
+  // Night Sky: the clearest night, cool blue, many stars, a pale crescent.
+  nightsky: mood({ top: sky(0.14), horizon: low(mixColor(palette.sky, palette.lavender, 0.3), 0.55), clouds: palette.pearl, cloudAmount: 0.2, crescent: 0.6, moonSize: 0.03, hills: hillsOf(palette.sky), glimmer: palette.pearl }),
+  // Stone Garden: a warm dusk, sand-coloured light, sage hills.
+  stonegarden: mood({ top: mixColor(palette.void, palette.peach, 0.1), horizon: low(palette.peach, 0.42), clouds: mixColor(palette.peach, palette.pearl, 0.4), hills: hillsOf(palette.sage), glimmer: palette.peach }),
+  // Crystal Caves: a cool, glassy night; glimmers like crystal dust.
+  crystalcaves: mood({ top: sky(0.12), horizon: low(palette.mint, 0.55), clouds: mixColor(palette.pearl, palette.sky, 0.3), cloudAmount: 0.25, hills: hillsOf(palette.sky), glimmer: palette.sky }),
+  // Shadow Terrace: a sage twilight with a rose glow low down.
+  shadowterrace: mood({ top: mixColor(palette.void, palette.sage, 0.14), horizon: low(palette.rose, 0.55), clouds: mixColor(palette.pearl, palette.rose, 0.2), hills: hillsOf(palette.sage), glimmer: palette.sage }),
+};
+
+export function moodFor(region: RegionId, levelIndex: number, levelName: string): BackdropMood {
+  if (region === 'moonlake') return MOON_LAKE[levelName] ?? MOON_LAKE.Firefly!;
+  const base = LAND[region];
+  const t = levelIndex / 9;
+  return { ...base, moonSize: base.moonSize * (0.8 + t * 0.7), cloudAmount: base.cloudAmount * (0.6 + 0.8 * ((levelIndex * 0.37) % 1)), fireflies: Math.round(base.fireflies * (0.7 + t)) };
 }
 
 const vec3 = (hex: number) => new THREE.Color(hex);
@@ -154,7 +174,7 @@ export class Backdrop {
     geo.setAttribute('position', new THREE.BufferAttribute(this.base.slice(), 3));
     this.fireflies = new THREE.Points(
       geo,
-      new THREE.PointsMaterial({ map: glow, color: vec3(mixColor(palette.lemon, palette.mint, 0.3)), size: 0.32, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }),
+      new THREE.PointsMaterial({ map: glow, color: vec3(mood.glimmer ?? mixColor(palette.lemon, palette.mint, 0.3)), size: 0.32, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }),
     );
     scene.add(this.fireflies);
   }

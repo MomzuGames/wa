@@ -63,51 +63,51 @@ interface PieceView {
 export class StoneLevelScene implements LevelScene {
   readonly container = new Container();
   readonly usesRotateKey = true;
-  private silhouette = new Graphics();
-  private rake = new Graphics();
-  private piecesLayer = new Container();
-  private hit = new Graphics();
-  private views: PieceView[] = [];
-  private hand: GhostHand | null = null;
-  private handlers: Record<'attempt' | 'solved' | 'move', Handler[]> = { attempt: [], solved: [], move: [] };
-  private accent = palette.peach;
-  private cell = 40;
-  private origin = { x: 0, y: 0 };
-  private trayScale: number = stoneStyle.trayScale;
-  private dragging: PieceView | null = null;
-  private grabOffset = { x: 0, y: 0 };
-  private grabStart = { x: 0, y: 0 };
-  private magnet = new Graphics();
-  private turnButton: IconButton;
-  private flipButton: IconButton | null = null;
-  private controls = new Container();
-  private hovered: PieceView | null = null;
-  private lastTouched: PieceView | null = null;
-  private solved = false;
-  private placedCount = 0;
-  private voice: StoneVoice;
-  private tutorialTimer: gsap.core.Tween | null = null;
-  private unsubscribe: Array<() => void> = [];
-  private wheelClock = 0;
-  private time = 0;
+  protected silhouette = new Graphics();
+  protected rake = new Graphics();
+  protected piecesLayer = new Container();
+  protected hit = new Graphics();
+  protected views: PieceView[] = [];
+  protected hand: GhostHand | null = null;
+  protected handlers: Record<'attempt' | 'solved' | 'move', Handler[]> = { attempt: [], solved: [], move: [] };
+  protected accent = palette.peach;
+  protected cell = 40;
+  protected origin = { x: 0, y: 0 };
+  protected trayScale: number = stoneStyle.trayScale;
+  protected dragging: PieceView | null = null;
+  protected grabOffset = { x: 0, y: 0 };
+  protected grabStart = { x: 0, y: 0 };
+  protected magnet = new Graphics();
+  protected turnButton: IconButton;
+  protected flipButton: IconButton | null = null;
+  protected controls = new Container();
+  protected hovered: PieceView | null = null;
+  protected lastTouched: PieceView | null = null;
+  protected solved = false;
+  protected placedCount = 0;
+  protected voice: StoneVoice;
+  protected tutorialTimer: gsap.core.Tween | null = null;
+  protected unsubscribe: Array<() => void> = [];
+  protected wheelClock = 0;
+  protected time = 0;
   // Hints never move a stone: a nudge makes the stone to try pulse, then an outline on the
   // board shows where it belongs (later, a few more). Outlines go once a stone is set there.
-  private hintTarget: StoneStep | null = null;
-  private nudge: { piece: number; tween: gsap.core.Tween } | null = null;
-  private ghosts = new Map<number, Placement>();
-  private ghostLayer = new Graphics();
-  private hintCount = 0;
-  private onWheel = (e: WheelEvent) => this.wheel(e);
+  protected hintTarget: StoneStep | null = null;
+  protected nudge: { piece: number; tween: gsap.core.Tween } | null = null;
+  protected ghosts = new Map<number, Placement>();
+  protected ghostLayer = new Graphics();
+  protected hintCount = 0;
+  protected onWheel = (e: WheelEvent) => this.wheel(e);
   // Pixi never hears a cancelled touch (iOS sends one when the system takes the gesture),
   // so the drag would otherwise stay open with the stone floating under nobody's finger.
-  private onCancel = () => this.onUp();
-  private pressTimer: gsap.core.Tween | null = null;
-  private compact = false;
+  protected onCancel = () => this.onUp();
+  protected pressTimer: gsap.core.Tween | null = null;
+  protected compact = false;
 
   constructor(
-    private ctx: ShellContext,
-    private level: StoneLevel,
-    private isTutorial: boolean,
+    protected ctx: ShellContext,
+    protected level: StoneLevel,
+    protected isTutorial: boolean,
   ) {
     this.voice = createStoneVoice(ctx.audio);
     this.silhouette.eventMode = 'none';
@@ -148,11 +148,11 @@ export class StoneLevelScene implements LevelScene {
     this.handlers[event].push(cb);
   }
 
-  private emit(event: 'attempt' | 'solved' | 'move'): void {
+  protected emit(event: 'attempt' | 'solved' | 'move'): void {
     this.handlers[event].forEach((h) => h());
   }
 
-  private buildPieces(): void {
+  protected buildPieces(): void {
     this.level.pieces.forEach((piece, i) => {
       const root = new Container();
       const shadow = new Graphics();
@@ -183,11 +183,11 @@ export class StoneLevelScene implements LevelScene {
 
   // ----- geometry -----
 
-  private shapeOf(i: number, rot: number, flip: number): Tri[] {
+  protected shapeOf(i: number, rot: number, flip: number): Tri[] {
     return transform(this.level.pieces[i]!.tris, rot, flip);
   }
 
-  private bbox(tris: Tri[]): { w: number; h: number } {
+  protected bbox(tris: Tri[]): { w: number; h: number } {
     let w = 0;
     let h = 0;
     for (const [x, y] of tris) {
@@ -197,7 +197,7 @@ export class StoneLevelScene implements LevelScene {
     return { w, h };
   }
 
-  private drawShape(g: Graphics, tris: Tri[], color: number, alpha: number, cell: number, seams: boolean): void {
+  protected drawShape(g: Graphics, tris: Tri[], color: number, alpha: number, cell: number, seams: boolean): void {
     const { w, h } = this.bbox(tris);
     const ox = (-w / 2) * cell;
     const oy = (-h / 2) * cell;
@@ -214,7 +214,7 @@ export class StoneLevelScene implements LevelScene {
   }
 
   // Strokes only the outer boundary of a triangle set.
-  private strokeOutline(g: Graphics, tris: Tri[], cell: number, ox: number, oy: number, color: number, alpha: number): void {
+  protected strokeOutline(g: Graphics, tris: Tri[], cell: number, ox: number, oy: number, color: number, alpha: number): void {
     const set = new Set(tris.map((t) => t.join(',')));
     const has = (x: number, y: number, t: number) => set.has(`${x},${y},${t}`);
     for (const [x, y, t] of tris) {
@@ -231,7 +231,7 @@ export class StoneLevelScene implements LevelScene {
     g.stroke({ color, width: 1.5, alpha, cap: 'round', join: 'round' });
   }
 
-  private redrawPiece(i: number): void {
+  protected redrawPiece(i: number): void {
     const v = this.views[i]!;
     const tris = this.shapeOf(i, v.rot, v.flip);
     const fixed = this.level.pieces[i]!.fixed === true;
@@ -246,7 +246,7 @@ export class StoneLevelScene implements LevelScene {
     v.shadow.position.set(stoneStyle.shadowOffset * 0.6 * lift, stoneStyle.shadowOffset * lift);
   }
 
-  private boardCenterFor(i: number, placement: Placement): { x: number; y: number } {
+  protected boardCenterFor(i: number, placement: Placement): { x: number; y: number } {
     const { w, h } = this.bbox(this.shapeOf(i, placement.rot, placement.flip));
     return { x: this.origin.x + (placement.x + w / 2) * this.cell, y: this.origin.y + (placement.y + h / 2) * this.cell };
   }
@@ -300,7 +300,7 @@ export class StoneLevelScene implements LevelScene {
     this.layout(width, height);
   }
 
-  private drawSilhouette(): void {
+  protected drawSilhouette(): void {
     const g = this.silhouette;
     g.clear();
     const tris = this.level.silhouette.map((k) => fromKey(this.level.width, k));
@@ -317,7 +317,7 @@ export class StoneLevelScene implements LevelScene {
 
   // ----- input -----
 
-  private onDown(i: number, e: FederatedPointerEvent): void {
+  protected onDown(i: number, e: FederatedPointerEvent): void {
     if (this.solved) return;
     const v = this.views[i]!;
     if (v.animating) return;
@@ -360,19 +360,19 @@ export class StoneLevelScene implements LevelScene {
   }
 
   // The stone the turn/flip buttons act on is drawn with a brighter edge.
-  private firstMovable(): PieceView | null {
+  protected firstMovable(): PieceView | null {
     const i = this.level.pieces.findIndex((p) => !p.fixed);
     return i >= 0 ? this.views[i]! : null;
   }
 
-  private setLastTouched(v: PieceView): void {
+  protected setLastTouched(v: PieceView): void {
     const previous = this.lastTouched;
     this.lastTouched = v;
     if (previous && previous !== v) this.redrawPiece(this.views.indexOf(previous));
     this.redrawPiece(this.views.indexOf(v));
   }
 
-  private onMove(e: FederatedPointerEvent): void {
+  protected onMove(e: FederatedPointerEvent): void {
     if (!this.dragging) return;
     const v = this.dragging;
     const local = this.container.toLocal(e.global);
@@ -394,7 +394,7 @@ export class StoneLevelScene implements LevelScene {
     v.root.position.set(x, y);
   }
 
-  private onUp(): void {
+  protected onUp(): void {
     this.pressTimer?.kill();
     this.pressTimer = null;
     const v = this.dragging;
@@ -427,7 +427,7 @@ export class StoneLevelScene implements LevelScene {
     }
   }
 
-  private wheel(e: WheelEvent): void {
+  protected wheel(e: WheelEvent): void {
     if (this.solved) return;
     if (this.time - this.wheelClock < stoneStyle.wheelCooldown) return;
     const target = this.dragging ?? this.hovered;
@@ -437,7 +437,7 @@ export class StoneLevelScene implements LevelScene {
   }
 
   // Nearest whole-cell placement for the dragged piece, if it is over the board.
-  private snapPlacement(i: number, v: PieceView): Placement | null {
+  protected snapPlacement(i: number, v: PieceView): Placement | null {
     const { w, h } = this.bbox(this.shapeOf(i, v.rot, v.flip));
     const ox = (v.root.x - (w / 2) * this.cell - this.origin.x) / this.cell;
     const oy = (v.root.y - (h / 2) * this.cell - this.origin.y) / this.cell;
@@ -449,16 +449,16 @@ export class StoneLevelScene implements LevelScene {
 
   // Stones may rest on any cell of the sand, not only inside the outline's box, so the
   // view keys triangles on a padded grid; the model's keys stay for the solve check.
-  private looseKey(x: number, y: number, t: number): number {
+  protected looseKey(x: number, y: number, t: number): number {
     const pad = Math.max(this.level.width, this.level.height) * 2 + 4;
     return ((y + pad) * (this.level.width + pad * 2) + (x + pad)) * 4 + t;
   }
 
-  private looseKeys(i: number, placement: Placement): number[] {
+  protected looseKeys(i: number, placement: Placement): number[] {
     return transform(this.level.pieces[i]!.tris, placement.rot, placement.flip).map(([x, y, t]) => this.looseKey(x + placement.x, y + placement.y, t));
   }
 
-  private occupied(): Set<number> {
+  protected occupied(): Set<number> {
     const set = new Set<number>();
     this.views.forEach((v, i) => {
       if (!v.placed) return;
@@ -468,26 +468,26 @@ export class StoneLevelScene implements LevelScene {
   }
 
   // A stone may rest anywhere on the sand as long as it does not overlap another stone.
-  private canPlace(i: number, placement: Placement): boolean {
+  protected canPlace(i: number, placement: Placement): boolean {
     const taken = this.occupied();
     return this.looseKeys(i, placement).every((k) => !taken.has(k));
   }
 
   // Dropped back among the tray slots: the stone goes home instead of resting there.
-  private overTray(v: PieceView): boolean {
+  protected overTray(v: PieceView): boolean {
     const trayTop = Math.min(...this.views.map((o) => o.slot.y)) - this.cell * 0.9;
     return v.root.y > trayTop;
   }
 
   // Whether every triangle of the stone lies inside the outline (used for the magnet preview).
-  private fitsOutline(i: number, placement: Placement): boolean {
+  protected fitsOutline(i: number, placement: Placement): boolean {
     const keys = placedKeys(this.level, this.level.pieces[i]!, placement);
     if (!keys) return false;
     const target = new Set(this.level.silhouette);
     return keys.every((k) => target.has(k));
   }
 
-  private place(i: number, placement: Placement, silent = false): void {
+  protected place(i: number, placement: Placement, silent = false): void {
     const v = this.views[i]!;
     v.placed = placement;
     v.rot = placement.rot;
@@ -515,7 +515,7 @@ export class StoneLevelScene implements LevelScene {
     this.checkSolved();
   }
 
-  private unplace(i: number): void {
+  protected unplace(i: number): void {
     const v = this.views[i]!;
     v.placed = null;
     this.placedCount--;
@@ -524,7 +524,7 @@ export class StoneLevelScene implements LevelScene {
     this.settleHints();
   }
 
-  private returnToTray(i: number): void {
+  protected returnToTray(i: number): void {
     const v = this.views[i]!;
     v.animating = true;
     gsap.to(v.root, {
@@ -540,7 +540,7 @@ export class StoneLevelScene implements LevelScene {
     gsap.to(v.root.scale, { x: this.trayScale, y: this.trayScale, duration: scaled(stoneStyle.returnSeconds), overwrite: true });
   }
 
-  private turn(direction: 1 | -1, target: PieceView | null = this.dragging ?? this.hovered ?? this.lastTouched): void {
+  protected turn(direction: 1 | -1, target: PieceView | null = this.dragging ?? this.hovered ?? this.lastTouched): void {
     if (this.solved || !target || target.animating || this.level.pieces[this.views.indexOf(target)]!.fixed) return;
     const i = this.views.indexOf(target);
     const wasAt = target.placed;
@@ -566,7 +566,7 @@ export class StoneLevelScene implements LevelScene {
     });
   }
 
-  private flip(target: PieceView | null = this.dragging ?? this.hovered ?? this.lastTouched): void {
+  protected flip(target: PieceView | null = this.dragging ?? this.hovered ?? this.lastTouched): void {
     if (this.solved || !this.level.allowFlip || !target || target.animating || this.level.pieces[this.views.indexOf(target)]!.fixed) return;
     const i = this.views.indexOf(target);
     const wasAt = target.placed;
@@ -597,7 +597,7 @@ export class StoneLevelScene implements LevelScene {
     });
   }
 
-  private checkSolved(): void {
+  protected checkSolved(): void {
     if (this.solved || this.placedCount !== this.views.length) return;
     const placements = new Map<number, Placement>();
     this.views.forEach((v, i) => v.placed && placements.set(i, v.placed));
@@ -608,7 +608,7 @@ export class StoneLevelScene implements LevelScene {
 
   // ----- clues -----
 
-  private currentPlacements(): Map<number, Placement> {
+  protected currentPlacements(): Map<number, Placement> {
     const placed = new Map<number, Placement>();
     this.views.forEach((v, i) => v.placed && placed.set(i, v.placed));
     return placed;
@@ -645,27 +645,27 @@ export class StoneLevelScene implements LevelScene {
     return more.length === 1 ? 'One more outline shows where a stone belongs.' : 'Two more outlines show where stones belong.';
   }
 
-  private stepDone(step: StoneStep): boolean {
+  protected stepDone(step: StoneStep): boolean {
     const v = this.views[step.piece]!;
     if (step.kind === 'lift') return !v.placed;
     return !!v.placed && samePlacement(v.placed, step.placement);
   }
 
-  private showNudge(piece: number): void {
+  protected showNudge(piece: number): void {
     this.clearNudge();
     const body = this.views[piece]!.body;
     const tween = gsap.fromTo(body, { alpha: 0.45 }, { alpha: 1, duration: 0.7, yoyo: true, repeat: -1, ease: easings.ambient });
     this.nudge = { piece, tween };
   }
 
-  private clearNudge(): void {
+  protected clearNudge(): void {
     if (!this.nudge) return;
     this.nudge.tween.kill();
     this.views[this.nudge.piece]!.body.alpha = 1;
     this.nudge = null;
   }
 
-  private drawGhosts(): void {
+  protected drawGhosts(): void {
     const g = this.ghostLayer;
     g.clear();
     for (const [piece, at] of this.ghosts) {
@@ -676,7 +676,7 @@ export class StoneLevelScene implements LevelScene {
 
   // After each change: outlines whose stone is now set there go, and so does a nudge whose
   // stone has done what it asked.
-  private settleHints(): void {
+  protected settleHints(): void {
     let changed = false;
     for (const [piece, at] of this.ghosts) {
       const v = this.views[piece]!;
@@ -692,7 +692,7 @@ export class StoneLevelScene implements LevelScene {
     }
   }
 
-  private clearHints(): void {
+  protected clearHints(): void {
     this.clearNudge();
     this.ghosts.clear();
     this.drawGhosts();
@@ -736,7 +736,7 @@ export class StoneLevelScene implements LevelScene {
 
   // ----- tutorial, completion, intro -----
 
-  private scheduleTutorial(): void {
+  protected scheduleTutorial(): void {
     this.stopTutorial();
     this.tutorialTimer = gsap.delayedCall(stoneStyle.tutorialDelay, () => {
       const i = this.views.findIndex((v, k) => !v.placed && !this.level.pieces[k]!.fixed);
@@ -751,7 +751,7 @@ export class StoneLevelScene implements LevelScene {
     });
   }
 
-  private stopTutorial(): void {
+  protected stopTutorial(): void {
     this.tutorialTimer?.kill();
     this.tutorialTimer = null;
     this.hand?.stop();
@@ -810,7 +810,7 @@ export class StoneLevelScene implements LevelScene {
   }
 
   // Whether the silhouette encloses an empty cell (a gap that must stay empty).
-  private hasHole(): boolean {
+  protected hasHole(): boolean {
     const set = new Set(this.level.silhouette);
     for (let y = 1; y < this.level.height - 1; y++) {
       for (let x = 1; x < this.level.width - 1; x++) {
@@ -825,14 +825,14 @@ export class StoneLevelScene implements LevelScene {
 
   // ----- instruction pages -----
 
-  private cellTris(cells: Array<[number, number]>, skip: Array<[number, number, number]> = []): Tri[] {
+  protected cellTris(cells: Array<[number, number]>, skip: Array<[number, number, number]> = []): Tri[] {
     const out: Tri[] = [];
     for (const [x, y] of cells) for (let t = 0; t < 4; t++) if (!skip.some(([sx, sy, st]) => sx === x && sy === y && st === t)) out.push([x, y, t]);
     return out;
   }
 
   // An outline of `cells` (minus any gap), drawn at the card's centre, plus its top-left in card space.
-  private miniOutline(cell: number, cells: Array<[number, number]>, gap: Array<[number, number]> = []): { root: Graphics; ox: number; oy: number } {
+  protected miniOutline(cell: number, cells: Array<[number, number]>, gap: Array<[number, number]> = []): { root: Graphics; ox: number; oy: number } {
     const tris = this.cellTris(cells.filter(([x, y]) => !gap.some(([gx, gy]) => gx === x && gy === y)));
     const maxX = Math.max(...cells.map(([x]) => x)) + 1;
     const maxY = Math.max(...cells.map(([, y]) => y)) + 1;
@@ -850,7 +850,7 @@ export class StoneLevelScene implements LevelScene {
     return { root: g, ox, oy };
   }
 
-  private miniStone(cell: number, tris: Tri[], color: number = this.accent, alpha: number = stoneStyle.pieceAlpha): Graphics {
+  protected miniStone(cell: number, tris: Tri[], color: number = this.accent, alpha: number = stoneStyle.pieceAlpha): Graphics {
     const g = new Graphics();
     this.drawShape(g, tris, color, alpha, cell, true);
     return g;

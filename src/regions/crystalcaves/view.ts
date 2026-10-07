@@ -43,37 +43,37 @@ export function colorOf(mask: number): number {
 
 export class PrismLevelScene implements LevelScene {
   readonly container = new Container();
-  private grid = new Graphics();
-  private beams = new Graphics();
-  private piecesLayer = new Container();
-  private views: PieceView[] = [];
-  private orients: number[];
+  protected grid = new Graphics();
+  protected beams = new Graphics();
+  protected piecesLayer = new Container();
+  protected views: PieceView[] = [];
+  protected orients: number[];
   // Hints never turn a piece: a nudge rings the piece to look at, then a faint ghost shows
   // the angle it should have (later, a few more). Ghosts fade once a piece matches.
   // Lights the player has switched off (piece indices): their beams are not drawn and reach
   // nothing. A level only counts as solved with every light on.
-  private off = new Set<number>();
-  private hintTarget: PrismStep | null = null;
-  private nudge: { piece: number; g: Graphics; tween: gsap.core.Tween } | null = null;
-  private ghosts = new Map<number, { orient: number; root: Container }>();
-  private hintLayer = new Container();
-  private hintCount = 0;
-  private handlers: Record<'attempt' | 'solved' | 'move', Handler[]> = { attempt: [], solved: [], move: [] };
-  private cell = 50;
-  private origin = { x: 0, y: 0 };
-  private time = 0;
-  private solved = false;
-  private segments: Segment[] = [];
-  private received = new Map<number, number>();
-  private litCount = 0;
-  private voice: CrystalVoice;
-  private hand: GhostHand | null = null;
-  private tutorialTimer: gsap.core.Tween | null = null;
+  protected off = new Set<number>();
+  protected hintTarget: PrismStep | null = null;
+  protected nudge: { piece: number; g: Graphics; tween: gsap.core.Tween } | null = null;
+  protected ghosts = new Map<number, { orient: number; root: Container }>();
+  protected hintLayer = new Container();
+  protected hintCount = 0;
+  protected handlers: Record<'attempt' | 'solved' | 'move', Handler[]> = { attempt: [], solved: [], move: [] };
+  protected cell = 50;
+  protected origin = { x: 0, y: 0 };
+  protected time = 0;
+  protected solved = false;
+  protected segments: Segment[] = [];
+  protected received = new Map<number, number>();
+  protected litCount = 0;
+  protected voice: CrystalVoice;
+  protected hand: GhostHand | null = null;
+  protected tutorialTimer: gsap.core.Tween | null = null;
 
   constructor(
-    private ctx: ShellContext,
-    private level: PrismLevel,
-    private isTutorial: boolean,
+    protected ctx: ShellContext,
+    protected level: PrismLevel,
+    protected isTutorial: boolean,
   ) {
     this.orients = level.pieces.map((p) => p.orient);
     this.voice = createCrystalVoice(ctx.audio);
@@ -95,11 +95,11 @@ export class PrismLevelScene implements LevelScene {
     this.handlers[event].push(cb);
   }
 
-  private emit(event: 'attempt' | 'solved' | 'move'): void {
+  protected emit(event: 'attempt' | 'solved' | 'move'): void {
     this.handlers[event].forEach((h) => h());
   }
 
-  private buildPieces(): void {
+  protected buildPieces(): void {
     this.level.pieces.forEach((piece, i) => {
       const root = new Container();
       const ring = new Graphics();
@@ -121,7 +121,7 @@ export class PrismLevelScene implements LevelScene {
     });
   }
 
-  private cellCenter(x: number, y: number): { x: number; y: number } {
+  protected cellCenter(x: number, y: number): { x: number; y: number } {
     return { x: this.origin.x + (x + 0.5) * this.cell, y: this.origin.y + (y + 0.5) * this.cell };
   }
 
@@ -160,7 +160,7 @@ export class PrismLevelScene implements LevelScene {
   }
 
   // Draws a piece's body and colour marks: shared by the board and the instruction pages.
-  private paintPiece(body: Graphics, glyph: Graphics, kind: PieceKind, color: number, orient: number, s: number): void {
+  protected paintPiece(body: Graphics, glyph: Graphics, kind: PieceKind, color: number, orient: number, s: number): void {
     const half = s / 2;
     switch (kind) {
       case 'emitter': {
@@ -223,7 +223,7 @@ export class PrismLevelScene implements LevelScene {
     }
   }
 
-  private drawPiece(i: number): void {
+  protected drawPiece(i: number): void {
     const v = this.views[i]!;
     const p = this.level.pieces[i]!;
     const s = this.cell;
@@ -245,7 +245,7 @@ export class PrismLevelScene implements LevelScene {
 
   // Switching a light off and on again: its beam vanishes, so busy boards can be worked on
   // one light at a time.
-  private toggleLight(i: number): void {
+  protected toggleLight(i: number): void {
     if (this.solved) return;
     if (this.off.has(i)) this.off.delete(i);
     else this.off.add(i);
@@ -256,7 +256,7 @@ export class PrismLevelScene implements LevelScene {
     if (this.off.size > 0) events.emit('level:tip', { id: 'prism:lights', text: 'Tip: a switched-off light sends nothing. Turn every light back on to finish.' });
   }
 
-  private drawTargetFill(i: number): void {
+  protected drawTargetFill(i: number): void {
     const v = this.views[i]!;
     const p = this.level.pieces[i]!;
     v.fill.clear();
@@ -269,7 +269,7 @@ export class PrismLevelScene implements LevelScene {
     v.fill.filters = exact ? [createGlow(colorOf(got), { distance: 16, strength: 1.4, quality: 0.3 })] : [];
   }
 
-  private drawBeams(): void {
+  protected drawBeams(): void {
     const g = this.beams;
     g.clear();
     const s = this.cell;
@@ -286,7 +286,7 @@ export class PrismLevelScene implements LevelScene {
     });
   }
 
-  private retrace(silent: boolean): void {
+  protected retrace(silent: boolean): void {
     const t = trace(this.level, this.orients, this.off);
     this.segments = t.segments;
     this.received = t.received;
@@ -306,7 +306,7 @@ export class PrismLevelScene implements LevelScene {
     }
   }
 
-  private turn(i: number, forced: number | null = null): void {
+  protected turn(i: number, forced: number | null = null): void {
     if (this.solved) return;
     const v = this.views[i]!;
     if (v.animating) return;
@@ -380,7 +380,7 @@ export class PrismLevelScene implements LevelScene {
     return more.length === 1 ? 'One more piece shows its angle.' : 'Two more pieces show their angles.';
   }
 
-  private showNudge(piece: number): void {
+  protected showNudge(piece: number): void {
     this.clearNudge();
     const p = this.level.pieces[piece]!;
     const c = this.cellCenter(p.x, p.y);
@@ -391,13 +391,13 @@ export class PrismLevelScene implements LevelScene {
     this.nudge = { piece, g, tween };
   }
 
-  private clearNudge(): void {
+  protected clearNudge(): void {
     this.nudge?.tween.kill();
     this.nudge?.g.destroy();
     this.nudge = null;
   }
 
-  private addGhost(piece: number, orient: number): void {
+  protected addGhost(piece: number, orient: number): void {
     if (this.ghosts.has(piece) || this.orients[piece] === orient) return;
     const p = this.level.pieces[piece]!;
     const ghost = this.miniPiece(p.kind, palette.pearl, orient, this.cell);
@@ -410,7 +410,7 @@ export class PrismLevelScene implements LevelScene {
   }
 
   // Ghosts (and the nudge) go once their piece has the angle they showed.
-  private settleHints(): void {
+  protected settleHints(): void {
     for (const [piece, ghost] of this.ghosts) {
       if (this.orients[piece] !== ghost.orient) continue;
       gsap.to(ghost.root, { alpha: 0, duration: scaled(durations.pieceMove), onComplete: () => ghost.root.destroy({ children: true }) });
@@ -422,7 +422,7 @@ export class PrismLevelScene implements LevelScene {
     }
   }
 
-  private clearHints(): void {
+  protected clearHints(): void {
     this.clearNudge();
     this.ghosts.forEach((g) => g.root.destroy({ children: true }));
     this.ghosts.clear();
@@ -440,7 +440,7 @@ export class PrismLevelScene implements LevelScene {
     return tips;
   }
 
-  private scheduleTutorial(): void {
+  protected scheduleTutorial(): void {
     this.stopTutorial();
     this.tutorialTimer = gsap.delayedCall(prismStyle.tutorialDelay, () => {
       const i = this.level.pieces.findIndex((p, k) => p.rotatable && this.orients[k] !== this.level.solution[k]);
@@ -454,7 +454,7 @@ export class PrismLevelScene implements LevelScene {
     });
   }
 
-  private stopTutorial(): void {
+  protected stopTutorial(): void {
     this.tutorialTimer?.kill();
     this.tutorialTimer = null;
     this.hand?.stop();
@@ -488,7 +488,7 @@ export class PrismLevelScene implements LevelScene {
 
   // ----- instruction pages -----
 
-  private miniPiece(kind: PieceKind, color: number, orient: number, s: number, ringed = false): { root: Container; body: Graphics } {
+  protected miniPiece(kind: PieceKind, color: number, orient: number, s: number, ringed = false): { root: Container; body: Graphics } {
     const root = new Container();
     const ring = new Graphics();
     if (ringed) ring.circle(0, 0, s * 0.4).stroke({ color: palette.dim, width: 1, alpha: prismStyle.ringAlpha });
@@ -499,7 +499,7 @@ export class PrismLevelScene implements LevelScene {
     return { root, body };
   }
 
-  private crystalFill(s: number, got: number, want: number): Graphics {
+  protected crystalFill(s: number, got: number, want: number): Graphics {
     const half = s / 2;
     const g = new Graphics();
     if (got === 0) return g;
@@ -509,7 +509,7 @@ export class PrismLevelScene implements LevelScene {
     return g;
   }
 
-  private beamLine(g: Graphics, from: { x: number; y: number }, to: { x: number; y: number }, color: number, alpha: number = prismStyle.beamAlpha): void {
+  protected beamLine(g: Graphics, from: { x: number; y: number }, to: { x: number; y: number }, color: number, alpha: number = prismStyle.beamAlpha): void {
     g.moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ color: colorOf(color), width: prismStyle.beamWidth, alpha, cap: 'round' });
   }
 
@@ -694,7 +694,7 @@ export class PrismLevelScene implements LevelScene {
   }
 
   // A special piece with a beam arriving from the left, animated so its behaviour is clear.
-  private legendGlyph(kind: 'splitter' | 'filter' | 'dichroic', color: number, s: number): Container {
+  protected legendGlyph(kind: 'splitter' | 'filter' | 'dichroic', color: number, s: number): Container {
     const root = new Container();
     const beam = new Graphics();
     const piece = this.miniPiece(kind, color, 0, s, kind !== 'filter');

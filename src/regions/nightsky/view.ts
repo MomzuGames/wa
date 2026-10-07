@@ -32,36 +32,36 @@ type Handler = () => void;
 
 export class SkyLevelScene implements LevelScene {
   readonly container = new Container();
-  private edgesLayer = new Graphics();
-  private litLayer = new Graphics();
-  private rubber = new Graphics();
-  private starsLayer = new Container();
-  private starDots: Graphics[] = [];
-  private clueLayer = new Graphics();
-  private hit = new Graphics();
-  private hand: GhostHand | null = null;
-  private handlers: Record<'attempt' | 'solved' | 'move', Handler[]> = { attempt: [], solved: [], move: [] };
-  private accent = palette.lavender;
-  private stroke: Stroke;
-  private dragging = false;
-  private solved = false;
-  private locked = false;
-  private time = 0;
-  private area = { x: 0, y: 0, size: 1 };
-  private snapRadius: number = layout.snapTolerance;
-  private voice: NightSkyVoice;
-  private phases: number[];
-  private pointer = { x: 0, y: 0 };
-  private clueRings: number[] = [];
-  private clueEdges: number[] = [];
-  private hintsGiven = 0;
-  private tutorialTimer: gsap.core.Tween | null = null;
-  private undoArmed = true;
+  protected edgesLayer = new Graphics();
+  protected litLayer = new Graphics();
+  protected rubber = new Graphics();
+  protected starsLayer = new Container();
+  protected starDots: Graphics[] = [];
+  protected clueLayer = new Graphics();
+  protected hit = new Graphics();
+  protected hand: GhostHand | null = null;
+  protected handlers: Record<'attempt' | 'solved' | 'move', Handler[]> = { attempt: [], solved: [], move: [] };
+  protected accent = palette.lavender;
+  protected stroke: Stroke;
+  protected dragging = false;
+  protected solved = false;
+  protected locked = false;
+  protected time = 0;
+  protected area = { x: 0, y: 0, size: 1 };
+  protected snapRadius: number = layout.snapTolerance;
+  protected voice: NightSkyVoice;
+  protected phases: number[];
+  protected pointer = { x: 0, y: 0 };
+  protected clueRings: number[] = [];
+  protected clueEdges: number[] = [];
+  protected hintsGiven = 0;
+  protected tutorialTimer: gsap.core.Tween | null = null;
+  protected undoArmed = true;
 
   constructor(
-    private ctx: ShellContext,
-    private level: SkyLevel,
-    private isTutorial: boolean,
+    protected ctx: ShellContext,
+    protected level: SkyLevel,
+    protected isTutorial: boolean,
   ) {
     this.stroke = newStroke(level);
     this.voice = createNightSkyVoice(ctx.audio);
@@ -97,7 +97,7 @@ export class SkyLevelScene implements LevelScene {
     this.handlers[event].push(cb);
   }
 
-  private emit(event: 'attempt' | 'solved' | 'move'): void {
+  protected emit(event: 'attempt' | 'solved' | 'move'): void {
     this.handlers[event].forEach((h) => h());
   }
 
@@ -113,7 +113,7 @@ export class SkyLevelScene implements LevelScene {
     this.layout(width, height);
   }
 
-  private starPos(i: number): { x: number; y: number } {
+  protected starPos(i: number): { x: number; y: number } {
     const s: Star = this.level.stars[i]!;
     let dx = 0;
     let dy = 0;
@@ -125,14 +125,14 @@ export class SkyLevelScene implements LevelScene {
     return { x: this.area.x + (s.x + dx) * this.area.size, y: this.area.y + (s.y + dy) * this.area.size };
   }
 
-  private redrawAll(): void {
+  protected redrawAll(): void {
     this.drawEdges();
     this.drawLit();
     this.drawStars();
     this.drawClues();
   }
 
-  private drawEdges(): void {
+  protected drawEdges(): void {
     const g = this.edgesLayer;
     g.clear();
     this.level.edges.forEach((e, i) => {
@@ -162,7 +162,7 @@ export class SkyLevelScene implements LevelScene {
     });
   }
 
-  private drawLit(): void {
+  protected drawLit(): void {
     const g = this.litLayer;
     g.clear();
     for (const step of this.stroke.path) {
@@ -177,7 +177,7 @@ export class SkyLevelScene implements LevelScene {
     }
   }
 
-  private drawStars(): void {
+  protected drawStars(): void {
     this.level.stars.forEach((_, i) => {
       const p = this.starPos(i);
       const dot = this.starDots[i]!;
@@ -197,7 +197,7 @@ export class SkyLevelScene implements LevelScene {
     });
   }
 
-  private drawClues(): void {
+  protected drawClues(): void {
     const g = this.clueLayer;
     g.clear();
     for (const i of this.clueRings) {
@@ -213,7 +213,7 @@ export class SkyLevelScene implements LevelScene {
     }
   }
 
-  private nearestStar(x: number, y: number): number {
+  protected nearestStar(x: number, y: number): number {
     let best = -1;
     let bestD = this.snapRadius;
     for (let i = 0; i < this.level.stars.length; i++) {
@@ -227,7 +227,7 @@ export class SkyLevelScene implements LevelScene {
     return best;
   }
 
-  private onDown(e: FederatedPointerEvent): void {
+  protected onDown(e: FederatedPointerEvent): void {
     if (this.solved || this.locked) return;
     const local = this.container.toLocal(e.global);
     const star = this.nearestStar(local.x, local.y);
@@ -247,7 +247,7 @@ export class SkyLevelScene implements LevelScene {
     this.redrawAll();
   }
 
-  private onMove(e: FederatedPointerEvent): void {
+  protected onMove(e: FederatedPointerEvent): void {
     if (!this.dragging || this.solved) return;
     this.pointer = this.container.toLocal(e.global);
     const star = this.nearestStar(this.pointer.x, this.pointer.y);
@@ -280,7 +280,7 @@ export class SkyLevelScene implements LevelScene {
   }
 
   // A touch cut short: the stroke gently unravels, without counting as an attempt.
-  private offCancel = events.on('input:cancel', () => {
+  protected offCancel = events.on('input:cancel', () => {
     if (!this.dragging || this.solved) return;
     this.dragging = false;
     this.rubber.clear();
@@ -288,7 +288,7 @@ export class SkyLevelScene implements LevelScene {
     else this.stroke.current = null;
   });
 
-  private onUp(): void {
+  protected onUp(): void {
     if (!this.dragging || this.solved) return;
     this.dragging = false;
     this.rubber.clear();
@@ -304,7 +304,7 @@ export class SkyLevelScene implements LevelScene {
   }
 
   // Failed strokes gently retreat back along the path and fade.
-  private unravel(): void {
+  protected unravel(): void {
     this.locked = true;
     const steps = this.stroke.path.length;
     const state = { n: steps };
@@ -381,7 +381,7 @@ export class SkyLevelScene implements LevelScene {
     return tips;
   }
 
-  private scheduleTutorial(): void {
+  protected scheduleTutorial(): void {
     this.stopTutorial();
     this.tutorialTimer = gsap.delayedCall(skyStyle.tutorialDelay, () => {
       if (!this.hand) {
@@ -392,7 +392,7 @@ export class SkyLevelScene implements LevelScene {
     });
   }
 
-  private stopTutorial(): void {
+  protected stopTutorial(): void {
     this.tutorialTimer?.kill();
     this.tutorialTimer = null;
     this.hand?.stop();
@@ -460,7 +460,7 @@ export class SkyLevelScene implements LevelScene {
   // ----- instruction pages -----
 
   // A miniature constellation for the instruction card, with a cursor that can trace it.
-  private miniSky(
+  protected miniSky(
     pts: Array<{ x: number; y: number }>,
     edges: Array<{ a: number; b: number; oneWay?: boolean; double?: boolean }>,
     opts: { odd?: number[]; order?: number[] } = {},

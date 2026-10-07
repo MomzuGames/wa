@@ -95,7 +95,7 @@ export class DioramaSample {
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.backdrop = new Backdrop(this.scene, this.glow, moodFor(levelName));
+    this.backdrop = new Backdrop(this.scene, this.glow, moodFor('moonlake', 4, levelName));
     this.camera = isometric ? new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100) : new THREE.PerspectiveCamera(38, 1, 0.1, 100);
 
     // Light: a soft sky fill and the moon, high and to one side, so every stone has a lit

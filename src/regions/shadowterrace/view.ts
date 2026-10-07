@@ -42,47 +42,47 @@ type Point = { x: number; y: number };
 export class ShadowLevelScene implements LevelScene {
   readonly container = new Container();
   readonly usesRotateKey = true;
-  private floor = new Graphics();
-  private walls = new Graphics();
-  private stones = new Graphics();
-  private ghosts = new Graphics();
-  private gauge = new Graphics();
-  private moon = new Graphics();
-  private hit = new Graphics();
-  private heights: number[];
-  private shown: number[]; // tweened heights for the growth animation
-  private handlers: Record<'attempt' | 'solved' | 'move', Handler[]> = { attempt: [], solved: [], move: [] };
-  private accent = palette.sage;
-  private cell = 40;
-  private centre: Point = { x: 0, y: 0 };
-  private angle = 0; // view rotation in quarter turns (fractional while turning)
-  private solved = false;
-  private time = 0;
-  private dirty = true;
-  private voice: ShadowVoice;
-  private hand: GhostHand | null = null;
-  private tutorialTimer: gsap.core.Tween | null = null;
-  private pressTimer: gsap.core.Tween | null = null;
-  private pressHandled = false;
-  private pressedCell = -1;
+  protected floor = new Graphics();
+  protected walls = new Graphics();
+  protected stones = new Graphics();
+  protected ghosts = new Graphics();
+  protected gauge = new Graphics();
+  protected moon = new Graphics();
+  protected hit = new Graphics();
+  protected heights: number[];
+  protected shown: number[]; // tweened heights for the growth animation
+  protected handlers: Record<'attempt' | 'solved' | 'move', Handler[]> = { attempt: [], solved: [], move: [] };
+  protected accent = palette.sage;
+  protected cell = 40;
+  protected centre: Point = { x: 0, y: 0 };
+  protected angle = 0; // view rotation in quarter turns (fractional while turning)
+  protected solved = false;
+  protected time = 0;
+  protected dirty = true;
+  protected voice: ShadowVoice;
+  protected hand: GhostHand | null = null;
+  protected tutorialTimer: gsap.core.Tween | null = null;
+  protected pressTimer: gsap.core.Tween | null = null;
+  protected pressHandled = false;
+  protected pressedCell = -1;
   // A touch cut short (phone locked, app in the background) ends the press cleanly.
-  private offCancel = events.on('input:cancel', () => this.onRelease(null));
+  protected offCancel = events.on('input:cancel', () => this.onRelease(null));
   // Dragging sideways across the terrace turns it; the drag starts as a possible tap.
-  private press: { x: number; y: number; angle: number; swiping: boolean } | null = null;
-  private ghostStacks = new Map<number, { height: number; until: number | null }>();
+  protected press: { x: number; y: number; angle: number; swiping: boolean } | null = null;
+  protected ghostStacks = new Map<number, { height: number; until: number | null }>();
   // Hints never build: a nudge marks the stack to look at (its row and column glow faintly
   // on the floor), then a pale outline shows its right height (later, a few more).
-  private hintMark: { cell: number; height: number } | null = null;
-  private hintCount = 0;
-  private brightUntil = 0;
-  private unsubscribe: () => void;
-  private screenWidth = 0;
-  private lastNote = '';
+  protected hintMark: { cell: number; height: number } | null = null;
+  protected hintCount = 0;
+  protected brightUntil = 0;
+  protected unsubscribe: () => void;
+  protected screenWidth = 0;
+  protected lastNote = '';
 
   constructor(
-    private ctx: ShellContext,
-    private level: ShadowLevel,
-    private isTutorial: boolean,
+    protected ctx: ShellContext,
+    protected level: ShadowLevel,
+    protected isTutorial: boolean,
   ) {
     this.heights = startHeights(level);
     this.shown = this.heights.slice();
@@ -112,22 +112,22 @@ export class ShadowLevelScene implements LevelScene {
     this.handlers[event].push(cb);
   }
 
-  private emit(event: 'attempt' | 'solved' | 'move'): void {
+  protected emit(event: 'attempt' | 'solved' | 'move'): void {
     this.handlers[event].forEach((h) => h());
   }
 
   // ----- geometry -----
 
-  private get n(): number {
+  protected get n(): number {
     return this.level.size;
   }
 
-  private get cubeH(): number {
+  protected get cubeH(): number {
     return this.cell * terraceStyle.cubeHeight;
   }
 
   // World (grid units, centred on the terrace) to screen, through the current view angle.
-  private project(gx: number, gy: number, z: number): Point {
+  protected project(gx: number, gy: number, z: number): Point {
     const th = (this.angle * Math.PI) / 2;
     const u0 = gx - this.n / 2;
     const v0 = gy - this.n / 2;
@@ -137,14 +137,14 @@ export class ShadowLevelScene implements LevelScene {
   }
 
   // Rotated coordinates of a cell centre, for depth sorting and face visibility.
-  private rotated(gx: number, gy: number): { u: number; v: number } {
+  protected rotated(gx: number, gy: number): { u: number; v: number } {
     const th = (this.angle * Math.PI) / 2;
     const u0 = gx - this.n / 2;
     const v0 = gy - this.n / 2;
     return { u: u0 * Math.cos(th) - v0 * Math.sin(th), v: u0 * Math.sin(th) + v0 * Math.cos(th) };
   }
 
-  private depthOrder(): number[] {
+  protected depthOrder(): number[] {
     const cells = this.heights.map((_, i) => i);
     const depth = cells.map((i) => {
       const r = this.rotated((i % this.n) + 0.5, Math.floor(i / this.n) + 0.5);
@@ -187,7 +187,7 @@ export class ShadowLevelScene implements LevelScene {
 
   // ----- drawing -----
 
-  private draw(): void {
+  protected draw(): void {
     this.drawWalls();
     this.drawFloor();
     this.drawStones();
@@ -196,13 +196,13 @@ export class ShadowLevelScene implements LevelScene {
     this.dirty = false;
   }
 
-  private nearestQuarter(): number {
+  protected nearestQuarter(): number {
     return ((Math.round(this.angle) % 4) + 4) % 4;
   }
 
   // For the two far walls at the nearest resting view: the moon's shadow per wall slot,
   // and the shadow the player's stones cast right now.
-  private wallData(k: number): { u: { want: number[]; cast: number[] }; v: { want: number[]; cast: number[] } } {
+  protected wallData(k: number): { u: { want: number[]; cast: number[] }; v: { want: number[]; cast: number[] } } {
     const n = this.n;
     const saved = this.angle;
     this.angle = k;
@@ -246,11 +246,11 @@ export class ShadowLevelScene implements LevelScene {
   }
 
   // Projects a point given in rotated coordinates (u, v, z).
-  private projectRotated(u: number, v: number, z: number): Point {
+  protected projectRotated(u: number, v: number, z: number): Point {
     return { x: this.centre.x + ((u - v) * this.cell) / 2, y: this.centre.y + ((u + v) * this.cell) / 4 - z * this.cubeH };
   }
 
-  private poly(g: Graphics, pts: Point[]): Graphics {
+  protected poly(g: Graphics, pts: Point[]): Graphics {
     g.moveTo(pts[0]!.x, pts[0]!.y);
     for (const p of pts.slice(1)) g.lineTo(p.x, p.y);
     return g.closePath();
@@ -259,7 +259,7 @@ export class ShadowLevelScene implements LevelScene {
   // Two lanterns stand behind the terrace, one on each far side, and every stack throws
   // a shadow across the sand in front. The moon's shadows (what the level asks for) are
   // filled; the shadows the stones cast right now are pale outlines the player lines up.
-  private drawWalls(): void {
+  protected drawWalls(): void {
     const g = this.walls;
     g.clear();
     const n = this.n;
@@ -300,7 +300,7 @@ export class ShadowLevelScene implements LevelScene {
     edge('v');
   }
 
-  private drawFloor(): void {
+  protected drawFloor(): void {
     const g = this.floor;
     g.clear();
     const n = this.n;
@@ -321,7 +321,7 @@ export class ShadowLevelScene implements LevelScene {
     }
   }
 
-  private drawStones(): void {
+  protected drawStones(): void {
     const g = this.stones;
     g.clear();
     const n = this.n;
@@ -374,7 +374,7 @@ export class ShadowLevelScene implements LevelScene {
     }
   }
 
-  private drawGhosts(): void {
+  protected drawGhosts(): void {
     const g = this.ghosts;
     g.clear();
     const n = this.n;
@@ -407,7 +407,7 @@ export class ShadowLevelScene implements LevelScene {
   }
 
   // The lantern gauge: fills as stones are placed; full means the count is right.
-  private drawGauge(): void {
+  protected drawGauge(): void {
     const g = this.gauge;
     g.clear();
     if (this.level.count === null) return;
@@ -444,7 +444,7 @@ export class ShadowLevelScene implements LevelScene {
 
   // When every shadow is right but the count is not, say so: the player cannot see stones
   // hidden behind others, and the lantern alone is easy to misread.
-  private explainCount(): void {
+  protected explainCount(): void {
     if (this.level.count === null) return;
     const n = this.n;
     const front = frontProfile(n, this.heights);
@@ -465,7 +465,7 @@ export class ShadowLevelScene implements LevelScene {
 
   // ----- input -----
 
-  private cellAt(local: Point): number {
+  protected cellAt(local: Point): number {
     const n = this.n;
     const order = this.depthOrder().reverse();
     for (const i of order) {
@@ -492,7 +492,7 @@ export class ShadowLevelScene implements LevelScene {
     return -1;
   }
 
-  private onDown(e: FederatedPointerEvent): void {
+  protected onDown(e: FederatedPointerEvent): void {
     if (this.solved) return;
     const local = this.container.toLocal(e.global);
     const i = this.cellAt(local);
@@ -514,7 +514,7 @@ export class ShadowLevelScene implements LevelScene {
     });
   }
 
-  private onMove(e: FederatedPointerEvent): void {
+  protected onMove(e: FederatedPointerEvent): void {
     const press = this.press;
     if (!press) return;
     const dx = e.global.x - press.x;
@@ -532,12 +532,12 @@ export class ShadowLevelScene implements LevelScene {
     this.dirty = true;
   }
 
-  private onUp(e: FederatedPointerEvent): void {
+  protected onUp(e: FederatedPointerEvent): void {
     this.onRelease(e);
   }
 
   // Ends a press: a swipe settles on the nearest quarter turn, a tap adds a stone.
-  private onRelease(e: FederatedPointerEvent | null): void {
+  protected onRelease(e: FederatedPointerEvent | null): void {
     this.pressTimer?.kill();
     this.pressTimer = null;
     const press = this.press;
@@ -553,14 +553,14 @@ export class ShadowLevelScene implements LevelScene {
     this.change(i, 1);
   }
 
-  private settleView(): void {
+  protected settleView(): void {
     const target = Math.round(this.angle);
     if (Math.abs(target - this.angle) > 0.01) this.voice.turn();
     gsap.to(this, { angle: target, duration: scaled(terraceStyle.turnSeconds) * 0.6, ease: easings.response, overwrite: true, onUpdate: () => (this.dirty = true) });
   }
 
   // Stacks may climb to the level's full height: too tall is a mistake the shadows show.
-  private change(i: number, direction: 1 | -1): void {
+  protected change(i: number, direction: 1 | -1): void {
     this.stopTutorial();
     const cap = this.level.maxHeight;
     if (this.level.fixed[i]! >= 0) {
@@ -589,13 +589,13 @@ export class ShadowLevelScene implements LevelScene {
   }
 
   // A stack that cannot change answers with a small dull dip.
-  private nudge(i: number): void {
+  protected nudge(i: number): void {
     const from = this.shown[i]!;
     gsap.fromTo(this.shown, { [i]: from - 0.12 }, { [i]: from, duration: durations.microFeedback * 2, ease: easings.response, onUpdate: () => (this.dirty = true) });
     this.voice.refuse();
   }
 
-  private turnView(direction: 1 | -1): void {
+  protected turnView(direction: 1 | -1): void {
     this.voice.turn();
     gsap.to(this, { angle: Math.round(this.angle) + direction, duration: scaled(terraceStyle.turnSeconds), ease: easings.response, overwrite: true, onUpdate: () => (this.dirty = true) });
   }
@@ -658,7 +658,7 @@ export class ShadowLevelScene implements LevelScene {
   }
 
   // Stacks that differ from a solution agreeing with every outline shown.
-  private wrongStacks(shown: Map<number, number>): number {
+  protected wrongStacks(shown: Map<number, number>): number {
     const target = nearestSolution({ ...this.level, fixed: this.level.fixed.map((f, i) => shown.get(i) ?? f) }, this.heights);
     return target ? target.filter((h, i) => h !== this.heights[i] && this.level.fixed[i]! < 0).length : 0;
   }
@@ -673,7 +673,7 @@ export class ShadowLevelScene implements LevelScene {
     return tips;
   }
 
-  private scheduleTutorial(): void {
+  protected scheduleTutorial(): void {
     this.stopTutorial();
     this.tutorialTimer = gsap.delayedCall(terraceStyle.tutorialDelay, () => {
       const i = this.level.solution.findIndex((h, k) => h > 0 && this.level.fixed[k]! < 0);
@@ -687,7 +687,7 @@ export class ShadowLevelScene implements LevelScene {
     });
   }
 
-  private stopTutorial(): void {
+  protected stopTutorial(): void {
     this.tutorialTimer?.kill();
     this.tutorialTimer = null;
     this.hand?.stop();
@@ -727,7 +727,7 @@ export class ShadowLevelScene implements LevelScene {
 
   // A miniature terrace for the instruction card: draws stacks, lanterns and ground shadows
   // for any heights and view angle, so each page can show exactly one idea.
-  private miniTerrace(n: number, opts: { want?: { front: number[]; side: number[] }; fixed?: number[]; gauge?: number } = {}): {
+  protected miniTerrace(n: number, opts: { want?: { front: number[]; side: number[] }; fixed?: number[]; gauge?: number } = {}): {
     root: Container;
     g: Graphics;
     draw: (heights: number[], angle?: number) => void;
