@@ -6,6 +6,7 @@ import { createGlow } from '../fx/glow';
 import type { ParticleSystem } from '../fx/particles';
 import { events } from '../core/events';
 import { Face } from './face';
+import { setLightSpots } from '../three/lights';
 
 export const speechStyle = {
   fontSize: 14,
@@ -55,6 +56,7 @@ export const spiritStyle = {
 // It listens to spirit events so scenes never need a reference to it.
 export class Spirit extends Container {
   private dot = new Graphics();
+  private shine = new Graphics();
   private halo = new Graphics();
   private body = new Container();
   private sway = new Container();
@@ -75,7 +77,7 @@ export class Spirit extends Container {
   private joyful: Promise<void> | null = null;
   // Family lights woken in finished lands follow a little way behind, along the same path.
   private familyLayer = new Container();
-  private followers: Array<{ view: Container; x: number; y: number; phase: number }> = [];
+  private followers: Array<{ view: Container; x: number; y: number; phase: number; color: number }> = [];
   private path: Array<{ x: number; y: number }> = [];
   private pace = 0; // smoothed speed of the light, px per second
   private bubble: Container | null = null;
@@ -87,7 +89,9 @@ export class Spirit extends Container {
     this.dot.circle(0, 0, spiritStyle.radius).fill({ color: palette.pearl });
     this.setTint('mint');
     this.face = new Face(spiritStyle.radius);
-    this.body.addChild(this.halo, this.dot, this.face);
+    // A soft highlight on the upper left, so the light reads as a little sphere.
+    this.shine.circle(-spiritStyle.radius * 0.35, -spiritStyle.radius * 0.4, spiritStyle.radius * 0.32).fill({ color: palette.pearl, alpha: 0.55 });
+    this.body.addChild(this.halo, this.dot, this.shine, this.face);
     this.sway.addChild(this.body);
     this.addChild(this.familyLayer, this.sway);
     this.eventMode = 'none';
@@ -142,13 +146,14 @@ export class Spirit extends Container {
       view.addChild(
         new Graphics().circle(0, 0, r * 2.4).fill({ color: palette[token], alpha: 0.16 }),
         new Graphics().circle(0, 0, r).fill({ color: palette[token] }),
+        new Graphics().circle(-r * 0.35, -r * 0.4, r * 0.3).fill({ color: palette.pearl, alpha: 0.5 }),
         new Graphics()
           .circle(-r * 0.34, -r * 0.08, r * 0.14)
           .circle(r * 0.34, -r * 0.08, r * 0.14)
           .fill({ color: palette.void, alpha: 0.85 }),
       );
       this.familyLayer.addChild(view);
-      return { view, x: this.x, y: this.y, phase: k * 1.1 };
+      return { view, x: this.x, y: this.y, phase: k * 1.1, color: palette[token] };
     });
   }
 
@@ -505,6 +510,7 @@ export class Spirit extends Container {
 
   // Leaves a trail of light while it travels, and keeps orbiting when asked to.
   update(dt: number): void {
+    this.shareLights();
     if (this.alpha <= 0) return;
     this.clock += dt;
     // A constant gentle sway of the body, so it never looks pinned.
@@ -565,7 +571,26 @@ export class Spirit extends Container {
     }
   }
 
+  // Tells the 3D world where the lights are, so they can shine on it.
+  private shareLights(): void {
+    const seen = this.alpha * (this.parent?.alpha ?? 1);
+    if (seen <= 0.01 || !this.visible) {
+      setLightSpots([]);
+      return;
+    }
+    const me = this.sway.getGlobalPosition();
+    const scale = this.worldTransform.a;
+    setLightSpots([
+      { x: me.x, y: me.y, color: palette[this.hue], size: spiritStyle.radius * scale, alpha: seen },
+      ...this.followers.map((f) => {
+        const p = f.view.getGlobalPosition();
+        return { x: p.x, y: p.y, color: f.color, size: spiritStyle.radius * familyStyle.size * scale, alpha: seen };
+      }),
+    ]);
+  }
+
   override destroy(): void {
+    setLightSpots([]);
     this.breatheTween.kill();
     this.moving?.kill();
     this.idleTimer?.kill();

@@ -232,6 +232,16 @@ export class RegionNode extends Container {
     return new Promise((resolve) => gsap.to(this.colourBase, { v, duration: scaled(seconds), ease: easings.ambient, onComplete: () => resolve() }));
   }
 
+  // The colour the land shows right now (grey under the Silence, its own once it sings).
+  get tint(): number {
+    return this._state === 'locked' ? palette.dim : this.shade;
+  }
+
+  // The 3D map draws the land as an island: the flat figure steps aside, the name stays.
+  showFigure(on: boolean): void {
+    for (const g of [this.outline, this.fill, this.life, this.aura]) g.visible = on;
+  }
+
   get colourAmount(): number {
     return this.colourBase.v;
   }

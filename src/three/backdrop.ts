@@ -67,6 +67,9 @@ const LAND: Record<Exclude<RegionId, 'moonlake'>, BackdropMood> = {
   shadowterrace: mood({ top: mixColor(palette.void, palette.sage, 0.14), horizon: low(palette.rose, 0.55), clouds: mixColor(palette.pearl, palette.rose, 0.2), hills: hillsOf(palette.sage), glimmer: palette.sage }),
 };
 
+// The world map: a calm, even night that belongs to no single land.
+export const MAP_MOOD: BackdropMood = mood({ top: sky(0.18), horizon: low(mixColor(palette.peach, palette.rose, 0.3), 0.52), clouds: mixColor(palette.pearl, palette.peach, 0.25), cloudAmount: 0.35, moonSize: 0.03, hills: hillsOf(palette.sage) });
+
 export function moodFor(region: RegionId, levelIndex: number, levelName: string): BackdropMood {
   if (region === 'moonlake') return MOON_LAKE[levelName] ?? MOON_LAKE.Firefly!;
   const base = LAND[region];

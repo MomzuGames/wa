@@ -12,6 +12,10 @@ import { RegionNode, type RegionState, regionNodeStyle } from './regionNode';
 import { events } from '../core/events';
 import { reducedMotion } from '../design/motion';
 import { createRng } from '../core/rng';
+import { OverlayWorld } from '../three/overlayWorld';
+import { MAP_MOOD } from '../three/backdrop';
+import { stage3d } from '../three/stage3d';
+import { type Island, makeIsland } from './islands3d';
 import { previewEnding } from '../config/platform';
 
 const mapStyle = {
@@ -85,6 +89,8 @@ export class WorldMapScene implements Scene {
   private parallax = { x: 0, y: 0 };
   private chosen: RegionId | null = null;
   private unsubscribe: () => void = () => {};
+  private world3d: OverlayWorld | null = null;
+  private islands = new Map<RegionId, Island>();
   // The region whose completion is still to be shown; its outgoing path stays dark until then.
   private pendingReveal: RegionId | null;
 
@@ -113,6 +119,18 @@ export class WorldMapScene implements Scene {
       this.world.addChild(node);
     }
     this.applyStates();
+    // In 3D every land is a small floating island right under its place on the map.
+    if (stage3d()) {
+      this.world3d = new OverlayWorld(MAP_MOOD);
+      for (const id of REGION_ORDER) {
+        const node = this.nodes.get(id)!;
+        const island = makeIsland(id);
+        node.showFigure(false);
+        this.world3d.add(island.group, () => node.getGlobalPosition(), () => regionNodeStyle.size * 0.42 * node.scale.x);
+        this.islands.set(id, island);
+      }
+      this.twinkles.visible = false;
+    }
     if (dreaming) {
       // The opening begins on the world as it was: every land bright and in colour, until
       // the Silence falls in the opening (drainNow).
@@ -365,6 +383,16 @@ export class WorldMapScene implements Scene {
 
   update(dt: number): void {
     this.time += dt;
+    if (this.world3d) {
+      for (const id of REGION_ORDER) {
+        const node = this.nodes.get(id)!;
+        const island = this.islands.get(id)!;
+        island.setTint(node.tint);
+        island.setOpacity(Math.max(0.15, node.alpha) * this.container.alpha);
+        island.update(this.time);
+      }
+      this.world3d.update(dt, this.parallax.x);
+    }
     for (const node of this.nodes.values()) node.tick(dt);
     if (reducedMotion()) return;
     const k = Math.min(1, dt * 3);
@@ -565,6 +593,7 @@ export class WorldMapScene implements Scene {
   }
 
   destroy(): void {
+    this.world3d?.dispose();
     this.unsubscribe();
     this.container.destroy({ children: true });
   }

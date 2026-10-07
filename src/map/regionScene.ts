@@ -11,6 +11,10 @@ import { earliestUnsolved, isChapterEnd, levelUnlocked, progression } from '../c
 import { events } from '../core/events';
 import { Atmosphere } from '../fx/atmosphere';
 import { createRng } from '../core/rng';
+import { OverlayWorld } from '../three/overlayWorld';
+import { moodFor } from '../three/backdrop';
+import { stage3d } from '../three/stage3d';
+import { type StepStone, makeStepStone } from './islands3d';
 import { StoryLight } from '../story/art';
 import { familyColor } from '../story/family';
 import { whisperFor } from '../story/whispers';
@@ -66,6 +70,8 @@ export class RegionScene implements Scene {
   private unsubscribe: () => void = () => {};
   private sleeper: StoryLight | null = null;
   private chosen = -1;
+  private world3d: OverlayWorld | null = null;
+  private stones: StepStone[] = [];
 
   constructor(
     private regionId: RegionId,
@@ -107,6 +113,16 @@ export class RegionScene implements Scene {
       this.nodes.push({ root, disc, label, state: 'locked', radius, near: 0, glow });
       this.container.addChild(root);
     }
+    // In 3D the levels are floating stepping stones under the trail, in the land's own night.
+    if (stage3d()) {
+      this.world3d = new OverlayWorld(moodFor(regionId, getRegion(regionId).solved.length, ''));
+      this.atmosphere.container.visible = false;
+      this.nodes.forEach((node, i) => {
+        const stone = makeStepStone(i);
+        this.world3d!.add(stone.group, () => node.root.getGlobalPosition(), () => node.radius * node.root.scale.x);
+        this.stones.push(stone);
+      });
+    }
     this.refreshStates();
     // Until the land is finished, its sleeping family member waits in the sky above the trail.
     const solved = getRegion(regionId).solved.length;
@@ -147,6 +163,11 @@ export class RegionScene implements Scene {
 
   private draw(node: TrailNode): void {
     const { disc, radius, state } = node;
+    const stone = this.stones[this.nodes.indexOf(node)];
+    if (stone) {
+      stone.set(state, this.accent);
+      disc.visible = false;
+    }
     disc.clear();
     switch (state) {
       case 'locked':
@@ -183,6 +204,10 @@ export class RegionScene implements Scene {
 
   update(dt: number): void {
     this.time += dt;
+    if (this.world3d) {
+      this.stones.forEach((st) => st.update(this.time));
+      this.world3d.update(dt);
+    }
     this.atmosphere.update(dt);
     // Names and a soft pool of light follow the spirit along the trail.
     const k = Math.min(1, dt * 5);
@@ -306,6 +331,7 @@ export class RegionScene implements Scene {
   }
 
   destroy(): void {
+    this.world3d?.dispose();
     this.unsubscribe();
     this.tweens.forEach((t) => t.kill());
     this.atmosphere.destroy();
