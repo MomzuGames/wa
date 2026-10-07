@@ -48,13 +48,13 @@ export class Diorama {
     const low = spec.slab === null ? 0.1 : (spec.slab?.depth ?? dioramaStyle.slabDepth);
     this.orbit = new OrbitView(this.camera, { halfW: spec.width / 2 + 0.3, halfD: spec.depth / 2 + 0.3, low, high: spec.high ?? 0.45 }, undefined, spec.flat);
     this.backdrop = new Backdrop(this.scene, glowTexture(), moodFor(spec.region, spec.levelIndex, spec.levelName));
-    this.scene.add(new THREE.HemisphereLight(col(mixColor(palette.sky, palette.pearl, 0.5)), col(palette.ink), 0.75));
+    this.scene.add(new THREE.HemisphereLight(col(mixColor(palette.sky, palette.pearl, 0.5)), col(palette.void), 0.75));
     const moon = new THREE.DirectionalLight(col(palette.pearl), 1.2);
     moon.position.set(-6, 10, 4);
     this.scene.add(moon);
-    if (spec.slab !== null) this.addSlab(spec.slab?.color ?? mixColor(palette.dim, palette.sky, 0.14), spec.slab?.top, spec.slab?.depth);
+    if (spec.slab !== null) this.addSlab(spec.slab?.color ?? mixColor(palette.earth, palette.sky, 0.14), spec.slab?.top, spec.slab?.depth);
     this.scene.add(this.board, this.marks);
-    this.world = { scene: this.scene, camera: this.camera, bloom: () => (this.solved ? 0.75 : 0.47) * this.glow.v };
+    this.world = { scene: this.scene, camera: this.camera, bloom: () => (this.solved ? 0.42 : 0.28) * this.glow.v };
     stage3d()?.show(this.world);
   }
 

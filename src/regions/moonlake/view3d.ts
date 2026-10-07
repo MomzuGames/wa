@@ -90,13 +90,13 @@ export class LanternLake3DScene implements LevelScene {
     this.orbit = new OrbitView(this.camera, { halfW: level.width / 2 + 0.3, halfD: level.height / 2 + 0.3, low: lake3dStyle.slabDepth, high: 0.6 });
     this.backdrop = new Backdrop(this.scene, glowTexture(), moodFor('moonlake', 0, levelName));
     // A soft sky fill and the moon, high to one side: every stone has a lit face and a shaded one.
-    this.scene.add(new THREE.HemisphereLight(col(mixColor(palette.sky, palette.pearl, 0.5)), col(palette.ink), 0.75));
+    this.scene.add(new THREE.HemisphereLight(col(mixColor(palette.sky, palette.pearl, 0.5)), col(palette.void), 0.75));
     const moon = new THREE.DirectionalLight(col(palette.pearl), 1.2);
     moon.position.set(-6, 10, 4);
     this.scene.add(moon);
     this.water = this.buildDiorama();
     this.scene.add(this.lit, this.lanternsGroup, this.hintGroup);
-    this.world = { scene: this.scene, camera: this.camera, bloom: () => (this.solved ? 0.75 : 0.47) * this.glowBoost.v };
+    this.world = { scene: this.scene, camera: this.camera, bloom: () => (this.solved ? 0.42 : 0.28) * this.glowBoost.v };
     stage3d()?.show(this.world);
 
     // The 2D side: a touch surface over the whole screen (the 3D canvas lies underneath).
@@ -130,7 +130,7 @@ export class LanternLake3DScene implements LevelScene {
     const bw = w + 0.5;
     const bh = h + 0.5;
     const glow = glowTexture();
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(bw, lake3dStyle.slabDepth, bh), new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.sky, 0.14)), flatShading: true }));
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(bw, lake3dStyle.slabDepth, bh), new THREE.MeshLambertMaterial({ color: col(mixColor(palette.earth, palette.sky, 0.14)), flatShading: true }));
     slab.position.y = -lake3dStyle.slabDepth / 2 - 0.02;
     this.scene.add(slab);
     const under = new THREE.Mesh(new THREE.PlaneGeometry(bw * 2.4, bh * 2.4), new THREE.MeshBasicMaterial({ map: glow, color: col(palette.peach), transparent: true, opacity: 0.1, depthWrite: false }));
@@ -141,7 +141,7 @@ export class LanternLake3DScene implements LevelScene {
     const water = new THREE.Mesh(
       new THREE.PlaneGeometry(bw - 0.12, bh - 0.12),
       new THREE.ShaderMaterial({
-        uniforms: { time: { value: 0 }, deep: { value: col(mixColor(palette.void, palette.sky, 0.1)) }, sheen: { value: col(mixColor(palette.lavender, palette.sky, 0.5)) } },
+        uniforms: { time: { value: 0 }, deep: { value: col(mixColor(palette.void, palette.sky, 0.1)) }, sheen: { value: col(mixColor(palette.sky, palette.sky, 0.5)) } },
         vertexShader: 'varying vec2 vUv; varying vec3 vWorld; void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position,1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
         fragmentShader: `uniform float time; uniform vec3 deep; uniform vec3 sheen; varying vec2 vUv; varying vec3 vWorld;
           float wave(vec2 p){ return sin(p.x*2.1+time*0.9)*0.5 + sin(p.y*2.7-time*0.7+p.x*0.6)*0.35 + sin((p.x+p.y)*5.3+time*1.6)*0.15; }
@@ -150,8 +150,8 @@ export class LanternLake3DScene implements LevelScene {
     );
     water.rotation.x = -Math.PI / 2;
     this.scene.add(water);
-    const land = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.sage, 0.35)), flatShading: true });
-    const stone = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.pearl, 0.28)), flatShading: true });
+    const land = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.earth, palette.sage, 0.35)), flatShading: true });
+    const stone = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.earth, palette.pearl, 0.28)), flatShading: true });
     const shadow = new THREE.MeshBasicMaterial({ map: glow, color: col(palette.void), transparent: true, opacity: 0.6, depthWrite: false });
     const lines: number[] = [];
     for (let i = 0; i < cellCount(this.level); i++) {
@@ -179,7 +179,7 @@ export class LanternLake3DScene implements LevelScene {
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
-    this.scene.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: col(palette.pearl), transparent: true, opacity: 0.14 })));
+    this.scene.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: col(palette.pearl), transparent: true, opacity: 0.012 })));
     return water;
   }
 

@@ -26,25 +26,36 @@ export interface BackdropMood {
 const sky = (k: number) => mixColor(palette.void, palette.sky, k);
 const low = (c: number, k = 0.5) => mixColor(c, palette.void, k);
 const hillsOf = (tint: number): [number, number] => [mixColor(sky(0.2), tint, 0.18), mixColor(palette.void, palette.sage, 0.16)];
-const mood = (m: Partial<BackdropMood> & Pick<BackdropMood, 'top' | 'horizon'>): BackdropMood => ({
-  clouds: mixColor(palette.pearl, palette.peach, 0.2),
-  cloudAmount: 0.4,
-  moonSize: 0.032,
-  moonWarm: 0.1,
-  crescent: 0,
-  mist: 0.45,
-  fireflies: 25,
-  hills: hillsOf(palette.sage),
-  ...m,
-});
+const mood = (m: Partial<BackdropMood> & Pick<BackdropMood, 'top' | 'horizon'>): BackdropMood => {
+  const full: BackdropMood = {
+    clouds: mixColor(palette.pearl, palette.peach, 0.2),
+    cloudAmount: 0.4,
+    moonSize: 0.032,
+    moonWarm: 0.1,
+    crescent: 0,
+    mist: 0.45,
+    fireflies: 25,
+    hills: hillsOf(palette.sage),
+    ...m,
+  };
+  // Near-black with only a faint pastel glow, as in the 2D game the owner loved: a mid-tone
+  // dusk blended slate into peach and read as dark purple.
+  return {
+    ...full,
+    top: mixColor(palette.void, full.top, 0.55),
+    horizon: mixColor(palette.void, full.horizon, 0.6),
+    hills: [mixColor(palette.void, full.hills[0], 0.6), mixColor(palette.void, full.hills[1], 0.6)],
+    cloudAmount: full.cloudAmount * 0.6,
+  };
+};
 
 export const MOON_LAKE: Record<string, BackdropMood> = {
   Reed: mood({ top: mixColor(palette.void, palette.sage, 0.16), horizon: low(palette.peach, 0.52), cloudAmount: 0.3, moonSize: 0.026, fireflies: 20 }),
-  Lotus: mood({ top: sky(0.16), horizon: low(palette.rose, 0.5), clouds: mixColor(palette.pearl, palette.rose, 0.25), hills: hillsOf(palette.rose), fireflies: 30 }),
+  Lotus: mood({ top: sky(0.16), horizon: low(mixColor(palette.rose, palette.peach, 0.5), 0.5), clouds: mixColor(palette.pearl, palette.rose, 0.25), hills: hillsOf(palette.rose), fireflies: 30 }),
   Heron: mood({ top: sky(0.24), horizon: low(mixColor(palette.sky, palette.pearl, 0.3), 0.55), clouds: palette.pearl, moonSize: 0.034, mist: 0.35, fireflies: 12, hills: hillsOf(palette.sky) }),
   Mist: mood({ top: sky(0.15), horizon: low(palette.pearl, 0.55), clouds: palette.pearl, cloudAmount: 0.7, moonSize: 0.026, crescent: 0.2, mist: 1, fireflies: 12 }),
   // A soft blue night with a warm peach glow low in the sky, sage hills and pale clouds.
-  Firefly: mood({ top: sky(0.2), horizon: low(mixColor(palette.peach, palette.rose, 0.25), 0.5), cloudAmount: 0.45, moonWarm: 0.15, fireflies: 60, hills: hillsOf(palette.sage) }),
+  Firefly: mood({ top: sky(0.2), horizon: low(palette.peach, 0.5), cloudAmount: 0.45, moonWarm: 0.15, fireflies: 60, hills: hillsOf(palette.sage) }),
   Reflection: mood({ top: mixColor(palette.void, palette.mint, 0.14), horizon: low(palette.mint, 0.56), clouds: mixColor(palette.pearl, palette.mint, 0.2), moonSize: 0.04, mist: 0.3, fireflies: 20, hills: hillsOf(palette.mint) }),
   Crescent: mood({ top: sky(0.18), horizon: low(palette.sky, 0.5), clouds: mixColor(palette.sky, palette.pearl, 0.4), moonSize: 0.045, moonWarm: 0, crescent: 0.75, fireflies: 20, hills: hillsOf(palette.sky) }),
   'Harvest Moon': mood({ top: mixColor(palette.void, palette.peach, 0.1), horizon: low(palette.peach, 0.45), clouds: mixColor(palette.peach, palette.pearl, 0.3), cloudAmount: 0.35, moonSize: 0.07, moonWarm: 1, mist: 0.4, hills: hillsOf(palette.peach) }),
@@ -58,17 +69,17 @@ const LAND: Record<Exclude<RegionId, 'moonlake'>, BackdropMood> = {
   // Tidepools: a sea-green night over the shore, a peach glow where the sun went down.
   tidepools: mood({ top: mixColor(palette.void, palette.mint, 0.15), horizon: low(palette.peach, 0.5), clouds: mixColor(palette.pearl, palette.mint, 0.2), hills: hillsOf(palette.mint), glimmer: palette.mint }),
   // Night Sky: the clearest night, cool blue, many stars, a pale crescent.
-  nightsky: mood({ top: sky(0.14), horizon: low(mixColor(palette.sky, palette.lavender, 0.3), 0.55), clouds: palette.pearl, cloudAmount: 0.2, crescent: 0.6, moonSize: 0.03, hills: hillsOf(palette.sky), glimmer: palette.pearl }),
+  nightsky: mood({ top: sky(0.14), horizon: low(palette.sky, 0.55), clouds: palette.pearl, cloudAmount: 0.2, crescent: 0.6, moonSize: 0.03, hills: hillsOf(palette.sky), glimmer: palette.pearl }),
   // Stone Garden: a warm dusk, sand-coloured light, sage hills.
   stonegarden: mood({ top: mixColor(palette.void, palette.peach, 0.1), horizon: low(palette.peach, 0.42), clouds: mixColor(palette.peach, palette.pearl, 0.4), hills: hillsOf(palette.sage), glimmer: palette.peach }),
   // Crystal Caves: a cool, glassy night; glimmers like crystal dust.
   crystalcaves: mood({ top: sky(0.12), horizon: low(palette.mint, 0.55), clouds: mixColor(palette.pearl, palette.sky, 0.3), cloudAmount: 0.25, hills: hillsOf(palette.sky), glimmer: palette.sky }),
-  // Shadow Terrace: a sage twilight with a rose glow low down.
-  shadowterrace: mood({ top: mixColor(palette.void, palette.sage, 0.14), horizon: low(palette.rose, 0.55), clouds: mixColor(palette.pearl, palette.rose, 0.2), hills: hillsOf(palette.sage), glimmer: palette.sage }),
+  // Shadow Terrace: a sage twilight with a peach glow low down.
+  shadowterrace: mood({ top: mixColor(palette.void, palette.sage, 0.14), horizon: low(palette.peach, 0.55), clouds: mixColor(palette.pearl, palette.rose, 0.2), hills: hillsOf(palette.sage), glimmer: palette.sage }),
 };
 
 // The world map: a calm, even night that belongs to no single land.
-export const MAP_MOOD: BackdropMood = mood({ top: sky(0.18), horizon: low(mixColor(palette.peach, palette.rose, 0.3), 0.52), clouds: mixColor(palette.pearl, palette.peach, 0.25), cloudAmount: 0.35, moonSize: 0, hills: hillsOf(palette.sage) });
+export const MAP_MOOD: BackdropMood = mood({ top: sky(0.18), horizon: low(palette.peach, 0.52), clouds: mixColor(palette.pearl, palette.peach, 0.25), cloudAmount: 0.35, moonSize: 0, hills: hillsOf(palette.sage) });
 
 export function moodFor(region: RegionId, levelIndex: number, levelName: string): BackdropMood {
   if (region === 'moonlake') return MOON_LAKE[levelName] ?? MOON_LAKE.Firefly!;
@@ -141,8 +152,8 @@ export class Backdrop {
               float disc = smoothstep(moonSize, moonSize * 0.93, r);
               float bite = smoothstep(moonSize, moonSize * 0.93, length(d - vec2(moonSize * 0.55 * crescent * 1.6, moonSize * 0.15 * crescent)));
               disc *= 1.0 - bite * step(0.01, crescent);
-              c += moonCol * exp(-r / (moonSize * 2.5)) * 0.16;
-              c = mix(c, moonCol * 0.82, disc * 0.9);
+              c += moonCol * exp(-r / (moonSize * 2.5)) * 0.06;
+              c = mix(c, moonCol * 0.55, disc * 0.4);
             }
             // Slow pastel clouds drifting across the middle of the sky.
             vec2 cp = vec2(uv.x * aspect * 1.6 + time * 0.012 + pan * 0.08, uv.y * 4.0);

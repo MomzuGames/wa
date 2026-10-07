@@ -36,6 +36,34 @@ export function glowTexture(): THREE.Texture {
   return glow;
 }
 
+let band: THREE.Texture | null = null;
+
+// A soft band, white, brightest along its middle and fading to nothing at both sides: laid
+// across a strip it makes a line of light with no hard edge (the 2D game's soft lines).
+export function softBandTexture(): THREE.Texture {
+  if (band) return band;
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 4;
+  const ctx = c.getContext('2d');
+  if (!ctx) {
+    band = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    band.needsUpdate = true;
+    return band;
+  }
+  const g = ctx.createLinearGradient(0, 0, 64, 0);
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(0.3, 'rgba(255,255,255,0.45)');
+  g.addColorStop(0.5, 'rgba(255,255,255,1)');
+  g.addColorStop(0.7, 'rgba(255,255,255,0.45)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 4);
+  band = new THREE.CanvasTexture(c);
+  band.colorSpace = THREE.SRGBColorSpace;
+  return band;
+}
+
 export function glowSprite(color: number, size: number, opacity: number): THREE.Sprite {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: col(color), transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending }));
   s.scale.set(size, size, 1);

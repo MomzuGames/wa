@@ -31,7 +31,7 @@ export class OverlayWorld {
   constructor(mood: BackdropMood) {
     this.backdrop = new Backdrop(this.scene, glowTexture(), mood);
     this.backdrop.fireflies.visible = false; // the map has its own glimmers
-    this.scene.add(new THREE.HemisphereLight(col(mixColor(palette.sky, palette.pearl, 0.5)), col(palette.ink), 0.8));
+    this.scene.add(new THREE.HemisphereLight(col(mixColor(palette.sky, palette.pearl, 0.5)), col(palette.void), 0.8));
     const moon = new THREE.DirectionalLight(col(palette.pearl), 1.1);
     moon.position.set(-8, 14, 6);
     this.scene.add(moon);

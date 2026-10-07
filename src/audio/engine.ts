@@ -47,6 +47,17 @@ function sliderToDb(value: number): number {
 }
 
 export class AudioEngine {
+  // Music is scheduled a little further ahead and played with a roomier buffer, so a busy
+  // frame (the 3D layer drawing) never makes it stutter. A calm game can spare the few
+  // hundredths of a second this adds to a tap's sound.
+  constructor() {
+    try {
+      if (typeof AudioContext !== 'undefined') Tone.setContext(new Tone.Context({ latencyHint: 'playback', lookAhead: 0.15 }));
+    } catch {
+      // No audio here (tests): the default context stands.
+    }
+  }
+
   private started = false;
   private starting = false;
   private master!: Tone.Volume;

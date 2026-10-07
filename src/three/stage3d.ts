@@ -18,7 +18,9 @@ export interface World3D {
 
 const stageStyle = {
   fadeSeconds: 0.8,
-  bloom: { strength: 0.47, radius: 0.6, threshold: 0.7 },
+  bloom: { strength: 0.3, radius: 0.55, threshold: 0.8 },
+  pixelRatio: 1.5, // sharp enough on a phone, and far lighter than its full 3x
+  samples: 4, // smooth edges (the composer's targets need their own antialiasing)
 } as const;
 
 export class Stage3D {
@@ -40,10 +42,10 @@ export class Stage3D {
     this.canvas.style.cssText = `position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0;opacity:0;transition:opacity ${stageStyle.fadeSeconds}s ease;pointer-events:none`;
     mount.prepend(this.canvas);
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    this.renderer.setPixelRatio(Math.min(stageStyle.pixelRatio, window.devicePixelRatio || 1));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.setClearColor(palette.void, 1);
-    this.composer = new EffectComposer(this.renderer);
+    this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: stageStyle.samples }));
     this.pass = new RenderPass(this.empty, this.emptyCamera);
     this.composer.addPass(this.pass);
     const b = stageStyle.bloom;
@@ -86,7 +88,9 @@ export class Stage3D {
     this.height = height;
     this.renderer.setSize(width, height, false);
     this.composer.setSize(width, height);
-    this.bloom.resolution.set(width / 2, height / 2);
+    // The bloom is a soft blur: it can work at a quarter of the size.
+    const pr = this.renderer.getPixelRatio();
+    this.bloom.setSize((width * pr) / 2, (height * pr) / 2);
   }
 
   render(dt: number): void {

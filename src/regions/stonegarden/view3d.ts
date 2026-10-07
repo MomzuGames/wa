@@ -48,7 +48,7 @@ export class Garden3DScene extends StoneLevelScene {
     // The plan reaches from the garden down to the tray; the 3D garden covers all of it.
     const tray = this.shelf();
     this.planHeight = Math.max(level.height, tray.bottom);
-    this.d = new Diorama({ region: 'stonegarden', levelIndex, levelName, width: Math.max(level.width, tray.width) + 1, depth: this.planHeight + 1, slab: { color: mixColor(palette.dim, palette.peach, 0.2), top: mixColor(palette.dim, palette.peach, 0.32) } });
+    this.d = new Diorama({ region: 'stonegarden', levelIndex, levelName, width: Math.max(level.width, tray.width) + 1, depth: this.planHeight + 1, slab: { color: mixColor(palette.earth, palette.peach, 0.2), top: mixColor(palette.earth, palette.peach, 0.32) } });
     this.buildGarden();
     this.views.forEach((_, i) => this.stones3d.push(this.makeStone(i)));
     this.d.marks.add(this.ghosts3d);
@@ -136,7 +136,7 @@ export class Garden3DScene extends StoneLevelScene {
 
   private makeStone(i: number): Stone3D {
     const fixed = this.level.pieces[i]!.fixed === true;
-    const material = new THREE.MeshStandardMaterial({ color: col(fixed ? mixColor(palette.dim, palette.pearl, 0.25) : mixColor(palette.peach, palette.dim, 0.25)), roughness: 0.8, flatShading: true, emissive: col(palette.peach), emissiveIntensity: 0 });
+    const material = new THREE.MeshStandardMaterial({ color: col(fixed ? mixColor(palette.earth, palette.pearl, 0.25) : mixColor(palette.peach, palette.earth, 0.25)), roughness: 0.8, flatShading: true, emissive: col(palette.peach), emissiveIntensity: 0 });
     const root = new THREE.Group();
     const spin = new THREE.Group();
     root.add(spin);

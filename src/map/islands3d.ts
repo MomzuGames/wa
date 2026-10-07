@@ -40,8 +40,8 @@ function soft(color: number, opts: THREE.MeshStandardMaterialParameters = {}): T
 function islandBase(): { group: THREE.Group; top: THREE.MeshStandardMaterial; rock: THREE.MeshStandardMaterial } {
   const group = new THREE.Group();
   const r = islandStyle.rimRound;
-  const top = soft(palette.dim);
-  const rock = soft(palette.dim);
+  const top = soft(palette.earth);
+  const rock = soft(palette.earth);
   const cap = new THREE.Mesh(
     new THREE.LatheGeometry(profile([[0, 0.02], [0.6, 0.022], [1 - r, 0.012], [1, -r * 0.6], [0.995, -r * 1.3]], 12).reverse(), islandStyle.segments),
     top,
@@ -102,7 +102,7 @@ export function makeIsland(id: RegionId, accent: number): Island {
     fading.push({ m, base: opts.opacity ?? 1 });
     return m;
   };
-  const sand = mixColor(palette.peach, palette.dim, 0.55);
+  const sand = mixColor(palette.peach, palette.earth, 0.55);
   switch (id) {
     case 'tidepools': {
       // A shallow pool with a sandy lip and rings of water rolling slowly outward.
@@ -193,7 +193,7 @@ export function makeIsland(id: RegionId, accent: number): Island {
     }
     case 'moonlake': {
       // A round lake with a paper lantern on it, under a crescent moon.
-      const lip = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.045, 20, 64), neutral(mixColor(sand, palette.dim, 0.3)));
+      const lip = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.045, 20, 64), neutral(mixColor(sand, palette.earth, 0.3)));
       lip.rotation.x = -Math.PI / 2;
       lip.position.y = 0.035;
       const lake = new THREE.Mesh(new THREE.CircleGeometry(0.66, 64), part(0.25, { roughness: 0.2, opacity: 0.92 }));
@@ -244,10 +244,11 @@ export function makeIsland(id: RegionId, accent: number): Island {
     group,
     setTint(color, sung) {
       sungAmount = sung;
-      top.color.set(mixColor(color, palette.dim, 0.38));
-      rock.color.set(mixColor(mixColor(palette.dim, palette.pearl, 0.22), color, 0.18));
+      // Light pastel tops and warm stone: a land's colour is never muddied into a dark purple.
+      top.color.set(mixColor(color, palette.earthLight, 0.22));
+      rock.color.set(mixColor(palette.earthLight, color, 0.12));
       for (const { m, tone } of tinted) {
-        const c = tone >= 0 ? mixColor(color, palette.dim, tone) : mixColor(color, palette.pearl, -tone);
+        const c = tone >= 0 ? mixColor(color, palette.earthLight, tone * 0.6) : mixColor(color, palette.pearl, -tone);
         m.color.set(c);
         if ('emissive' in m) (m as THREE.MeshStandardMaterial).emissive.set(color);
       }
@@ -287,7 +288,7 @@ export interface StepStone {
 export function makeStepStone(seed: number): StepStone {
   const group = new THREE.Group();
   const r = islandStyle.rimRound * 1.4;
-  const stoneColor = mixColor(palette.dim, palette.pearl, 0.2);
+  const stoneColor = mixColor(palette.earth, palette.pearl, 0.2);
   const body = new THREE.Mesh(
     new THREE.LatheGeometry(
       profile([[0, 0.02], [0.7, 0.02], [1 - r, 0.01], [1, -r], [0.96, -0.22], [0.78, -0.42], [0.45, -0.56], [0, -0.6]], 18).reverse(),
@@ -298,7 +299,7 @@ export function makeStepStone(seed: number): StepStone {
   const face = new THREE.Mesh(new THREE.CircleGeometry(0.72, 72), soft(palette.void, { roughness: 0.5 }));
   face.rotation.x = -Math.PI / 2;
   face.position.y = 0.025;
-  const ringMat = soft(palette.dim, { emissiveIntensity: 0.15 });
+  const ringMat = soft(palette.earth, { emissiveIntensity: 0.15 });
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.045, 16, 64), ringMat);
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.03;
@@ -309,11 +310,11 @@ export function makeStepStone(seed: number): StepStone {
     group,
     set(state, accent) {
       // Locked: a plain stone. Open: a ring of the land's colour. Solved: a soft wash of it.
-      ringMat.color.set(state === 'locked' ? mixColor(palette.dim, palette.pearl, 0.15) : mixColor(accent, palette.pearl, 0.15));
+      ringMat.color.set(state === 'locked' ? mixColor(palette.earth, palette.pearl, 0.15) : mixColor(accent, palette.pearl, 0.15));
       ringMat.emissive.set(state === 'locked' ? palette.void : accent);
       ringMat.emissiveIntensity = state === 'unlocked' ? 0.25 : 0.1;
       face.material.color.set(
-        state === 'solved' ? mixColor(accent, palette.dim, 0.25) : state === 'unlocked' ? mixColor(accent, palette.dim, 0.72) : mixColor(palette.dim, palette.pearl, 0.08),
+        state === 'solved' ? mixColor(accent, palette.earth, 0.25) : state === 'unlocked' ? mixColor(accent, palette.earth, 0.72) : mixColor(palette.earth, palette.pearl, 0.08),
       );
       (body.material as THREE.MeshStandardMaterial).color.set(mixColor(stoneColor, accent, state === 'locked' ? 0.08 : 0.25));
       halo.material.color.set(accent);

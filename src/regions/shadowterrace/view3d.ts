@@ -44,12 +44,12 @@ export class Shadow3DScene extends ShadowLevelScene {
     // The 2D drawing steps aside; its touch surface stays and feeds the 3D view.
     for (const g of [this.floor, this.walls, this.stones, this.ghosts, this.gauge, this.moon]) g.visible = false;
     const n = level.size;
-    this.d = new Diorama({ region: 'shadowterrace', levelIndex, levelName, width: n + 2.4, depth: n + 2.4, high: level.maxHeight * terrace3d.block * 0.7, flat: { pitch: 0.95, yaw: Math.PI / 4 }, slab: { color: mixColor(palette.dim, palette.sage, 0.22), top: mixColor(palette.dim, palette.peach, 0.18) } });
-    this.stone = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.sage, 0.55)), flatShading: true });
-    this.fixedStone = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.pearl, 0.25)), flatShading: true });
+    this.d = new Diorama({ region: 'shadowterrace', levelIndex, levelName, width: n + 2.4, depth: n + 2.4, high: level.maxHeight * terrace3d.block * 0.7, flat: { pitch: 0.95, yaw: Math.PI / 4 }, slab: { color: mixColor(palette.earth, palette.sage, 0.22), top: mixColor(palette.earth, palette.peach, 0.18) } });
+    this.stone = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.earth, palette.sage, 0.55)), flatShading: true });
+    this.fixedStone = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.earth, palette.pearl, 0.25)), flatShading: true });
     this.blockGeo = new THREE.BoxGeometry(1 - terrace3d.gap * 4, terrace3d.block - terrace3d.gap, 1 - terrace3d.gap * 4);
     // The terrace floor: one tile per cell (also what a tap lands on).
-    const tileMat = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.sage, 0.3)) });
+    const tileMat = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.earth, palette.sage, 0.3)) });
     for (let i = 0; i < n * n; i++) {
       const p = this.cellPos(i);
       const tile = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.06, 0.96), tileMat);
@@ -110,13 +110,15 @@ export class Shadow3DScene extends ShadowLevelScene {
     const n = this.level.size;
     const front = frontProfile(n, this.heights);
     const side = sideProfile(n, this.heights);
-    const want = new THREE.MeshBasicMaterial({ color: col(palette.pearl), transparent: true, opacity: 0.12, depthWrite: false });
-    const cast = new THREE.MeshBasicMaterial({ color: col(palette.void), transparent: true, opacity: 0.55, depthWrite: false });
-    const met = new THREE.MeshBasicMaterial({ color: col(palette.sage), transparent: true, opacity: 0.45, depthWrite: false });
+    // Soft, rounded and faint: where a shadow should reach is a pale sage wash, the shadow
+    // cast now a gentle darkening, a shadow that matches a soft sage glow.
+    const want = new THREE.MeshBasicMaterial({ color: col(mixColor(palette.sage, palette.pearl, 0.3)), transparent: true, opacity: 0.08, depthWrite: false });
+    const cast = new THREE.MeshBasicMaterial({ color: col(palette.void), transparent: true, opacity: 0.45, depthWrite: false });
+    const met = new THREE.MeshBasicMaterial({ color: col(palette.sage), transparent: true, opacity: 0.26, depthWrite: false });
     const edge = n / 2 - 0.6 + 0.1;
     const strip = (along: 'x' | 'z', k: number, length: number, mat: THREE.Material, y: number) => {
       if (length <= 0) return;
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(0.8, length), mat);
+      const m = new THREE.Mesh(roundedPlane(0.8, length, 0.16), mat);
       m.rotation.x = -Math.PI / 2;
       const c = k - (n - 1) / 2 - 0.6;
       if (along === 'z') m.position.set(c, y, edge + length / 2);
@@ -302,4 +304,20 @@ export class Shadow3DScene extends ShadowLevelScene {
     super.destroy();
     this.d.dispose();
   }
+}
+
+// A flat rectangle with softly rounded corners (w across, l along), lying in its own xy plane.
+function roundedPlane(w: number, l: number, r: number): THREE.ShapeGeometry {
+  const k = Math.min(r, w / 2, l / 2);
+  const s = new THREE.Shape();
+  s.moveTo(-w / 2 + k, -l / 2);
+  s.lineTo(w / 2 - k, -l / 2);
+  s.quadraticCurveTo(w / 2, -l / 2, w / 2, -l / 2 + k);
+  s.lineTo(w / 2, l / 2 - k);
+  s.quadraticCurveTo(w / 2, l / 2, w / 2 - k, l / 2);
+  s.lineTo(-w / 2 + k, l / 2);
+  s.quadraticCurveTo(-w / 2, l / 2, -w / 2, l / 2 - k);
+  s.lineTo(-w / 2, -l / 2 + k);
+  s.quadraticCurveTo(-w / 2, -l / 2, -w / 2 + k, -l / 2);
+  return new THREE.ShapeGeometry(s, 6);
 }

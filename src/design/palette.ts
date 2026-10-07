@@ -11,6 +11,8 @@ export const palette = {
   sage: 0xd0e8bf,
   lemon: 0xfff1b8,
   pearl: 0xf7f4ff,
+  earth: 0x26241f, // 3D stone, sand and rock: a warm neutral, never purple (the owner asked for no dark purples)
+  earthLight: 0x4a4740, // lit stone in 3D
   shadow: 0x000000, // only ever used at partial alpha, to darken (vignette, backdrops)
 } as const;
 

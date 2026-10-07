@@ -5,7 +5,7 @@ import type { ShellContext } from '../types';
 import { mixColor, palette } from '../../design/palette';
 import { durations, easings, scaled } from '../../design/motion';
 import { GhostHand } from '../../ui/ghostHand';
-import { col, glowSprite } from '../../three/kit';
+import { col, glowSprite, softBandTexture } from '../../three/kit';
 import { Diorama } from '../../three/diorama';
 import { DIR_DELTA, LEMON, ORIENTATIONS, type PieceKind, type PrismLevel, ROSE, SKY } from './model';
 import { PrismLevelScene, colorOf } from './view';
@@ -51,9 +51,9 @@ export class Prism3DScene extends PrismLevelScene {
   constructor(ctx: ShellContext, level: PrismLevel, isTutorial: boolean, levelIndex: number, levelName: string) {
     super(ctx, level, isTutorial);
     for (const c of [this.grid, this.beams, this.piecesLayer, this.hintLayer]) c.visible = false;
-    this.d = new Diorama({ region: 'crystalcaves', levelIndex, levelName, width: level.width, depth: level.height, slab: { color: mixColor(palette.dim, palette.sky, 0.2), top: mixColor(palette.dim, palette.sky, 0.12) } });
+    this.d = new Diorama({ region: 'crystalcaves', levelIndex, levelName, width: level.width, depth: level.height, slab: { color: mixColor(palette.earth, palette.sky, 0.2), top: mixColor(palette.earth, palette.sky, 0.12) } });
     // The cave floor: one soft tile per cell.
-    const tile = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.ink, palette.sky, 0.12)) });
+    const tile = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.earth, palette.sky, 0.12)) });
     for (let y = 0; y < level.height; y++) {
       for (let x = 0; x < level.width; x++) {
         const t = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.04, 0.92), tile);
@@ -91,7 +91,7 @@ export class Prism3DScene extends PrismLevelScene {
     const out: Piece3D = { root, spin };
     switch (kind) {
       case 'emitter': {
-        const base = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.18, 20), new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.pearl, 0.25)), ...fade }));
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.18, 20), new THREE.MeshLambertMaterial({ color: col(mixColor(palette.earth, palette.pearl, 0.25)), ...fade }));
         base.position.y = 0.09;
         const core = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 14), new THREE.MeshBasicMaterial({ color: col(tint), ...fade }));
         core.position.y = cave3d.beamY;
@@ -118,7 +118,7 @@ export class Prism3DScene extends PrismLevelScene {
           new THREE.MeshStandardMaterial({ color: col(paneColor), metalness: glassy ? 0.1 : 0.85, roughness: glassy ? 0.2 : 0.15, transparent: glassy || ghost, opacity: ghost ? 0.3 : glassy ? 0.5 : 1, emissive: col(paneColor), emissiveIntensity: 0.15, depthWrite: !ghost }),
         );
         pane.position.y = cave3d.beamY;
-        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.06, 0.12), new THREE.MeshLambertMaterial({ color: col(palette.dim), ...fade }));
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.06, 0.12), new THREE.MeshLambertMaterial({ color: col(palette.earth), ...fade }));
         foot.position.y = 0.06;
         spin.add(pane, foot);
         break;
@@ -130,7 +130,7 @@ export class Prism3DScene extends PrismLevelScene {
         break;
       }
       case 'blocker': {
-        const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.34, 0), new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.ink, 0.4)), flatShading: true, ...fade }));
+        const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.34, 0), new THREE.MeshLambertMaterial({ color: col(mixColor(palette.earth, palette.earth, 0.4)), flatShading: true, ...fade }));
         stone.scale.set(1, 0.9, 1);
         stone.position.y = 0.3;
         root.add(stone);
@@ -155,7 +155,7 @@ export class Prism3DScene extends PrismLevelScene {
     }
     // A soft ring on the floor marks a piece that turns.
     if (p.rotatable && !ghost) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.015, 6, 40), new THREE.MeshBasicMaterial({ color: col(palette.pearl), transparent: true, opacity: 0.3 }));
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.012, 8, 48), new THREE.MeshBasicMaterial({ color: col(palette.sky), transparent: true, opacity: 0.12 }));
       ring.rotation.x = -Math.PI / 2;
       ring.position.y = 0.03;
       root.add(ring);
@@ -205,18 +205,16 @@ export class Prism3DScene extends PrismLevelScene {
       const exit = occupied.has(seg.y * this.level.width + seg.x) ? 0 : 0.5;
       const a = c.clone().add(new THREE.Vector3(-dx * 0.5, 0, -dy * 0.5));
       const b = c.clone().add(new THREE.Vector3(dx * exit, 0, dy * exit));
+      // A beam is soft light: a wide faint glow and a thin pastel core, both fading at the edges.
       let mat = mats.get(seg.color);
       if (!mat) {
-        mat = new THREE.MeshBasicMaterial({ color: col(colorOf(seg.color)), transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending });
+        mat = new THREE.MeshBasicMaterial({ map: softBandTexture(), color: col(colorOf(seg.color)), transparent: true, opacity: 0.5, depthWrite: false });
         mats.set(seg.color, mat);
         this.beamMats.push(mat);
       }
-      const len = a.distanceTo(b);
-      if (len < 0.01) continue;
-      const rod = new THREE.Mesh(new THREE.CylinderGeometry(cave3d.beamRadius, cave3d.beamRadius, len, 8, 1, true), mat);
-      rod.position.copy(a).add(b).multiplyScalar(0.5);
-      rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
-      this.beams3d.add(rod);
+      if (a.distanceTo(b) < 0.01) continue;
+      this.d.strip(a, b, 0.32, mat, this.beams3d);
+      this.d.strip(a.clone().setY(a.y + 0.002), b.clone().setY(b.y + 0.002), 0.09, mat, this.beams3d);
     }
   }
 

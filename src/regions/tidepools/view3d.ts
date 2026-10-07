@@ -5,7 +5,7 @@ import type { ShellContext } from '../types';
 import { mixColor, palette } from '../../design/palette';
 import { durations, scaled } from '../../design/motion';
 import { makeFinger } from '../../ui/introGlyphs';
-import { col, glowTexture } from '../../three/kit';
+import { col, glowSprite, glowTexture, softBandTexture } from '../../three/kit';
 import { Diorama } from '../../three/diorama';
 import { type ShellLevel, clueMet, clueState, edgeEnds, exits } from './model';
 import { ShellPoolScene } from './view';
@@ -40,7 +40,7 @@ export class Pool3DScene extends ShellPoolScene {
     for (const g of [this.water, this.points, this.glow, this.lines, this.flow, this.clueLayer, this.hintLayer]) g.visible = false;
     const w = level.width - 1;
     const h = level.height - 1;
-    this.d = new Diorama({ region: 'tidepools', levelIndex, levelName, width: w + 1, depth: h + 1, slab: { color: mixColor(palette.dim, palette.peach, 0.2), top: mixColor(palette.dim, palette.peach, 0.28) } });
+    this.d = new Diorama({ region: 'tidepools', levelIndex, levelName, width: w + 1, depth: h + 1, slab: { color: mixColor(palette.earth, palette.peach, 0.2), top: mixColor(palette.earth, palette.peach, 0.28) } });
     // Shallow water over the sand, and the points as small drops.
     const shallow = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.6, h + 0.6), new THREE.MeshBasicMaterial({ color: col(mixColor(palette.void, palette.mint, 0.18)), transparent: true, opacity: 0.55, depthWrite: false }));
     shallow.rotation.x = -Math.PI / 2;
@@ -58,7 +58,7 @@ export class Pool3DScene extends ShellPoolScene {
     const n = 120;
     const glintGeo = new THREE.BufferGeometry();
     glintGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3).fill(-99), 3));
-    this.glints = new THREE.Points(glintGeo, new THREE.PointsMaterial({ map: glowTexture(), color: col(palette.pearl), size: 0.14, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.glints = new THREE.Points(glintGeo, new THREE.PointsMaterial({ map: glowTexture(), color: col(palette.pearl), size: 0.12, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }));
     this.d.board.add(this.water3d, this.clues3d, this.glints);
     this.layout(ctx.width, ctx.height);
   }
@@ -112,24 +112,30 @@ export class Pool3DScene extends ShellPoolScene {
     if (!this.d) return;
     this.d.clearGroup(this.water3d);
     const { width: w, height: h } = this.level;
-    const glow = new THREE.MeshBasicMaterial({ color: col(palette.mint), transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending });
-    const body = new THREE.MeshBasicMaterial({ color: col(palette.mint), transparent: true, opacity: 0.85, depthWrite: false });
+    // The water as the 2D pool drew it: a wide faint glow, a soft translucent body and a thin
+    // pale core, every layer fading out at its edges.
+    const soft = (color: number, opacity: number) => new THREE.MeshBasicMaterial({ map: softBandTexture(), color: col(color), transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending });
+    const glow = soft(palette.mint, 0.18);
+    const body = soft(palette.mint, 0.45);
+    const core = soft(mixColor(palette.mint, palette.pearl, 0.4), 0.55);
+    const joints = new Set<string>();
     for (const e of this.drawn) {
       const [a, b] = edgeEnds(w, h, e);
       const pa = this.at(a.x, a.y);
       const pb = this.at(b.x, b.y);
-      this.d.strip(pa.clone().setY(0.055), pb.clone().setY(0.055), 0.34, glow, this.water3d);
-      this.d.strip(pa.clone().setY(0.06), pb.clone().setY(0.06), 0.11, body, this.water3d);
+      this.d.strip(pa.clone().setY(0.055), pb.clone().setY(0.055), 0.42, glow, this.water3d);
+      this.d.strip(pa.clone().setY(0.06), pb.clone().setY(0.06), 0.2, body, this.water3d);
+      this.d.strip(pa.clone().setY(0.065), pb.clone().setY(0.065), 0.07, core, this.water3d);
+      joints.add(`${a.x},${a.y}`);
+      joints.add(`${b.x},${b.y}`);
     }
-    // Open ends: a drop of water where a stream stops.
-    const endMat = new THREE.MeshBasicMaterial({ color: col(palette.mint) });
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        if (exits(this.level, this.drawn, x, y).length !== 1) continue;
-        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 8), endMat);
-        dot.position.copy(this.at(x, y)).setY(0.07);
-        this.water3d.add(dot);
-      }
+    // Where streams meet or stop, a soft round pool of light closes the joint.
+    for (const k of joints) {
+      const [x, y] = k.split(',').map(Number) as [number, number];
+      const end = exits(this.level, this.drawn, x, y).length === 1;
+      const pool = glowSprite(palette.mint, end ? 0.5 : 0.3, end ? 0.5 : 0.25);
+      pool.position.copy(this.at(x, y)).setY(0.07);
+      this.water3d.add(pool);
     }
     this.runs = this.findRuns();
     this.drawClues();
