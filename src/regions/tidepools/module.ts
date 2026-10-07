@@ -6,7 +6,8 @@ import { durations, easings, scaled } from '../../design/motion';
 import { progression } from '../../core/progress';
 import levelsJson from './levels.json';
 import type { ShellLevel } from './model';
-import { ShellPoolScene } from './view';
+import { Pool3DScene } from './view3d';
+import { LEVEL_NAMES } from '../catalog';
 
 // Shells and Stones: draw one closed loop of tide through the pool from its clues.
 const levels = levelsJson as ShellLevel[];
@@ -64,6 +65,6 @@ export const tidepoolsModule: PuzzleModule = {
   id: 'tidepools',
   accent: 'mint',
   levelCount: progression.levelsPerRegion,
-  createLevel: (ctx, levelIndex) => new ShellPoolScene(ctx, levels[levelIndex]!, levelIndex === 0),
+  createLevel: (ctx, levelIndex) => new Pool3DScene(ctx, levels[levelIndex]!, levelIndex === 0, levelIndex, LEVEL_NAMES.tidepools[levelIndex] ?? ''),
   playRegionFinale: playFinale,
 };

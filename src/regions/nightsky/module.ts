@@ -5,7 +5,8 @@ import { durations, scaled } from '../../design/motion';
 import { progression } from '../../core/progress';
 import levelsJson from './levels.json';
 import type { SkyLevel } from './model';
-import { SkyLevelScene } from './view';
+import { NightSky3DScene } from './view3d';
+import { LEVEL_NAMES } from '../catalog';
 
 const levels = levelsJson as SkyLevel[];
 
@@ -33,6 +34,6 @@ export const nightskyModule: PuzzleModule = {
   id: 'nightsky',
   accent: 'lavender',
   levelCount: progression.levelsPerRegion,
-  createLevel: (ctx, levelIndex) => new SkyLevelScene(ctx, levels[levelIndex]!, levelIndex === 0),
+  createLevel: (ctx, levelIndex) => new NightSky3DScene(ctx, levels[levelIndex]!, levelIndex === 0, levelIndex, LEVEL_NAMES.nightsky[levelIndex] ?? ''),
   playRegionFinale: playFinale,
 };

@@ -6,7 +6,8 @@ import { durations, easings, scaled } from '../../design/motion';
 import { progression } from '../../core/progress';
 import levelsJson from './levels.json';
 import type { StoneLevel } from './model';
-import { StoneLevelScene } from './view';
+import { Garden3DScene } from './view3d';
+import { LEVEL_NAMES } from '../catalog';
 
 const levels = levelsJson as StoneLevel[];
 
@@ -59,6 +60,6 @@ export const stonegardenModule: PuzzleModule = {
   id: 'stonegarden',
   accent: 'peach',
   levelCount: progression.levelsPerRegion,
-  createLevel: (ctx, levelIndex) => new StoneLevelScene(ctx, levels[levelIndex]!, levelIndex === 0),
+  createLevel: (ctx, levelIndex) => new Garden3DScene(ctx, levels[levelIndex]!, levelIndex === 0, levelIndex, LEVEL_NAMES.stonegarden[levelIndex] ?? ''),
   playRegionFinale: playFinale,
 };
