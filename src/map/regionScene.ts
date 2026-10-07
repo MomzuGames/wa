@@ -14,7 +14,7 @@ import { createRng } from '../core/rng';
 import { OverlayWorld } from '../three/overlayWorld';
 import { moodFor } from '../three/backdrop';
 import { stage3d } from '../three/stage3d';
-import { type StepStone, makeStepStone } from './islands3d';
+import { type StepStone, makeLevelIsland } from './islands3d';
 import { JourneyCamera } from './journeyCamera';
 import { StoryLight } from '../story/art';
 import { familyColor } from '../story/family';
@@ -46,7 +46,7 @@ const trailStyle = {
   // The scrolling journey on a phone: large stones down a winding path, one level about
   // every fifth of the screen height; a swipe scrolls it, and the lights come to the view.
   journey: {
-    stoneWidth: 0.24, // of the screen width
+    stoneWidth: 0.3, // of the screen width
     step: 0.2, // of the screen height between levels
     first: 0.36, // where the first level sits when scrolled to the top
     last: 0.7, // and the last when scrolled to the bottom
@@ -144,7 +144,7 @@ export class RegionScene implements Scene {
       this.world3d = new OverlayWorld(moodFor(regionId, getRegion(regionId).solved.length, ''));
       this.atmosphere.container.visible = false;
       this.nodes.forEach((node, i) => {
-        const stone = makeStepStone(i);
+        const stone = makeLevelIsland(regionId, i);
         this.world3d!.add(stone.group, () => node.root.getGlobalPosition(), () => node.radius * 1.45 * this.stoneScale * node.root.worldTransform.a);
         this.stones.push(stone);
       });

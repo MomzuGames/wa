@@ -3,7 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mixColor, palette } from '../design/palette';
 import type { RegionId } from '../regions/types';
-import { col, glowSprite, paperLantern } from '../three/kit';
+import { col, glowSprite, glowTexture, paperLantern } from '../three/kit';
 
 // The six lands on the world map, each a small floating island carrying its land in 3D:
 // a tide pool with ripples, a constellation over a hill, balanced pebbles on raked sand,
@@ -89,6 +89,10 @@ function islandBase(id: string): IslandBase {
     rock,
   );
   shadeDown(root.geometry, 0, -0.82, 1, 0.38);
+  // Every island its own: a deeper or shallower root, and its own count of lumps, pebbles
+  // and tufts, all from its seed.
+  const depthScale = 0.8 + rand() * 0.35;
+  root.scale.y = depthScale;
   group.add(cap, root);
   // Each kind of small piece is merged into one shape, so an island is drawn in a handful
   // of calls rather than dozens (a phone pays for every call).
@@ -96,24 +100,27 @@ function islandBase(id: string): IslandBase {
     geo.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(...pos), new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot)), new THREE.Vector3(...scale)));
   // A few rounded lumps of rock beneath, so the root is never a plain bowl.
   const lumpGeos: THREE.BufferGeometry[] = [];
-  for (let k = 0; k < 4; k++) {
-    const a = (k / 4) * Math.PI * 2 + rand() * 0.9;
+  const lumpCount = 3 + Math.floor(rand() * 3);
+  for (let k = 0; k < lumpCount; k++) {
+    const a = (k / lumpCount) * Math.PI * 2 + rand() * 0.9;
     const size = 0.16 + rand() * 0.12;
-    const depth = 0.3 + rand() * 0.3;
+    const depth = (0.3 + rand() * 0.3) * depthScale;
     const reach = 0.82 - depth * 0.75;
     lumpGeos.push(placed(new THREE.SphereGeometry(size, 24, 16), [Math.cos(a) * reach, -depth, Math.sin(a) * reach], [1, 1.3, 1]));
   }
   group.add(new THREE.Mesh(mergeGeometries(lumpGeos), lumps));
   // Pebbles along the rim, and small tufts of grass that sway in the wind.
   const pebbleGeos: THREE.BufferGeometry[] = [];
-  for (let k = 0; k < 7; k++) {
+  const pebbleCount = 5 + Math.floor(rand() * 5);
+  for (let k = 0; k < pebbleCount; k++) {
     const a = rand() * Math.PI * 2;
     const d = 0.8 + rand() * 0.12;
     const size = 0.03 + rand() * 0.035;
     pebbleGeos.push(placed(new THREE.SphereGeometry(size, 16, 10), [Math.cos(a) * d, 0.02 + size * 0.3, Math.sin(a) * d], [1.3, 0.6, 1]));
   }
   group.add(new THREE.Mesh(mergeGeometries(pebbleGeos), pebbles));
-  for (let k = 0; k < 5; k++) {
+  const tuftCount = 3 + Math.floor(rand() * 4);
+  for (let k = 0; k < tuftCount; k++) {
     const a = rand() * Math.PI * 2;
     const d = 0.74 + rand() * 0.18;
     const blades: THREE.BufferGeometry[] = [];
@@ -355,52 +362,159 @@ function fadeOf(group: THREE.Group): number {
   return (group.userData.fade as number | undefined) ?? 1;
 }
 
-// A level on a land's trail: a small floating stepping stone, turned smooth like the
-// islands. Locked stones are plain, open ones carry a ring of the land's colour, solved
-// ones a soft wash of it.
+// A level on a land's trail: a small floating island of its own, like the lands on the
+// map (pastel top, shaded rock with lumps beneath, pebbles and swaying grass), each one
+// different (its seed gives its shape, its pebbles and grass, and a little piece of its
+// land set off to one side: a pool, a star, a cairn, a crystal, a lantern's glow, blocks).
+// Locked islands are muted and plain; an open one carries a soft ring of the land's colour;
+// a solved one is washed in it, with a faint glow beneath.
 export interface StepStone {
   group: THREE.Group;
   set(state: 'locked' | 'unlocked' | 'solved', accent: number): void;
   update(t: number): void;
 }
 
-export function makeStepStone(seed: number): StepStone {
-  const group = new THREE.Group();
-  const r = islandStyle.rimRound * 1.4;
-  const stoneColor = mixColor(palette.earth, palette.pearl, 0.2);
-  const body = new THREE.Mesh(
-    new THREE.LatheGeometry(
-      profile([[0, 0.02], [0.7, 0.02], [1 - r, 0.01], [1, -r], [0.96, -0.22], [0.78, -0.42], [0.45, -0.56], [0, -0.6]], 18).reverse(),
-      islandStyle.segments,
-    ),
-    soft(stoneColor),
-  );
-  const face = new THREE.Mesh(new THREE.CircleGeometry(0.72, 72), soft(palette.void, { roughness: 0.5 }));
-  face.rotation.x = -Math.PI / 2;
-  face.position.y = 0.025;
-  const ringMat = soft(palette.earth, { emissiveIntensity: 0.15 });
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.045, 16, 64), ringMat);
+export function makeLevelIsland(region: RegionId, index: number): StepStone {
+  const base = islandBase(`${region}:level:${index}`);
+  const { group, top, rock, lumps, pebbles, grass } = base;
+  const rand = seeded(`${region}:prop:${index}`);
+  const movers: Array<(t: number) => void> = [...base.sway];
+  const prop = soft(palette.earthLight, { roughness: 0.6 });
+  const propGlow: THREE.Sprite[] = [];
+  // The little piece of the land, off to one side so the middle stays clear for the ring.
+  const a = rand() * Math.PI * 2;
+  const at = new THREE.Vector3(Math.cos(a) * 0.5, 0, Math.sin(a) * 0.5);
+  const piece = new THREE.Group();
+  piece.position.copy(at);
+  group.add(piece);
+  switch (region) {
+    case 'tidepools': {
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(0.17 + rand() * 0.05, 40), prop);
+      pool.rotation.x = -Math.PI / 2;
+      pool.position.y = 0.03;
+      const lip = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.025, 12, 40), soft(mixColor(palette.peach, palette.earthLight, 0.5)));
+      lip.rotation.x = -Math.PI / 2;
+      lip.position.y = 0.03;
+      piece.add(pool, lip);
+      break;
+    }
+    case 'nightsky': {
+      const count = 1 + Math.floor(rand() * 2);
+      for (let k = 0; k < count; k++) {
+        const star = new THREE.Mesh(new THREE.SphereGeometry(0.045, 20, 14), prop);
+        const y = 0.35 + rand() * 0.3;
+        star.position.set((rand() - 0.5) * 0.3, y, (rand() - 0.5) * 0.3);
+        const halo = glowSprite(palette.pearl, 0.35, 0.18);
+        halo.position.copy(star.position);
+        propGlow.push(halo);
+        piece.add(star, halo);
+        const phase = rand() * 6;
+        movers.push((t) => {
+          star.position.y = y + 0.03 * Math.sin(t * 0.9 + phase);
+          halo.position.y = star.position.y;
+        });
+      }
+      break;
+    }
+    case 'stonegarden': {
+      const count = 2 + Math.floor(rand() * 2);
+      let y = 0.02;
+      for (let k = 0; k < count; k++) {
+        const r = 0.13 - k * 0.03;
+        const stone = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 20), prop);
+        stone.scale.set(1, 0.5, 1);
+        y += r * 0.5;
+        stone.position.y = y;
+        y += r * 0.45;
+        piece.add(stone);
+      }
+      break;
+    }
+    case 'crystalcaves': {
+      const count = 1 + Math.floor(rand() * 2);
+      for (let k = 0; k < count; k++) {
+        const h = 0.22 + rand() * 0.18;
+        const r = 0.05 + rand() * 0.025;
+        const crystal = new THREE.Group();
+        const column = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.05, h, 6), prop);
+        column.position.y = h / 2;
+        const tip = new THREE.Mesh(new THREE.ConeGeometry(r, r * 1.6, 6), prop);
+        tip.position.y = h + r * 0.8;
+        crystal.add(column, tip);
+        crystal.position.set((k - (count - 1) / 2) * 0.12, 0, 0);
+        crystal.rotation.z = (rand() - 0.5) * 0.4;
+        piece.add(crystal);
+      }
+      break;
+    }
+    case 'moonlake': {
+      const pond = new THREE.Mesh(new THREE.CircleGeometry(0.18, 40), soft(mixColor(palette.sky, palette.earthLight, 0.45)));
+      pond.rotation.x = -Math.PI / 2;
+      pond.position.y = 0.025;
+      const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.06, 24, 16), prop);
+      lantern.scale.set(1, 1.2, 1);
+      lantern.position.y = 0.12;
+      const glow = glowSprite(palette.lemon, 0.5, 0.2);
+      glow.position.y = 0.12;
+      propGlow.push(glow);
+      piece.add(pond, lantern, glow);
+      const phase = rand() * 6;
+      movers.push((t) => {
+        lantern.position.y = 0.12 + 0.015 * Math.sin(t * 1.1 + phase);
+        glow.position.y = lantern.position.y;
+      });
+      break;
+    }
+    case 'shadowterrace': {
+      // The same soft rounded blocks as the land's island on the map.
+      const block = new RoundedBoxGeometry(0.17, 0.1, 0.17, 4, 0.03);
+      const stacks = 1 + Math.floor(rand() * 3);
+      for (let k = 0; k < stacks; k++) {
+        const height = 1 + Math.floor(rand() * 3);
+        for (let j = 0; j < height; j++) {
+          const cube = new THREE.Mesh(block, prop);
+          cube.position.set((k % 2) * 0.19 - 0.09, 0.05 + j * 0.105, Math.floor(k / 2) * 0.19 - 0.05);
+          piece.add(cube);
+        }
+      }
+      break;
+    }
+  }
+  // The level's mark in the middle: a soft ring while open, a wash of colour once solved.
+  const ringMat = soft(palette.earthLight, { roughness: 0.4 });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.035, 16, 64), ringMat);
   ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.03;
-  const halo = glowSprite(palette.pearl, 2.4, 0);
-  halo.position.y = 0.1;
-  group.add(body, face, ring, halo);
+  ring.position.y = 0.04;
+  const wash = new THREE.Mesh(new THREE.CircleGeometry(0.3, 48), new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, opacity: 0, depthWrite: false }));
+  wash.rotation.x = -Math.PI / 2;
+  wash.position.y = 0.035;
+  const halo = glowSprite(palette.pearl, 3, 0);
+  halo.position.y = -0.3;
+  group.add(ring, wash, halo);
+  const seed = index;
   return {
     group,
     set(state, accent) {
-      // Locked: a plain stone. Open: a ring of the land's colour. Solved: a soft wash of it.
-      ringMat.color.set(state === 'locked' ? mixColor(palette.earth, palette.pearl, 0.15) : accent);
-      ringMat.emissive.set(state === 'locked' ? palette.void : accent);
-      ringMat.emissiveIntensity = state === 'unlocked' ? 0.08 : 0.04;
-      face.material.color.set(
-        state === 'solved' ? mixColor(accent, palette.earth, 0.25) : state === 'unlocked' ? mixColor(accent, palette.earth, 0.72) : mixColor(palette.earth, palette.pearl, 0.08),
-      );
-      (body.material as THREE.MeshStandardMaterial).color.set(mixColor(stoneColor, accent, state === 'locked' ? 0.08 : 0.25));
+      const sung = state !== 'locked';
+      // A locked island keeps only a hint of its land's colour.
+      const color = sung ? accent : mixColor(accent, palette.earthLight, 0.6);
+      top.color.set(mixColor(color, palette.earthLight, state === 'solved' ? 0.12 : 0.3));
+      rock.color.set(mixColor(palette.earthLight, color, 0.12));
+      lumps.color.set(mixColor(palette.earth, color, 0.1));
+      pebbles.color.set(mixColor(mixColor(palette.earthLight, palette.pearl, 0.35), color, 0.15));
+      grass.color.set(mixColor(palette.sage, color, 0.35));
+      prop.color.set(mixColor(color, palette.pearl, 0.25));
+      propGlow.forEach((g) => (g.material.opacity = sung ? 0.18 : 0.06));
+      ring.visible = state === 'unlocked';
+      ringMat.color.set(mixColor(accent, palette.pearl, 0.1));
+      wash.material.color.set(accent);
+      wash.material.opacity = state === 'solved' ? 0.35 : 0;
       halo.material.color.set(accent);
       halo.material.opacity = state === 'solved' ? 0.1 : 0;
     },
     update(t) {
       group.position.y = 0.06 * Math.sin(t * 0.7 + seed * 1.7);
+      movers.forEach((f) => f(t));
     },
   };
 }

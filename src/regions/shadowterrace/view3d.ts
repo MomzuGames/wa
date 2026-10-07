@@ -5,6 +5,7 @@ import type { ShellContext } from '../types';
 import { mixColor, palette } from '../../design/palette';
 import { durations, scaled } from '../../design/motion';
 import { GhostHand } from '../../ui/ghostHand';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { col } from '../../three/kit';
 import { Diorama } from '../../three/diorama';
 import { type ShadowLevel, frontProfile, sideProfile, stoneCount } from './model';
@@ -35,24 +36,29 @@ export class Shadow3DScene extends ShadowLevelScene {
   private holdTimer: gsap.core.Tween | null = null;
   private held = false;
   private pressCell = -1;
-  private stone!: THREE.MeshLambertMaterial;
-  private fixedStone!: THREE.MeshLambertMaterial;
-  private blockGeo!: THREE.BoxGeometry;
+  // The soft rounded pastel blocks of the land's island on the map: one shade per layer,
+  // lighter toward the top.
+  private stoneLayers: THREE.MeshStandardMaterial[] = [];
+  private fixedStone!: THREE.MeshStandardMaterial;
+  private blockGeo!: THREE.BufferGeometry;
 
   constructor(ctx: ShellContext, level: ShadowLevel, isTutorial: boolean, levelIndex: number, levelName: string) {
     super(ctx, level, isTutorial);
     // The 2D drawing steps aside; its touch surface stays and feeds the 3D view.
     for (const g of [this.floor, this.walls, this.stones, this.ghosts, this.gauge, this.moon]) g.visible = false;
     const n = level.size;
-    this.d = new Diorama({ region: 'shadowterrace', levelIndex, levelName, width: n + 2.4, depth: n + 2.4, high: level.maxHeight * terrace3d.block * 0.7, flat: { pitch: 0.95, yaw: Math.PI / 4 }, slab: { color: mixColor(palette.earth, palette.sage, 0.22), top: mixColor(palette.earth, palette.peach, 0.18) } });
-    this.stone = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.earth, palette.sage, 0.55)), flatShading: true });
-    this.fixedStone = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.earth, palette.pearl, 0.25)), flatShading: true });
-    this.blockGeo = new THREE.BoxGeometry(1 - terrace3d.gap * 4, terrace3d.block - terrace3d.gap, 1 - terrace3d.gap * 4);
-    // The terrace floor: one tile per cell (also what a tap lands on).
-    const tileMat = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.earth, palette.sage, 0.3)) });
+    this.d = new Diorama({ region: 'shadowterrace', levelIndex, levelName, width: n + 2.4, depth: n + 2.4, high: level.maxHeight * terrace3d.block * 0.7, flat: { pitch: 0.95, yaw: Math.PI / 4 }, slab: { color: mixColor(palette.earthLight, palette.sage, 0.15), top: mixColor(palette.sage, palette.earthLight, 0.45) } });
+    for (let k = 0; k <= level.maxHeight; k++) {
+      this.stoneLayers.push(new THREE.MeshStandardMaterial({ color: col(mixColor(palette.sage, palette.earthLight, Math.max(0, 0.24 - k * 0.07))), roughness: 0.8 }));
+    }
+    this.fixedStone = new THREE.MeshStandardMaterial({ color: col(mixColor(mixColor(palette.pearl, palette.sage, 0.2), palette.earthLight, 0.4)), roughness: 0.8 });
+    this.blockGeo = new RoundedBoxGeometry(1 - terrace3d.gap * 4, terrace3d.block - terrace3d.gap, 1 - terrace3d.gap * 4, 4, 0.09);
+    // The terrace floor: one soft tile per cell (also what a tap lands on).
+    const tileMat = new THREE.MeshStandardMaterial({ color: col(mixColor(palette.sage, palette.earthLight, 0.58)), roughness: 0.9 });
+    const tileGeo = new RoundedBoxGeometry(0.94, 0.06, 0.94, 2, 0.025);
     for (let i = 0; i < n * n; i++) {
       const p = this.cellPos(i);
-      const tile = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.06, 0.96), tileMat);
+      const tile = new THREE.Mesh(tileGeo, tileMat);
       tile.position.set(p.x, 0.03, p.z);
       tile.userData.cell = i;
       this.tiles.push(tile);
@@ -82,20 +88,21 @@ export class Shadow3DScene extends ShadowLevelScene {
   }
 
   private drawStacks(): void {
-    this.d.clearGroup(this.stacks);
+    this.stacks.clear(); // the block shape is shared: never disposed between redraws
     this.shown.forEach((h, i) => {
       const p = this.cellPos(i);
-      const mat = this.level.fixed[i]! >= 0 ? this.fixedStone : this.stone;
+      const fixed = this.level.fixed[i]! >= 0;
       const whole = Math.floor(Math.max(0, h) + 1e-6);
       const part = Math.max(0, h) - whole;
+      const mat = (k: number) => (fixed ? this.fixedStone : this.stoneLayers[Math.min(k, this.stoneLayers.length - 1)]!);
       for (let k = 0; k < whole; k++) {
-        const b = new THREE.Mesh(this.blockGeo, mat);
+        const b = new THREE.Mesh(this.blockGeo, mat(k));
         b.position.set(p.x, p.y + terrace3d.block * (k + 0.5), p.z);
         b.userData.cell = i;
         this.stacks.add(b);
       }
       if (part > 0.02) {
-        const b = new THREE.Mesh(this.blockGeo, mat);
+        const b = new THREE.Mesh(this.blockGeo, mat(whole));
         b.scale.y = part;
         b.position.set(p.x, p.y + terrace3d.block * (whole + part / 2), p.z);
         b.userData.cell = i;
