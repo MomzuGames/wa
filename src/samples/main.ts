@@ -3,20 +3,19 @@ import { cssHex } from '../design/palette';
 import levelsJson from '../regions/moonlake/levels.json';
 import type { LanternLevel } from '../regions/moonlake/model';
 import { SampleA } from './sampleA';
-import { SampleB } from './sampleB';
-import { SampleC } from './sampleC';
+import { DioramaSample } from './diorama';
 
 // Style samples: the same Moon Lake level ("Firefly") in three looks, to choose a direction.
 //   A  2.5D: the game as it is, with more depth
-//   B  a 3D world behind the same flat puzzle
-//   C  everything in 3D
+//   C  the puzzle as a 3D diorama, turned by swiping
+//   D  the same, isometric (no perspective), like Monument Valley
 // Each is playable. A switch at the top flips between them.
 
 const level = (levelsJson as LanternLevel[])[4]!;
 const SAMPLES = [
   { key: 'A', name: '2.5D', note: 'Today’s game, with more depth: moonlight shafts, drifting mist.', make: (h: HTMLElement, s: () => void) => new SampleA(h, level, s) },
-  { key: 'B', name: '3D world', note: 'A real 3D lake and sky behind the same flat puzzle.', make: (h: HTMLElement, s: () => void) => new SampleB(h, level, s) },
-  { key: 'C', name: 'All 3D', note: 'The puzzle itself in 3D: stones, lanterns and light on the water.', make: (h: HTMLElement, s: () => void) => new SampleC(h, level, s) },
+  { key: 'C', name: '3D', note: 'The puzzle as a 3D diorama. Swipe to turn it and tilt it; tap to place.', make: (h: HTMLElement, s: () => void) => new DioramaSample(h, level, s, false) },
+  { key: 'D', name: 'Isometric', note: 'Isometric 3D, like Monument Valley: nothing smaller at the back. Swipe to turn.', make: (h: HTMLElement, s: () => void) => new DioramaSample(h, level, s, true) },
 ] as const;
 
 const root = document.getElementById('samples')!;
