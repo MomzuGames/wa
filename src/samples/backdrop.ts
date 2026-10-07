@@ -1,0 +1,195 @@
+import * as THREE from 'three';
+import { mixColor, palette } from '../design/palette';
+
+// A serene pastel backdrop behind the 3D puzzle, set by the land and the level: a soft
+// gradient sky, slow pastel clouds, the moon, misty hills on the horizon, and fireflies
+// drifting around the board. It slides a little as the board turns, so the world feels
+// round. Drawn as one full-screen picture (a shader) plus a few soft sprites.
+
+export interface BackdropMood {
+  top: number; // the sky overhead
+  horizon: number; // the glow at the horizon
+  clouds: number; // cloud colour
+  cloudAmount: number; // 0..1
+  moonSize: number; // of the screen height; 0 for none
+  moonWarm: number; // 0 pearl .. 1 a warm harvest moon
+  crescent: number; // 0 full .. 1 thin crescent
+  mist: number; // 0..1, the haze over the hills
+  fireflies: number; // how many drift around the board
+  hills: [number, number]; // far and near hill colours
+}
+
+// Moon Lake: each level its own night, all of them calm and pastel.
+const night = (k: number) => mixColor(palette.void, palette.lavender, k);
+export const MOON_LAKE: Record<string, BackdropMood> = {
+  Firefly: {
+    top: mixColor(night(0.22), palette.sky, 0.08),
+    horizon: mixColor(mixColor(palette.rose, palette.lavender, 0.5), palette.void, 0.45),
+    clouds: mixColor(palette.lavender, palette.pearl, 0.35),
+    cloudAmount: 0.55,
+    moonSize: 0.032,
+    moonWarm: 0.15,
+    crescent: 0,
+    mist: 0.55,
+    fireflies: 70,
+    hills: [mixColor(night(0.3), palette.rose, 0.12), mixColor(night(0.2), palette.sage, 0.1)],
+  },
+  'Harvest Moon': {
+    top: night(0.2),
+    horizon: mixColor(palette.peach, palette.void, 0.45),
+    clouds: mixColor(palette.peach, palette.pearl, 0.3),
+    cloudAmount: 0.35,
+    moonSize: 0.07,
+    moonWarm: 1,
+    crescent: 0,
+    mist: 0.4,
+    fireflies: 25,
+    hills: [mixColor(night(0.28), palette.peach, 0.12), night(0.18)],
+  },
+  Crescent: {
+    top: mixColor(night(0.18), palette.sky, 0.12),
+    horizon: mixColor(palette.sky, palette.void, 0.5),
+    clouds: mixColor(palette.sky, palette.pearl, 0.4),
+    cloudAmount: 0.4,
+    moonSize: 0.045,
+    moonWarm: 0,
+    crescent: 0.75,
+    mist: 0.4,
+    fireflies: 20,
+    hills: [mixColor(night(0.26), palette.sky, 0.12), night(0.17)],
+  },
+  Mist: {
+    top: night(0.24),
+    horizon: mixColor(palette.pearl, palette.void, 0.55),
+    clouds: palette.pearl,
+    cloudAmount: 0.7,
+    moonSize: 0.05,
+    moonWarm: 0,
+    crescent: 0.2,
+    mist: 1,
+    fireflies: 15,
+    hills: [night(0.32), night(0.24)],
+  },
+};
+
+export function moodFor(levelName: string): BackdropMood {
+  return MOON_LAKE[levelName] ?? MOON_LAKE.Firefly!;
+}
+
+const vec3 = (hex: number) => new THREE.Color(hex);
+
+export class Backdrop {
+  readonly sky: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  readonly fireflies: THREE.Points;
+  private base: Float32Array;
+  private time = 0;
+
+  constructor(
+    scene: THREE.Scene,
+    glow: THREE.Texture,
+    mood: BackdropMood,
+  ) {
+    this.sky = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2),
+      new THREE.ShaderMaterial({
+        depthTest: false,
+        depthWrite: false,
+        uniforms: {
+          time: { value: 0 },
+          pan: { value: 0 },
+          aspect: { value: 0.5 },
+          top: { value: vec3(mood.top) },
+          horizon: { value: vec3(mood.horizon) },
+          cloudCol: { value: vec3(mood.clouds) },
+          cloudAmount: { value: mood.cloudAmount },
+          moonSize: { value: mood.moonSize },
+          moonCol: { value: vec3(mixColor(palette.pearl, palette.peach, mood.moonWarm)) },
+          crescent: { value: mood.crescent },
+          mist: { value: mood.mist },
+          hillFar: { value: vec3(mood.hills[0]) },
+          hillNear: { value: vec3(mood.hills[1]) },
+        },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.9999, 1.0); }',
+        fragmentShader: `
+          uniform float time; uniform float pan; uniform float aspect;
+          uniform vec3 top; uniform vec3 horizon; uniform vec3 cloudCol; uniform float cloudAmount;
+          uniform float moonSize; uniform vec3 moonCol; uniform float crescent; uniform float mist;
+          uniform vec3 hillFar; uniform vec3 hillNear;
+          varying vec2 vUv;
+          float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          float noise(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); vec2 u = f*f*(3.0-2.0*f);
+            return mix(mix(hash(i), hash(i+vec2(1,0)), u.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y); }
+          float fbm(vec2 p){ float v = 0.0; float a = 0.5; for (int i = 0; i < 5; i++){ v += a*noise(p); p *= 2.03; a *= 0.5; } return v; }
+          void main(){
+            vec2 uv = vUv;
+            // The sky: the horizon glow fading up into the night.
+            vec3 c = mix(horizon, top, smoothstep(0.12, 0.95, uv.y));
+            // Stars, faint, only high up.
+            vec2 sp = vec2(uv.x * aspect + pan * 0.05, uv.y) * 140.0;
+            float st = step(0.997, hash(floor(sp))) * smoothstep(0.45, 0.9, uv.y);
+            c += vec3(st) * 0.5 * (0.6 + 0.4*sin(time*1.7 + hash(floor(sp))*30.0));
+            // The moon, high on one side, with a soft halo.
+            vec2 mp = vec2(0.72 - pan * 0.03, 0.8);
+            vec2 d = (uv - mp) * vec2(aspect, 1.0);
+            float r = length(d);
+            float disc = smoothstep(moonSize, moonSize * 0.93, r);
+            float bite = smoothstep(moonSize, moonSize * 0.93, length(d - vec2(moonSize * 0.55 * crescent * 1.6, moonSize * 0.15 * crescent)));
+            disc *= 1.0 - bite * step(0.01, crescent);
+            c += moonCol * exp(-r / (moonSize * 2.5)) * 0.16 * step(0.001, moonSize);
+            c = mix(c, moonCol * 0.82, disc * 0.9);
+            // Slow pastel clouds drifting across the middle of the sky.
+            vec2 cp = vec2(uv.x * aspect * 1.6 + time * 0.012 + pan * 0.08, uv.y * 4.0);
+            float cl = smoothstep(0.52, 0.78, fbm(cp)) * smoothstep(0.35, 0.6, uv.y) * smoothstep(0.98, 0.7, uv.y);
+            c = mix(c, cloudCol, cl * cloudAmount * 0.6);
+            // Hills: a far ridge and a near one, sliding as the board turns.
+            float x = uv.x * aspect;
+            float far = 0.2 + 0.04 * sin(x * 3.1 + pan * 0.15 + 1.0) + 0.025 * sin(x * 7.3 + pan * 0.15);
+            float near = 0.13 + 0.035 * sin(x * 2.3 + pan * 0.3 + 4.0) + 0.02 * sin(x * 5.9 + pan * 0.3 + 2.0);
+            c = mix(c, hillFar, smoothstep(far + 0.004, far - 0.004, uv.y) * 0.85);
+            c = mix(c, hillNear, smoothstep(near + 0.004, near - 0.004, uv.y));
+            // Mist lying over the hills.
+            float m = exp(-pow((uv.y - 0.17) / 0.07, 2.0)) * (0.6 + 0.4 * fbm(vec2(x * 2.0 + time * 0.02, uv.y * 8.0)));
+            c = mix(c, horizon * 1.2, m * mist * 0.5);
+            gl_FragColor = vec4(c, 1.0);
+          }`,
+      }),
+    );
+    this.sky.frustumCulled = false;
+    this.sky.renderOrder = -10;
+    scene.add(this.sky);
+
+    // Fireflies drifting around the board, some in front, some behind.
+    const n = mood.fireflies;
+    this.base = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 3.2 + Math.random() * 4.5;
+      this.base.set([Math.cos(a) * r, -1.2 + Math.random() * 3.6, Math.sin(a) * r], i * 3);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this.base.slice(), 3));
+    this.fireflies = new THREE.Points(
+      geo,
+      new THREE.PointsMaterial({ map: glow, color: vec3(mixColor(palette.lemon, palette.mint, 0.3)), size: 0.32, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    scene.add(this.fireflies);
+  }
+
+  resize(width: number, height: number): void {
+    this.sky.material.uniforms.aspect!.value = width / height;
+  }
+
+  update(dt: number, yaw: number): void {
+    this.time += dt;
+    const u = this.sky.material.uniforms;
+    u.time!.value = this.time;
+    u.pan!.value = yaw;
+    const pos = this.fireflies.geometry.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const t = this.time * 0.35 + i * 1.9;
+      pos.setXYZ(i, this.base[i * 3]! + Math.sin(t) * 0.5, this.base[i * 3 + 1]! + Math.sin(t * 1.3) * 0.35, this.base[i * 3 + 2]! + Math.cos(t * 0.8) * 0.5);
+    }
+    pos.needsUpdate = true;
+    (this.fireflies.material as THREE.PointsMaterial).opacity = 0.55 + 0.25 * Math.sin(this.time * 1.7);
+  }
+}

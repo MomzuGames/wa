@@ -4,6 +4,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { mixColor, palette } from '../design/palette';
+import { Backdrop, moodFor } from './backdrop';
 import { type LanternLevel, STEPS, cellCount, clashing, isRock, isSolved, isWater, lightCounts, rockCount, rockState, sightLines } from '../regions/moonlake/model';
 
 // Style samples C and D: the puzzle itself as a small 3D diorama floating in the night. The
@@ -16,13 +17,13 @@ import { type LanternLevel, STEPS, cellCount, clashing, isRock, isSolved, isWate
 const col = (hex: number) => new THREE.Color(hex);
 
 const style = {
-  pitch: { start: 0.95, min: 0.5, max: 1.45 }, // radians above the board
+  pitch: { start: 0.95, min: 0.72, max: 1.22 }, // radians above the board: a calm range
   yawStart: Math.PI / 4,
-  turnPerPx: 0.009,
-  tiltPerPx: 0.006,
-  inertia: 0.92, // how much spin carries on, per frame, after a swipe
+  turnPerPx: 0.0075,
+  tiltPerPx: 0.004,
+  follow: 7, // per second: how quickly the camera glides toward where the finger sends it
+  inertia: 0.9, // how much of a flick carries on, per frame, after the finger lifts
   tapSlop: 10, // px a finger may move and still count as a tap
-  snapSeconds: 0.45,
   slabDepth: 0.55,
   topUi: 70, // px of the screen the sample switcher uses
 } as const;
@@ -68,9 +69,12 @@ export class DioramaSample {
   // Turning: where the camera sits around the board, and how a swipe is moving it.
   private yaw: number = style.yawStart;
   private pitch: number = style.pitch.start;
+  // Where the finger is sending the view; the camera glides toward it, never jumps.
+  private targetYaw: number = style.yawStart;
+  private targetPitch: number = style.pitch.start;
+  private backdrop: Backdrop;
   private spin = 0;
   private drag: { x: number; y: number; startX: number; startY: number; moved: boolean } | null = null;
-  private snap: { from: number; to: number; t: number } | null = null;
   private radius: number;
   private ray = new THREE.Raycaster();
   private floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -82,6 +86,7 @@ export class DioramaSample {
     private level: LanternLevel,
     private onSolved: () => void,
     private isometric: boolean,
+    levelName = 'Firefly',
   ) {
     this.canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block';
     host.appendChild(this.canvas);
@@ -90,7 +95,7 @@ export class DioramaSample {
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.scene.background = col(palette.void);
+    this.backdrop = new Backdrop(this.scene, this.glow, moodFor(levelName));
     this.camera = isometric ? new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100) : new THREE.PerspectiveCamera(38, 1, 0.1, 100);
 
     // Light: a soft sky fill and the moon, high and to one side, so every stone has a lit
@@ -134,7 +139,7 @@ export class DioramaSample {
     slab.position.y = -style.slabDepth / 2 - 0.02;
     this.scene.add(slab);
     // A soft pool of light under the floating block, for depth.
-    const under = new THREE.Mesh(new THREE.PlaneGeometry(bw * 2.4, bh * 2.4), new THREE.MeshBasicMaterial({ map: this.glow, color: col(palette.lavender), transparent: true, opacity: 0.18, depthWrite: false }));
+    const under = new THREE.Mesh(new THREE.PlaneGeometry(bw * 2.4, bh * 2.4), new THREE.MeshBasicMaterial({ map: this.glow, color: col(palette.lavender), transparent: true, opacity: 0.12, depthWrite: false }));
     under.rotation.x = -Math.PI / 2;
     under.position.y = -style.slabDepth - 0.6;
     this.scene.add(under);
@@ -214,7 +219,7 @@ export class DioramaSample {
     const R = (t: number) => 0.13 + 0.12 * Math.sin(Math.PI * t);
     const profile: THREE.Vector2[] = [];
     for (let k = 0; k <= 18; k++) profile.push(new THREE.Vector2(R(k / 18), -0.28 + 0.56 * (k / 18)));
-    body.add(new THREE.Mesh(new THREE.LatheGeometry(profile, 32), new THREE.MeshStandardMaterial({ color: col(palette.peach), emissive: col(mixColor(palette.lemon, palette.peach, 0.35)), emissiveIntensity: 0.85, roughness: 0.75 })));
+    body.add(new THREE.Mesh(new THREE.LatheGeometry(profile, 32), new THREE.MeshStandardMaterial({ color: col(palette.peach), emissive: col(mixColor(palette.lemon, palette.peach, 0.35)), emissiveIntensity: 0.72, roughness: 0.75 })));
     const rib = new THREE.MeshBasicMaterial({ color: col(mixColor(palette.peach, palette.rose, 0.55)) });
     for (let k = 1; k < 9; k++) {
       const t = k / 9;
@@ -238,10 +243,10 @@ export class DioramaSample {
       s.scale.set(size, size, 1);
       return s;
     };
-    const heart = sprite(palette.lemon, 0.75, 0.45);
-    const halo = sprite(palette.peach, 2.2, 0.16);
+    const heart = sprite(palette.lemon, 0.75, 0.38);
+    const halo = sprite(palette.peach, 2.2, 0.135);
     g.add(halo, heart);
-    const pool = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({ map: this.glow, color: col(palette.lemon), transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }));
+    const pool = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({ map: this.glow, color: col(palette.lemon), transparent: true, opacity: 0.26, depthWrite: false, blending: THREE.AdditiveBlending }));
     pool.rotation.x = -Math.PI / 2;
     pool.position.y = -0.43;
     g.add(pool);
@@ -331,7 +336,6 @@ export class DioramaSample {
   private onDown = (e: PointerEvent) => {
     this.drag = { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, moved: false };
     this.spin = 0;
-    this.snap = null;
   };
 
   private onMove = (e: PointerEvent) => {
@@ -342,8 +346,8 @@ export class DioramaSample {
     if (!d.moved && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > style.tapSlop) d.moved = true;
     if (d.moved) {
       this.spin = -dx * style.turnPerPx;
-      this.yaw += this.spin;
-      this.pitch = Math.max(style.pitch.min, Math.min(style.pitch.max, this.pitch + dy * style.tiltPerPx));
+      this.targetYaw += this.spin;
+      this.targetPitch = Math.max(style.pitch.min, Math.min(style.pitch.max, this.targetPitch + dy * style.tiltPerPx));
     }
     d.x = e.clientX;
     d.y = e.clientY;
@@ -357,8 +361,7 @@ export class DioramaSample {
       // Isometric: settle on the nearest corner view, the way Monument Valley does.
       if (this.isometric) {
         const step = Math.PI / 2;
-        const target = Math.round((this.yaw + this.spin * 6 - Math.PI / 4) / step) * step + Math.PI / 4;
-        this.snap = { from: this.yaw, to: target, t: 0 };
+        this.targetYaw = Math.round((this.targetYaw + this.spin * 6 - Math.PI / 4) / step) * step + Math.PI / 4;
         this.spin = 0;
       }
       return;
@@ -412,6 +415,7 @@ export class DioramaSample {
     this.renderer.setSize(this.width, this.height, false);
     this.composer.setSize(this.width, this.height);
     this.bloom.resolution.set(this.width / 2, this.height / 2);
+    this.backdrop.resize(this.width, this.height);
     this.placeCamera();
   };
 
@@ -420,17 +424,15 @@ export class DioramaSample {
     this.last = now;
     this.time += dt;
     // A swipe's spin carries on and eases away; an isometric view settles on a corner.
-    if (!this.drag) {
-      if (this.snap) {
-        this.snap.t = Math.min(1, this.snap.t + dt / style.snapSeconds);
-        const k = 1 - Math.pow(1 - this.snap.t, 3);
-        this.yaw = this.snap.from + (this.snap.to - this.snap.from) * k;
-        if (this.snap.t >= 1) this.snap = null;
-      } else if (Math.abs(this.spin) > 0.0005) {
-        this.yaw += this.spin;
-        this.spin *= style.inertia;
-      }
+    // A flick carries on a little and eases away; the camera always glides toward its target.
+    if (!this.drag && Math.abs(this.spin) > 0.0002) {
+      this.targetYaw += this.spin;
+      this.spin *= style.inertia;
     }
+    const k = 1 - Math.exp(-dt * style.follow);
+    this.yaw += (this.targetYaw - this.yaw) * k;
+    this.pitch += (this.targetPitch - this.pitch) * k;
+    this.backdrop.update(dt, this.yaw);
     this.placeCamera();
     this.water.material.uniforms.time!.value = this.time;
     if (this.solved) this.rise = Math.min(0.6, this.rise + dt * 0.25);
@@ -442,10 +444,10 @@ export class DioramaSample {
       u.body.rotation.z = Math.sin(t * 0.8) * 0.06;
       u.body.rotation.y += dt * 0.15;
       const flicker = 0.85 + 0.08 * Math.sin(t * 2.3) + 0.05 * Math.sin(t * 6.1) + 0.03 * Math.sin(t * 13.7);
-      u.heart.material.opacity = 0.45 * flicker * (this.solved ? 1.4 : 1);
-      u.halo.material.opacity = 0.16 * flicker * (this.solved ? 1.6 : 1);
+      u.heart.material.opacity = 0.38 * flicker * (this.solved ? 1.4 : 1);
+      u.halo.material.opacity = 0.135 * flicker * (this.solved ? 1.6 : 1);
     }
-    this.bloom.strength = this.solved ? 0.85 : 0.55;
+    this.bloom.strength = this.solved ? 0.75 : 0.47;
     this.composer.render(dt);
     this.raf = requestAnimationFrame(this.frame);
   };
