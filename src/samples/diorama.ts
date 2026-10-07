@@ -17,10 +17,10 @@ import { type LanternLevel, STEPS, cellCount, clashing, isRock, isSolved, isWate
 const col = (hex: number) => new THREE.Color(hex);
 
 const style = {
-  pitch: { start: 0.95, min: 0.72, max: 1.22 }, // radians above the board: a calm range
+  pitch: { start: 0.95, min: 0.26, max: 1.48 }, // radians above the board: from nearly side-on to straight down
   yawStart: Math.PI / 4,
   turnPerPx: 0.0075,
-  tiltPerPx: 0.004,
+  tiltPerPx: 0.0065,
   follow: 7, // per second: how quickly the camera glides toward where the finger sends it
   inertia: 0.9, // how much of a flick carries on, per frame, after the finger lifts
   tapSlop: 10, // px a finger may move and still count as a tap
@@ -100,7 +100,7 @@ export class DioramaSample {
 
     // Light: a soft sky fill and the moon, high and to one side, so every stone has a lit
     // face and a shaded one.
-    this.scene.add(new THREE.HemisphereLight(col(mixColor(palette.lavender, palette.pearl, 0.4)), col(palette.ink), 0.75));
+    this.scene.add(new THREE.HemisphereLight(col(mixColor(palette.sky, palette.pearl, 0.5)), col(palette.ink), 0.75));
     const moon = new THREE.DirectionalLight(col(palette.pearl), 1.2);
     moon.position.set(-6, 10, 4);
     this.scene.add(moon);
@@ -134,12 +134,12 @@ export class DioramaSample {
     const bw = w + 0.5;
     const bh = h + 0.5;
     // The rim and body of the block.
-    const rock = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.lavender, 0.18)), flatShading: true });
+    const rock = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.sky, 0.14)), flatShading: true });
     const slab = new THREE.Mesh(new THREE.BoxGeometry(bw, style.slabDepth, bh), rock);
     slab.position.y = -style.slabDepth / 2 - 0.02;
     this.scene.add(slab);
     // A soft pool of light under the floating block, for depth.
-    const under = new THREE.Mesh(new THREE.PlaneGeometry(bw * 2.4, bh * 2.4), new THREE.MeshBasicMaterial({ map: this.glow, color: col(palette.lavender), transparent: true, opacity: 0.12, depthWrite: false }));
+    const under = new THREE.Mesh(new THREE.PlaneGeometry(bw * 2.4, bh * 2.4), new THREE.MeshBasicMaterial({ map: this.glow, color: col(palette.peach), transparent: true, opacity: 0.1, depthWrite: false }));
     under.rotation.x = -Math.PI / 2;
     under.position.y = -style.slabDepth - 0.6;
     this.scene.add(under);
@@ -159,7 +159,7 @@ export class DioramaSample {
     this.scene.add(water);
 
     const land = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.sage, 0.35)), flatShading: true });
-    const stone = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.lavender, 0.45)), flatShading: true });
+    const stone = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.pearl, 0.28)), flatShading: true });
     const shadow = new THREE.MeshBasicMaterial({ map: this.glow, color: col(palette.void), transparent: true, opacity: 0.6, depthWrite: false });
     const lines: number[] = [];
     for (let i = 0; i < cellCount(this.level); i++) {
@@ -309,6 +309,12 @@ export class DioramaSample {
       const c = state === 'met' && rockCount(this.level, r) ? palette.lemon : state === 'over' ? palette.rose : palette.pearl;
       dots.forEach((d) => (d.material as THREE.MeshBasicMaterial).color.set(c));
     }
+  }
+
+  // The view, in degrees: how far above the board (tilt) and how far round (turn).
+  get view(): { tilt: number; turn: number } {
+    const deg = (r: number) => Math.round((r * 180) / Math.PI);
+    return { tilt: deg(this.pitch), turn: ((deg(this.yaw) % 360) + 360) % 360 };
   }
 
   // Exposed for testing.

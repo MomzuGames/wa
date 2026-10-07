@@ -22,17 +22,18 @@ export interface BackdropMood {
 // Moon Lake: each level its own night, all of them calm and pastel.
 const night = (k: number) => mixColor(palette.void, palette.lavender, k);
 export const MOON_LAKE: Record<string, BackdropMood> = {
+  // A soft blue night with a warm peach glow low in the sky, sage hills and pale clouds.
   Firefly: {
-    top: mixColor(night(0.22), palette.sky, 0.08),
-    horizon: mixColor(mixColor(palette.rose, palette.lavender, 0.5), palette.void, 0.45),
-    clouds: mixColor(palette.lavender, palette.pearl, 0.35),
-    cloudAmount: 0.55,
+    top: mixColor(palette.void, palette.sky, 0.2),
+    horizon: mixColor(mixColor(palette.peach, palette.rose, 0.25), palette.void, 0.5),
+    clouds: mixColor(palette.pearl, palette.peach, 0.2),
+    cloudAmount: 0.45,
     moonSize: 0.032,
     moonWarm: 0.15,
     crescent: 0,
-    mist: 0.55,
-    fireflies: 70,
-    hills: [mixColor(night(0.3), palette.rose, 0.12), mixColor(night(0.2), palette.sage, 0.1)],
+    mist: 0.45,
+    fireflies: 60,
+    hills: [mixColor(mixColor(palette.void, palette.sky, 0.22), palette.sage, 0.18), mixColor(palette.void, palette.sage, 0.16)],
   },
   'Harvest Moon': {
     top: night(0.2),
@@ -124,10 +125,14 @@ export class Backdrop {
             vec2 uv = vUv;
             // The sky: the horizon glow fading up into the night.
             vec3 c = mix(horizon, top, smoothstep(0.12, 0.95, uv.y));
-            // Stars, faint, only high up.
-            vec2 sp = vec2(uv.x * aspect + pan * 0.05, uv.y) * 140.0;
-            float st = step(0.997, hash(floor(sp))) * smoothstep(0.45, 0.9, uv.y);
-            c += vec3(st) * 0.5 * (0.6 + 0.4*sin(time*1.7 + hash(floor(sp))*30.0));
+            // Stars: soft round dots, faint, only high up.
+            vec2 sp = vec2(uv.x * aspect + pan * 0.05, uv.y) * 46.0;
+            vec2 cell = floor(sp);
+            float has = step(0.93, hash(cell));
+            vec2 at = vec2(hash(cell + 3.1), hash(cell + 7.7)) * 0.6 + 0.2;
+            float dotGlow = smoothstep(0.16, 0.0, length(fract(sp) - at));
+            float twinkle = 0.6 + 0.4 * sin(time * 1.3 + hash(cell) * 40.0);
+            c += vec3(1.0) * has * dotGlow * twinkle * 0.35 * smoothstep(0.45, 0.9, uv.y);
             // The moon, high on one side, with a soft halo.
             vec2 mp = vec2(0.72 - pan * 0.03, 0.8);
             vec2 d = (uv - mp) * vec2(aspect, 1.0);
@@ -150,6 +155,8 @@ export class Backdrop {
             // Mist lying over the hills.
             float m = exp(-pow((uv.y - 0.17) / 0.07, 2.0)) * (0.6 + 0.4 * fbm(vec2(x * 2.0 + time * 0.02, uv.y * 8.0)));
             c = mix(c, horizon * 1.2, m * mist * 0.5);
+            // A fine grain, too faint to see, so the gradients never band.
+            c += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
             gl_FragColor = vec4(c, 1.0);
           }`,
       }),

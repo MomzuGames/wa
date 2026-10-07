@@ -29,6 +29,7 @@ style.textContent = `
   .bar button.on { background: rgba(205,184,255,0.25); border-color: ${cssHex('lavender')}; }
   .bar a { color: inherit; opacity: 0.6; text-decoration: none; font-size: 22px; padding: 0 6px; }
   .note { position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0) + 18px); z-index: 5; text-align: center; font-size: 14px; letter-spacing: 1px; opacity: 0.7; padding: 0 20px; pointer-events: none; }
+  .readout { position: absolute; left: 0; right: 0; top: calc(env(safe-area-inset-top, 0) + 64px); z-index: 5; text-align: center; font-size: 13px; letter-spacing: 1px; opacity: 0.55; pointer-events: none; }
   .done { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); z-index: 6; font-size: 20px; letter-spacing: 2px; opacity: 0; transition: opacity 1s; pointer-events: none; }
 `;
 document.head.appendChild(style);
@@ -46,7 +47,16 @@ note.className = 'note';
 const done = document.createElement('div');
 done.className = 'done';
 done.textContent = 'The whole lake glows';
-root.append(stage, bar, note, done);
+// A small readout of the 3D view, to find the best angle.
+const readout = document.createElement('div');
+readout.className = 'readout';
+root.append(stage, bar, note, done, readout);
+const showView = () => {
+  const v = (current as { view?: { tilt: number; turn: number } } | null)?.view;
+  readout.textContent = v ? `Tilt ${v.tilt}°   ·   Turn ${v.turn}°` : '';
+  requestAnimationFrame(showView);
+};
+requestAnimationFrame(showView);
 
 let current: { destroy(): void } | null = null;
 const buttons = SAMPLES.map((s, i) => {
