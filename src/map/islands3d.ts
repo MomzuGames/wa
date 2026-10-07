@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mixColor, palette } from '../design/palette';
 import type { RegionId } from '../regions/types';
 import { col, glowSprite, paperLantern } from '../three/kit';
@@ -89,40 +90,39 @@ function islandBase(id: string): IslandBase {
   );
   shadeDown(root.geometry, 0, -0.82, 1, 0.38);
   group.add(cap, root);
+  // Each kind of small piece is merged into one shape, so an island is drawn in a handful
+  // of calls rather than dozens (a phone pays for every call).
+  const placed = (geo: THREE.BufferGeometry, pos: [number, number, number], scale: [number, number, number], rot: [number, number, number] = [0, 0, 0]) =>
+    geo.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(...pos), new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot)), new THREE.Vector3(...scale)));
   // A few rounded lumps of rock beneath, so the root is never a plain bowl.
+  const lumpGeos: THREE.BufferGeometry[] = [];
   for (let k = 0; k < 4; k++) {
     const a = (k / 4) * Math.PI * 2 + rand() * 0.9;
     const size = 0.16 + rand() * 0.12;
-    const lump = new THREE.Mesh(new THREE.SphereGeometry(size, 24, 16), lumps);
     const depth = 0.3 + rand() * 0.3;
     const reach = 0.82 - depth * 0.75;
-    lump.position.set(Math.cos(a) * reach, -depth, Math.sin(a) * reach);
-    lump.scale.set(1, 1.3, 1);
-    group.add(lump);
+    lumpGeos.push(placed(new THREE.SphereGeometry(size, 24, 16), [Math.cos(a) * reach, -depth, Math.sin(a) * reach], [1, 1.3, 1]));
   }
+  group.add(new THREE.Mesh(mergeGeometries(lumpGeos), lumps));
   // Pebbles along the rim, and small tufts of grass that sway in the wind.
+  const pebbleGeos: THREE.BufferGeometry[] = [];
   for (let k = 0; k < 7; k++) {
     const a = rand() * Math.PI * 2;
     const d = 0.8 + rand() * 0.12;
     const size = 0.03 + rand() * 0.035;
-    const pebble = new THREE.Mesh(new THREE.SphereGeometry(size, 16, 10), pebbles);
-    pebble.scale.set(1.3, 0.6, 1);
-    pebble.position.set(Math.cos(a) * d, 0.02 + size * 0.3, Math.sin(a) * d);
-    group.add(pebble);
+    pebbleGeos.push(placed(new THREE.SphereGeometry(size, 16, 10), [Math.cos(a) * d, 0.02 + size * 0.3, Math.sin(a) * d], [1.3, 0.6, 1]));
   }
-  const blade = new THREE.ConeGeometry(0.014, 1, 6);
-  blade.translate(0, 0.5, 0);
+  group.add(new THREE.Mesh(mergeGeometries(pebbleGeos), pebbles));
   for (let k = 0; k < 5; k++) {
     const a = rand() * Math.PI * 2;
     const d = 0.74 + rand() * 0.18;
-    const tuft = new THREE.Group();
+    const blades: THREE.BufferGeometry[] = [];
     for (let b = 0; b < 5; b++) {
-      const m = new THREE.Mesh(blade, grass);
-      m.scale.y = 0.07 + rand() * 0.08;
-      m.position.set((rand() - 0.5) * 0.05, 0, (rand() - 0.5) * 0.05);
-      m.rotation.set((rand() - 0.5) * 0.6, 0, (rand() - 0.5) * 0.6);
-      tuft.add(m);
+      const blade = new THREE.ConeGeometry(0.014, 1, 6);
+      blade.translate(0, 0.5, 0);
+      blades.push(placed(blade, [(rand() - 0.5) * 0.05, 0, (rand() - 0.5) * 0.05], [1, 0.07 + rand() * 0.08, 1], [(rand() - 0.5) * 0.6, 0, (rand() - 0.5) * 0.6]));
     }
+    const tuft = new THREE.Mesh(mergeGeometries(blades), grass);
     tuft.position.set(Math.cos(a) * d, 0.02, Math.sin(a) * d);
     group.add(tuft);
     const phase = rand() * 6;

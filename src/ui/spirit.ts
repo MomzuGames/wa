@@ -75,6 +75,7 @@ export class Spirit extends Container {
   private clock = 0;
   private tourToken = 0;
   private joyful: Promise<void> | null = null;
+  private joyDone: (() => void) | null = null; // ends the current joy burst's wait
   // Family lights woken in finished lands follow a little way behind, along the same path.
   private familyLayer = new Container();
   private followers: Array<{ view: Container; x: number; y: number; phase: number; color: number }> = [];
@@ -305,6 +306,15 @@ export class Spirit extends Container {
   private stopMoving(): void {
     this.moving?.kill();
     this.moving = null;
+    // A joy burst cut short still counts as finished, or every later wander would wait for
+    // it forever (the light then stayed on one platform, diving only when a land was tapped).
+    const done = this.joyDone;
+    this.joyDone = null;
+    if (done) {
+      this.body.rotation = 0;
+      this.body.scale.set(1);
+      done();
+    }
     this.orbit = null;
     this.anchor = null;
     this.wanderTarget = null;
@@ -323,7 +333,8 @@ export class Spirit extends Container {
   // until another journey interrupts it. Waits for a joy burst to finish first.
   private async tour(points: Array<{ x: number; y: number }>, pause: number = spiritStyle.tourPause, start = 0, first?: number): Promise<void> {
     if (points.length === 0) return;
-    if (this.joyful) await this.joyful;
+    // Waits for a joy burst to finish (and for any newer one that began meanwhile).
+    while (this.joyful) await this.joyful;
     this.stopMoving();
     const token = this.tourToken;
     this.emerge();
@@ -350,15 +361,23 @@ export class Spirit extends Container {
     const d = scaled(spiritStyle.joySeconds);
     const r = spiritStyle.arcLift * 2.2;
     const loop = { a: 0 };
-    this.joyful = new Promise((resolve) => {
+    let finish = () => {};
+    const promise = new Promise<void>((resolve) => (finish = resolve));
+    this.joyful = promise;
+    this.joyDone = () => {
+      if (this.joyful === promise) this.joyful = null;
+      finish();
+    };
+    {
       this.moving = gsap
         .timeline({
           onComplete: () => {
             this.moving = null;
-            this.joyful = null;
+            this.joyDone = null;
+            if (this.joyful === promise) this.joyful = null;
             this.body.rotation = 0;
             this.settleAt(x, y);
-            resolve();
+            finish();
           },
         })
         .to(this.body.scale, { x: 1.35, y: 0.75, duration: d * 0.08, ease: 'sine.in' })
@@ -377,8 +396,8 @@ export class Spirit extends Container {
         })
         .to(this.body.scale, { x: 1.2, y: 0.85, duration: d * 0.05 })
         .to(this.body.scale, { x: 1, y: 1, duration: d * 0.12, ease: easings.tileSnap });
-    });
-    return this.joyful;
+    }
+    return promise;
   }
 
   // Leaps to a place and disappears into it with a burst of its own colour.

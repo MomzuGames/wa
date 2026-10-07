@@ -492,7 +492,7 @@ export class WorldMapScene implements Scene {
     // The star field sits further back, so it shifts less than the regions.
     this.twinkles.x = px * 0.35;
     this.twinkles.y = py * 0.35;
-    this.drawTwinkles();
+    if (this.twinkles.visible) this.drawTwinkles();
     this.drawPulses();
     this.aurora.x = px * 0.5;
     this.aurora.y = py * 0.5;

@@ -84,6 +84,11 @@ export class Game {
       const params = new URLSearchParams(location.search);
       // ?locks=1 keeps progress locks in force, to test them in dev.
       setBypassLocks(!params.has('locks'));
+      // ?map=1 opens the world map straight away.
+      if (params.has('map')) {
+        this.showMap();
+        return;
+      }
       const trail = params.get('trail');
       if (trail && REGION_ORDER.includes(trail as RegionId)) {
         this.showRegion(trail as RegionId);

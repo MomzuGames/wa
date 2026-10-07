@@ -283,7 +283,8 @@ export class RegionNode extends Container {
     const floor = regionNodeStyle.silenceColour;
     this.shade = mixColor(drained(this.accent), this.accent, floor + (1 - floor) * this.colour);
     this.aura.tint = this.shade;
-    this.redrawFigure();
+    // In 3D the island stands in for the flat figure: nothing to redraw.
+    if (this.outline.visible) this.redrawFigure();
     const lift = this.chosen ? 1 : this.hovered ? 0.9 : this.near;
     const k = Math.min(1, dt * 5);
     const nameTarget = this.chosen ? 1 : regionNodeStyle.nameIdleAlpha + (regionNodeStyle.nameNearAlpha - regionNodeStyle.nameIdleAlpha) * lift;
@@ -293,7 +294,7 @@ export class RegionNode extends Container {
     this.scale.set(this.scale.x + (targetScale - this.scale.x) * k);
     const g = this.life;
     g.clear();
-    if (this._state === 'locked') return;
+    if (this._state === 'locked' || !g.visible) return;
     const s = regionNodeStyle.size / 2;
     const strength = (this._state === 'complete' ? 1 : 0.7) * (0.7 + 0.3 * lift);
     switch (this.id) {

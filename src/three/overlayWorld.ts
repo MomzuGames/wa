@@ -10,6 +10,10 @@ import { lightSpots } from './lights';
 // the object is placed in the world right under that point, at a size that matches it, so
 // the 3D islands and stones always sit exactly where the map says.
 
+const overlayStyle = {
+  pools: 8, // the little light and up to its whole family
+} as const;
+
 interface Anchor {
   object: THREE.Object3D;
   screen: () => { x: number; y: number } | null;
@@ -26,7 +30,14 @@ export class OverlayWorld {
   private ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   // The little light and its family shine on the islands below, each with a soft pool of
   // its colour on the ground beneath it.
-  private glows: Array<{ light: THREE.PointLight; pool: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> }> = [];
+  // Only the player's own light truly lights the islands: one light, made at the start and
+  // never added to or taken away (each change of the number of lights rebuilt every shader,
+  // which stalled the game mid-swipe). Every light, family too, has its pool on the ground.
+  private shine = new THREE.PointLight(0xffffff, 0, 0, 1.6);
+  private pools: Array<THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>> = [];
+  private compiled = false;
+  private v2 = new THREE.Vector2();
+  private hitPoint = new THREE.Vector3();
 
   constructor(mood: BackdropMood) {
     this.backdrop = new Backdrop(this.scene, glowTexture(), mood);
@@ -38,6 +49,14 @@ export class OverlayWorld {
     // Looking down on the map at a gentle angle: the islands read as solid, the map as flat.
     this.camera.position.set(0, 22, 40);
     this.camera.lookAt(0, 0, 0);
+    this.scene.add(this.shine);
+    for (let k = 0; k < overlayStyle.pools; k++) {
+      const pool = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      pool.rotation.x = -Math.PI / 2;
+      pool.visible = false;
+      this.scene.add(pool);
+      this.pools.push(pool);
+    }
     this.world = { scene: this.scene, camera: this.camera, bloom: () => 0.22 };
     stage3d()?.show(this.world);
   }
@@ -54,14 +73,22 @@ export class OverlayWorld {
     this.backdrop.resize(s.width, s.height);
     this.backdrop.update(dt, pan);
     const tanHalf = Math.tan((this.camera.fov * Math.PI) / 360);
+    // Every shader is prepared once, at the start, while everything is still in view: an
+    // island first drawn as it scrolled in used to stall the swipe.
+    if (!this.compiled) {
+      this.compiled = true;
+      this.pools.forEach((p) => (p.visible = true));
+      stage3d()?.renderer.compile(this.scene, this.camera);
+      this.pools.forEach((p) => (p.visible = false));
+    }
     this.shineLights(s, tanHalf);
     for (const a of this.anchors) {
       const p = a.screen();
       // Far off screen (a scrolled journey), or where no ground lies under the point: hidden,
       // never left standing wherever it was last (that showed as a stray platform).
       const far = !p || p.y < -s.height * 0.6 || p.y > s.height * 1.6;
-      const hit = new THREE.Vector3();
-      if (!far) this.ray.setFromCamera(new THREE.Vector2((p.x / s.width) * 2 - 1, -(p.y / s.height) * 2 + 1), this.camera);
+      const hit = this.hitPoint;
+      if (!far) this.ray.setFromCamera(this.v2.set((p.x / s.width) * 2 - 1, -(p.y / s.height) * 2 + 1), this.camera);
       if (far || !this.ray.ray.intersectPlane(this.ground, hit)) {
         a.object.visible = false;
         continue;
@@ -76,39 +103,32 @@ export class OverlayWorld {
   }
 
   private groundAt(x: number, y: number, s: { width: number; height: number }): THREE.Vector3 | null {
-    this.ray.setFromCamera(new THREE.Vector2((x / s.width) * 2 - 1, -(y / s.height) * 2 + 1), this.camera);
+    this.ray.setFromCamera(this.v2.set((x / s.width) * 2 - 1, -(y / s.height) * 2 + 1), this.camera);
     const hit = new THREE.Vector3();
     return this.ray.ray.intersectPlane(this.ground, hit) ? hit : null;
   }
 
   private shineLights(s: { width: number; height: number }, tanHalf: number): void {
     const spots = lightSpots();
-    while (this.glows.length < spots.length) {
-      const light = new THREE.PointLight(0xffffff, 0, 0, 1.6);
-      const pool = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-      pool.rotation.x = -Math.PI / 2;
-      this.scene.add(light, pool);
-      this.glows.push({ light, pool });
-    }
-    this.glows.forEach((g, i) => {
+    this.shine.intensity = 0;
+    this.pools.forEach((pool, i) => {
       const spot = spots[i];
       const under = spot ? this.groundAt(spot.x, spot.y + spot.size * 3.5, s) : null;
-      g.pool.visible = !!under;
-      if (!spot || !under) {
-        g.light.intensity = 0;
-        return;
-      }
+      pool.visible = !!under;
+      if (!spot || !under) return;
       const unitsPerPx = (2 * under.distanceTo(this.camera.position) * tanHalf) / s.height;
       const lift = spot.size * 3.5 * unitsPerPx;
-      // The light floats above its pool, as high as it looks above it on screen.
-      g.light.position.set(under.x, lift * 1.2, under.z - lift * 0.4);
-      g.light.color.set(spot.color);
-      g.light.intensity = 6 * lift * lift * spot.alpha;
-      g.light.distance = lift * 7;
-      g.pool.position.set(under.x, 0.02, under.z);
-      g.pool.scale.setScalar(spot.size * 7 * unitsPerPx);
-      g.pool.material.color.set(spot.color);
-      g.pool.material.opacity = 0.12 * spot.alpha;
+      if (i === 0) {
+        // The light floats above its pool, as high as it looks above it on screen.
+        this.shine.position.set(under.x, lift * 1.2, under.z - lift * 0.4);
+        this.shine.color.set(spot.color);
+        this.shine.intensity = 6 * lift * lift * spot.alpha;
+        this.shine.distance = lift * 7;
+      }
+      pool.position.set(under.x, 0.02, under.z);
+      pool.scale.setScalar(spot.size * 7 * unitsPerPx);
+      pool.material.color.set(spot.color);
+      pool.material.opacity = 0.12 * spot.alpha;
     });
   }
 
