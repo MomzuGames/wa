@@ -4,7 +4,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { mixColor, palette } from '../design/palette';
-import { Backdrop, moodFor } from './backdrop';
+import { Backdrop, moodFor } from '../three/backdrop';
 import { type LanternLevel, STEPS, cellCount, clashing, isRock, isSolved, isWater, lightCounts, rockCount, rockState, sightLines } from '../regions/moonlake/model';
 
 // Style samples C and D: the puzzle itself as a small 3D diorama floating in the night. The

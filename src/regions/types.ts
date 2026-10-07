@@ -51,6 +51,9 @@ export interface LevelScene {
   begin?(): void;
   // Regions that use R to rotate: restart is the icon or Backspace instead.
   usesRotateKey?: boolean;
+  // A 3D level draws its own world (the 3D layer underneath): the shell hides its 2D
+  // scenery and spotlight.
+  ownsBackdrop?: boolean;
   destroy(): void;
 }
 

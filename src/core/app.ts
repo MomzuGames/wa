@@ -10,7 +10,9 @@ export async function createApp(mount: HTMLElement): Promise<Application> {
   const app = new Application();
   await app.init({
     resizeTo: window,
+    // Clear: the 3D layer underneath shows through (it clears to the night colour itself).
     backgroundColor: palette.void,
+    backgroundAlpha: 0,
     antialias: true,
     // Phones report a 3x pixel ratio; 2x is indistinguishable on this art and needs
     // less than half the pixels (and every glow filter renders at this scale too).
@@ -18,6 +20,8 @@ export async function createApp(mount: HTMLElement): Promise<Application> {
     autoDensity: true,
     preference: 'webgl',
   });
+  app.canvas.style.position = 'relative';
+  app.canvas.style.zIndex = '1';
   mount.appendChild(app.canvas);
   // Right-click is a game input (counter-clockwise rotation), not a menu.
   app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());

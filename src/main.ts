@@ -1,4 +1,6 @@
+import gsap from 'gsap';
 import './style.css';
+import { Stage3D, setStage3D } from './three/stage3d';
 import '@fontsource/quicksand/300.css';
 import { createApp, installResumeGuard, installTweenSafety, onResize } from './core/app';
 import { installDebugLog } from './core/debugLog';
@@ -37,7 +39,11 @@ async function main() {
 
   installTweenSafety();
   if (!IS_APP) installUpdates();
-  const app = await createApp(document.querySelector<HTMLDivElement>('#app')!);
+  const mount = document.querySelector<HTMLDivElement>('#app')!;
+  const app = await createApp(mount);
+  // The 3D layer under the game's canvas (puzzle dioramas, and later the world map).
+  const stage3D = new Stage3D(mount);
+  setStage3D(stage3D);
   installResumeGuard(app, () => events.emit('input:cancel'));
   installDebugLog(app, () => {
     const scene = scenes.scene as unknown as { constructor: { name: string }; regionId?: string; levelIndex?: number } | null;
@@ -57,8 +63,11 @@ async function main() {
   const game = new Game({ app, scenes, audio, particles, hud, settings, openAccount: () => profiles.open() });
 
   app.stage.addChild(background.container, scenes.root, particles.container, spirit, hud, settings);
+  // The 2D vignette and dust would grey out the 3D world: they fade away while it shows.
+  stage3D.onActive = (active) => gsap.to(background.container, { alpha: active ? 0 : 1, duration: 0.8, ease: 'sine.inOut' });
 
   onResize(app, (w, h) => {
+    stage3D.resize(w, h);
     background.resize(w, h);
     scenes.resize(w, h);
     hud.resize(w);
@@ -71,6 +80,8 @@ async function main() {
     scenes.update(dt);
     spirit.update(dt);
     particles.update(dt);
+    // The 3D layer draws last, once the scene has moved this frame.
+    stage3D.render(dt);
   });
 
   installKeyboard();

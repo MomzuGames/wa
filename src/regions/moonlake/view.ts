@@ -11,6 +11,8 @@ import { type LanternLevel, STEPS, allLit, cellCount, clashing, isRock, isSolved
 import { type Deduction, type Reason, solveByLogic } from './solver';
 import { createMoonVoice, type MoonVoice } from './sound';
 import { lanternBody, softGlow } from './lanternArt';
+import { drawLantern, drawRock } from './art2d';
+import { lanternIntroPages } from './intro';
 
 // Lanterns on the lake: tap the water to float a paper lantern, tap it again to take it
 // away. Warm light runs straight across the water from every lantern; the lake is done
@@ -40,54 +42,6 @@ const NUDGE: Record<Reason, string> = {
   sees: 'Look at the ringed lantern. Nothing in its light can hold another lantern.',
   'what-if': 'Imagine the ringed spot without a lantern: some patch could never be lit, or a rock could not be met. So a lantern belongs there.',
 };
-
-// A Japanese paper lantern (chōchin), centred on (0, 0), `h` tall: a ribbed paper body
-// glowing warm from inside, dark caps top and bottom, a hanging loop and a short tassel.
-export function drawLantern(g: Graphics, h: number, alpha = 1): void {
-  const w = h * 0.74;
-  const line = Math.max(0.8, h * 0.035);
-  g.moveTo(-w * 0.13, -h * 0.5).quadraticCurveTo(0, -h * 0.74, w * 0.13, -h * 0.5).stroke({ color: palette.dim, width: line * 1.2, alpha });
-  g.ellipse(0, 0, w / 2, h * 0.42).fill({ color: palette.peach, alpha: 0.95 * alpha });
-  g.ellipse(0, h * 0.03, w * 0.35, h * 0.3).fill({ color: palette.lemon, alpha: 0.85 * alpha });
-  g.ellipse(0, h * 0.05, w * 0.17, h * 0.15).fill({ color: palette.pearl, alpha: 0.5 * alpha });
-  for (const k of [-0.27, -0.135, 0, 0.135, 0.27]) {
-    const y = k * h;
-    const half = (w / 2) * Math.sqrt(Math.max(0, 1 - (y / (h * 0.42)) ** 2));
-    g.moveTo(-half, y).quadraticCurveTo(0, y + h * 0.035, half, y);
-  }
-  g.stroke({ color: palette.shadow, width: line * 0.7, alpha: 0.18 * alpha });
-  g.roundRect(-w * 0.3, -h * 0.5, w * 0.6, h * 0.11, h * 0.03).fill({ color: palette.void, alpha: 0.92 * alpha }).stroke({ color: palette.rose, width: line * 0.6, alpha: 0.35 * alpha });
-  g.roundRect(-w * 0.3, h * 0.39, w * 0.6, h * 0.11, h * 0.03).fill({ color: palette.void, alpha: 0.92 * alpha }).stroke({ color: palette.rose, width: line * 0.6, alpha: 0.35 * alpha });
-  g.moveTo(0, h * 0.5).lineTo(0, h * 0.64).stroke({ color: palette.rose, width: line, alpha: 0.75 * alpha, cap: 'round' });
-}
-
-// A rock in the lake, centred on (0, 0), with its dots (or a ring for none) on top.
-function drawRock(g: Graphics, size: number, seed: number, count: number | null, dotColor: number = palette.pearl): void {
-  const r = size * 0.42;
-  const pts: number[] = [];
-  for (let k = 0; k < 9; k++) {
-    const a = (k / 9) * Math.PI * 2;
-    const wob = 0.86 + 0.14 * Math.sin(seed * 12.9898 + k * 78.233);
-    pts.push(Math.cos(a) * r * wob, Math.sin(a) * r * wob * 0.88);
-  }
-  g.poly(pts.map((v, i) => v + (i % 2 ? size * 0.06 : size * 0.03))).fill({ color: palette.shadow, alpha: 0.45 });
-  g.poly(pts).fill({ color: palette.dim, alpha: 1 }).poly(pts).fill({ color: palette.lavender, alpha: 0.06 }).poly(pts).stroke({ color: palette.pearl, width: 1, alpha: 0.16 });
-  g.ellipse(-r * 0.35, -r * 0.42, r * 0.3, r * 0.12).fill({ color: palette.pearl, alpha: 0.1 });
-  if (count === null) return;
-  const d = size * 0.07;
-  if (count === 0) {
-    g.circle(0, 0, size * 0.12).stroke({ color: dotColor, width: Math.max(1.2, size * 0.035), alpha: 0.85 });
-    return;
-  }
-  const s = size * 0.13;
-  const spots: Record<number, Array<[number, number]>> = {
-    1: [[0, 0]],
-    2: [[-s, 0], [s, 0]],
-    3: [[0, -s * 0.9], [-s, s * 0.6], [s, s * 0.6]],
-    4: [[-s, -s], [s, -s], [-s, s], [s, s]],
-  };
-  for (const [x, y] of spots[count] ?? []) g.circle(x, y, d).fill({ color: dotColor, alpha: 0.95 });
-}
 
 interface LanternView {
   root: Container;
@@ -674,121 +628,8 @@ export class LanternLakeScene implements LevelScene {
 
   // ----- instruction card -----
 
-  // A small lake for the instruction card: rows as in a level, plus lanterns and a verdict.
-  private miniLake(rows: string[], lanterns: number[], s = 30): { root: Container; draw: (ls: number[]) => void } {
-    const level: LanternLevel = { seed: 'mini', chapter: 0, width: rows[0]!.length, height: rows.length, grid: rows, solution: [], difficulty: 0 };
-    const sight = sightLines(level);
-    const root = new Container();
-    const base = new Graphics();
-    const light = new Graphics();
-    const top = new Container();
-    root.addChild(base, light, top);
-    const ox = -(level.width * s) / 2;
-    const oy = -(level.height * s) / 2;
-    const at = (i: number) => ({ x: ox + ((i % level.width) + 0.5) * s, y: oy + (Math.floor(i / level.width) + 0.5) * s });
-    for (let i = 0; i < cellCount(level); i++) {
-      if (!isWater(level, i) && !isRock(level, i)) continue;
-      const p = at(i);
-      base.roundRect(p.x - s * 0.48, p.y - s * 0.48, s * 0.96, s * 0.96, s * 0.18).fill({ color: palette.void, alpha: 1 }).roundRect(p.x - s * 0.48, p.y - s * 0.48, s * 0.96, s * 0.96, s * 0.18).stroke({ color: palette.pearl, width: 1, alpha: 0.18 });
-    }
-    const draw = (ls: number[]) => {
-      const set = new Set(ls);
-      light.clear();
-      top.removeChildren().forEach((c) => c.destroy());
-      const lit = lightCounts(level, set, sight);
-      for (let i = 0; i < lit.length; i++) {
-        if (!lit[i]) continue;
-        const p = at(i);
-        light.roundRect(p.x - s * 0.47, p.y - s * 0.47, s * 0.94, s * 0.94, s * 0.2).fill({ color: palette.lemon, alpha: 0.16 });
-      }
-      const clashes = clashing(level, set, sight);
-      for (const a of clashes) for (const b of clashes) if (b > a && sight[a]!.includes(b)) light.moveTo(at(a).x, at(a).y).lineTo(at(b).x, at(b).y);
-      light.stroke({ color: palette.rose, width: 3, alpha: 0.8, cap: 'round' });
-      for (let i = 0; i < cellCount(level); i++) {
-        if (!isRock(level, i)) continue;
-        const g = new Graphics();
-        const state = rockState(level, set, i);
-        drawRock(g, s, i + 1, rockCount(level, i), state === 'met' && rockCount(level, i) ? palette.lemon : state === 'over' ? palette.rose : palette.pearl);
-        g.position.copyFrom(at(i));
-        top.addChild(g);
-      }
-      for (const l of set) {
-        const g = new Container();
-        g.addChild(softGlow(s * 1.8, palette.peach, 0.3), softGlow(s * 0.9, palette.lemon, 0.45), lanternBody(s * 0.66, l, drawLantern));
-        g.position.copyFrom(at(l));
-        top.addChild(g);
-      }
-    };
-    draw(lanterns);
-    return { root, draw };
-  }
-
-  // Examples side by side, each with a soft tick or cross below.
-  private examples(items: Array<{ rows: string[]; lanterns: number[]; ok: boolean }>): () => Container {
-    return () => {
-      const root = new Container();
-      const s = 26;
-      const gap = 30;
-      const widths = items.map((e) => e.rows[0]!.length * s);
-      let x0 = -(widths.reduce((a, w) => a + w, 0) + gap * (items.length - 1)) / 2;
-      items.forEach((e, i) => {
-        const lake = this.miniLake(e.rows, e.lanterns, s);
-        lake.root.position.set(x0 + widths[i]! / 2, -10);
-        const mark = new Graphics();
-        const my = (e.rows.length * s) / 2 + 14;
-        if (e.ok) mark.moveTo(-7, my).lineTo(-2, my + 5).lineTo(8, my - 6).stroke({ color: palette.mint, width: 2.5, cap: 'round', join: 'round' });
-        else mark.moveTo(-6, my - 6).lineTo(6, my + 6).moveTo(6, my - 6).lineTo(-6, my + 6).stroke({ color: palette.rose, width: 2.5, cap: 'round' });
-        lake.root.addChild(mark);
-        lake.root.alpha = 0;
-        root.addChild(lake.root);
-        gsap.to(lake.root, { alpha: 1, duration: 0.5, delay: i * 0.35 });
-        x0 += widths[i]! + gap;
-      });
-      return root;
-    };
-  }
-
   introPages(): IntroPage[] {
-    const pages: IntroPage[] = [
-      {
-        caption: 'Tap the water to float a lantern there, and tap it again to take it away. Light up every patch of water.',
-        glyph: () => {
-          // Three taps light a small lake: the middle, then two corners.
-          const s = 34;
-          const lake = this.miniLake(['...', '...', '...'], [], s);
-          const finger = makeFinger();
-          lake.root.addChild(finger);
-          const at = (i: number) => ({ x: ((i % 3) - 1) * s, y: (Math.floor(i / 3) - 1) * s });
-          const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.4 });
-          const order = [4, 0, 8];
-          order.forEach((cell, k) => {
-            tapAt(tl, finger, at(cell).x, at(cell).y, k === 0 ? 0.5 : 0.6).call(() => lake.draw(order.slice(0, k + 1)));
-          });
-          liftFinger(tl, finger);
-          tl.call(() => lake.draw([]), undefined, '+=1.2');
-          lake.root.on('destroyed', () => tl.kill());
-          return lake.root;
-        },
-      },
-      {
-        caption: 'Light runs straight across the water until it meets a rock or the shore. Two lanterns may never shine on each other.',
-        glyph: this.examples([
-          { rows: ['.#.'], lanterns: [0, 2], ok: true },
-          { rows: ['...'], lanterns: [0, 2], ok: false },
-        ]),
-      },
-    ];
-    if (this.level.grid.some((row) => /[0-4]/.test(row))) {
-      pages.push({
-        caption: 'Dots on a rock: exactly that many lanterns sit right beside it, above, below, left or right. Corners do not count. A ring means none.',
-        glyph: this.examples([
-          { rows: ['.2.'], lanterns: [0, 2], ok: true },
-          { rows: ['.2.'], lanterns: [0], ok: false },
-          { rows: ['.0.'], lanterns: [0], ok: false },
-        ]),
-      });
-    }
-    return pages;
+    return lanternIntroPages(this.level);
   }
 
   // Dev only: faint rings where the stored answer's lanterns go.

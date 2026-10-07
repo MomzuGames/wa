@@ -19,58 +19,35 @@ export interface BackdropMood {
   hills: [number, number]; // far and near hill colours
 }
 
-// Moon Lake: each level its own night, all of them calm and pastel.
-const night = (k: number) => mixColor(palette.void, palette.lavender, k);
+// Moon Lake: each level its own night, calm and pastel, and never all one hue: a cool sky
+// overhead, a warmer glow low down, green-grey hills.
+const sky = (k: number) => mixColor(palette.void, palette.sky, k);
+const low = (c: number, k = 0.5) => mixColor(c, palette.void, k);
+const hillsOf = (tint: number): [number, number] => [mixColor(sky(0.2), tint, 0.18), mixColor(palette.void, palette.sage, 0.16)];
+const mood = (m: Partial<BackdropMood> & Pick<BackdropMood, 'top' | 'horizon'>): BackdropMood => ({
+  clouds: mixColor(palette.pearl, palette.peach, 0.2),
+  cloudAmount: 0.4,
+  moonSize: 0.032,
+  moonWarm: 0.1,
+  crescent: 0,
+  mist: 0.45,
+  fireflies: 25,
+  hills: hillsOf(palette.sage),
+  ...m,
+});
+
 export const MOON_LAKE: Record<string, BackdropMood> = {
+  Reed: mood({ top: mixColor(palette.void, palette.sage, 0.16), horizon: low(palette.peach, 0.52), cloudAmount: 0.3, moonSize: 0.026, fireflies: 20 }),
+  Lotus: mood({ top: sky(0.16), horizon: low(palette.rose, 0.5), clouds: mixColor(palette.pearl, palette.rose, 0.25), hills: hillsOf(palette.rose), fireflies: 30 }),
+  Heron: mood({ top: sky(0.24), horizon: low(mixColor(palette.sky, palette.pearl, 0.3), 0.55), clouds: palette.pearl, moonSize: 0.034, mist: 0.35, fireflies: 12, hills: hillsOf(palette.sky) }),
+  Mist: mood({ top: sky(0.15), horizon: low(palette.pearl, 0.55), clouds: palette.pearl, cloudAmount: 0.7, moonSize: 0.026, crescent: 0.2, mist: 1, fireflies: 12 }),
   // A soft blue night with a warm peach glow low in the sky, sage hills and pale clouds.
-  Firefly: {
-    top: mixColor(palette.void, palette.sky, 0.2),
-    horizon: mixColor(mixColor(palette.peach, palette.rose, 0.25), palette.void, 0.5),
-    clouds: mixColor(palette.pearl, palette.peach, 0.2),
-    cloudAmount: 0.45,
-    moonSize: 0.032,
-    moonWarm: 0.15,
-    crescent: 0,
-    mist: 0.45,
-    fireflies: 60,
-    hills: [mixColor(mixColor(palette.void, palette.sky, 0.22), palette.sage, 0.18), mixColor(palette.void, palette.sage, 0.16)],
-  },
-  'Harvest Moon': {
-    top: night(0.2),
-    horizon: mixColor(palette.peach, palette.void, 0.45),
-    clouds: mixColor(palette.peach, palette.pearl, 0.3),
-    cloudAmount: 0.35,
-    moonSize: 0.07,
-    moonWarm: 1,
-    crescent: 0,
-    mist: 0.4,
-    fireflies: 25,
-    hills: [mixColor(night(0.28), palette.peach, 0.12), night(0.18)],
-  },
-  Crescent: {
-    top: mixColor(night(0.18), palette.sky, 0.12),
-    horizon: mixColor(palette.sky, palette.void, 0.5),
-    clouds: mixColor(palette.sky, palette.pearl, 0.4),
-    cloudAmount: 0.4,
-    moonSize: 0.045,
-    moonWarm: 0,
-    crescent: 0.75,
-    mist: 0.4,
-    fireflies: 20,
-    hills: [mixColor(night(0.26), palette.sky, 0.12), night(0.17)],
-  },
-  Mist: {
-    top: night(0.24),
-    horizon: mixColor(palette.pearl, palette.void, 0.55),
-    clouds: palette.pearl,
-    cloudAmount: 0.7,
-    moonSize: 0.05,
-    moonWarm: 0,
-    crescent: 0.2,
-    mist: 1,
-    fireflies: 15,
-    hills: [night(0.32), night(0.24)],
-  },
+  Firefly: mood({ top: sky(0.2), horizon: low(mixColor(palette.peach, palette.rose, 0.25), 0.5), cloudAmount: 0.45, moonWarm: 0.15, fireflies: 60, hills: hillsOf(palette.sage) }),
+  Reflection: mood({ top: mixColor(palette.void, palette.mint, 0.14), horizon: low(palette.mint, 0.56), clouds: mixColor(palette.pearl, palette.mint, 0.2), moonSize: 0.04, mist: 0.3, fireflies: 20, hills: hillsOf(palette.mint) }),
+  Crescent: mood({ top: sky(0.18), horizon: low(palette.sky, 0.5), clouds: mixColor(palette.sky, palette.pearl, 0.4), moonSize: 0.045, moonWarm: 0, crescent: 0.75, fireflies: 20, hills: hillsOf(palette.sky) }),
+  'Harvest Moon': mood({ top: mixColor(palette.void, palette.peach, 0.1), horizon: low(palette.peach, 0.45), clouds: mixColor(palette.peach, palette.pearl, 0.3), cloudAmount: 0.35, moonSize: 0.07, moonWarm: 1, mist: 0.4, hills: hillsOf(palette.peach) }),
+  Stillness: mood({ top: sky(0.12), horizon: low(palette.pearl, 0.6), cloudAmount: 0.15, mist: 0.6, fireflies: 10 }),
+  'Full Moon': mood({ top: sky(0.2), horizon: low(mixColor(palette.pearl, palette.sky, 0.4), 0.5), clouds: palette.pearl, moonSize: 0.06, moonWarm: 0.05, mist: 0.4, fireflies: 40, hills: hillsOf(palette.sky) }),
 };
 
 export function moodFor(levelName: string): BackdropMood {

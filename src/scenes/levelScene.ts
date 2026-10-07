@@ -125,6 +125,11 @@ export class LevelShellScene implements Scene {
     this.level.container.y = safeArea.top;
     this.stage.addChild(this.level.container);
     this.container.addChild(this.atmosphere.container, this.spotlight, this.stage, this.hud);
+    // A 3D level brings its own world; the 2D scenery would cover it.
+    if (this.level.ownsBackdrop) {
+      this.atmosphere.container.visible = false;
+      this.spotlight.visible = false;
+    }
 
     this.unsubscribe.push(
       events.on('level:note', (text) => this.toast.show(text, this.width, this.height)),

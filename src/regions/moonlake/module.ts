@@ -6,9 +6,10 @@ import { durations, easings, scaled } from '../../design/motion';
 import { progression } from '../../core/progress';
 import levelsJson from './levels.json';
 import type { LanternLevel } from './model';
-import { LanternLakeScene } from './view';
+import { LanternLake3DScene } from './view3d';
+import { LEVEL_NAMES } from '../catalog';
 
-// Lanterns on the lake: float lanterns until every patch of water glows.
+// Lanterns on the lake, in 3D: float lanterns until every patch of water glows.
 const levels = levelsJson as LanternLevel[];
 
 // Region finale: a full moon rises over the whole lake, ripples cross the screen and warm
@@ -64,6 +65,6 @@ export const moonlakeModule: PuzzleModule = {
   id: 'moonlake',
   accent: 'rose',
   levelCount: progression.levelsPerRegion,
-  createLevel: (ctx, levelIndex) => new LanternLakeScene(ctx, levels[levelIndex]!, levelIndex === 0),
+  createLevel: (ctx, levelIndex) => new LanternLake3DScene(ctx, levels[levelIndex]!, levelIndex === 0, LEVEL_NAMES.moonlake[levelIndex] ?? ''),
   playRegionFinale: playFinale,
 };
