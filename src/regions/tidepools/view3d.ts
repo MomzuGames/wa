@@ -5,9 +5,9 @@ import type { ShellContext } from '../types';
 import { mixColor, palette } from '../../design/palette';
 import { durations, scaled } from '../../design/motion';
 import { makeFinger } from '../../ui/introGlyphs';
-import { col, glowSprite, glowTexture, softBandTexture } from '../../three/kit';
+import { col, glowTexture } from '../../three/kit';
 import { Diorama } from '../../three/diorama';
-import { type ShellLevel, clueMet, clueState, edgeEnds, exits } from './model';
+import { type ShellLevel, clueMet, clueState, edgeEnds } from './model';
 import { ShellPoolScene } from './view';
 
 // Tidepools in 3D: the pool is a diorama of wet sand and shallow water; the points are small
@@ -18,6 +18,12 @@ import { ShellPoolScene } from './view';
 // to clear it. The rules, hints and notes are the 2D pool's.
 
 const pool3d = {
+  // The look (the owner: smooth, see-through, soft, pastel; anything glowing very faint).
+  sand: mixColor(mixColor(palette.peach, palette.lemon, 0.35), palette.earthLight, 0.35), // warm pale sand under the water
+  shallowOpacity: 0.13, // the sheet of shallow water over the whole pool
+  streamOpacity: 0.36, // the tide you draw: clearer water, soft at its edges
+  streamWidth: 0.3,
+  stoneOpen: mixColor(palette.peach, palette.pearl, 0.35),
   waterY: 0.05,
   snap: 0.42, // of a cell: how close the finger must come to a point
   glintSpacing: 0.85,
@@ -34,31 +40,42 @@ export class Pool3DScene extends ShellPoolScene {
   private glints!: THREE.Points;
   private turning = false;
   private demoLine: THREE.Group | null = null;
+  private shallow!: THREE.ShaderMaterial;
+  private blurGeo = new THREE.PlaneGeometry(0.75, 0.75);
+  private shadowMat = new THREE.MeshBasicMaterial({ map: glowTexture(), color: col(palette.void), transparent: true, opacity: 0.35, depthWrite: false });
+  private shellGeo = new THREE.TorusGeometry(0.19, 0.055, 24, 64);
+  private stoneGeo = new THREE.SphereGeometry(0.21, 48, 32);
+  private jointGeo = new THREE.PlaneGeometry(pool3d.streamWidth * 1.15, pool3d.streamWidth * 1.15);
+  private joint!: THREE.ShaderMaterial;
+  private stream!: THREE.ShaderMaterial;
 
   constructor(ctx: ShellContext, level: ShellLevel, tutorial: boolean, levelIndex: number, levelName: string) {
     super(ctx, level, tutorial);
     for (const g of [this.water, this.points, this.glow, this.lines, this.flow, this.clueLayer, this.hintLayer]) g.visible = false;
     const w = level.width - 1;
     const h = level.height - 1;
-    this.d = new Diorama({ region: 'tidepools', levelIndex, levelName, width: w + 1, depth: h + 1, slab: { color: mixColor(palette.earth, palette.peach, 0.2), top: mixColor(palette.earth, palette.peach, 0.28) } });
-    // Shallow water over the sand, and the points as small drops.
-    const shallow = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.6, h + 0.6), new THREE.MeshBasicMaterial({ color: col(mixColor(palette.void, palette.mint, 0.18)), transparent: true, opacity: 0.55, depthWrite: false }));
+    this.d = new Diorama({ region: 'tidepools', levelIndex, levelName, width: w + 1, depth: h + 1, slab: { color: mixColor(palette.earthLight, palette.peach, 0.3), top: pool3d.sand } });
+    // A sheet of shallow, see-through mint water over pale sand, with faint ripples of light.
+    this.shallow = waterMaterial(palette.mint, pool3d.shallowOpacity, 0.18);
+    const shallow = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.7, h + 0.7), this.shallow);
     shallow.rotation.x = -Math.PI / 2;
-    shallow.position.y = 0.005;
+    shallow.position.y = 0.006;
     this.d.board.add(shallow);
-    const drop = new THREE.MeshBasicMaterial({ color: col(palette.mint), transparent: true, opacity: 0.55 });
-    const dropGeo = new THREE.SphereGeometry(0.045, 10, 8);
-    for (let y = 0; y < level.height; y++) {
-      for (let x = 0; x < level.width; x++) {
-        const d = new THREE.Mesh(dropGeo, drop);
-        d.position.copy(this.at(x, y)).setY(0.03);
-        this.d.board.add(d);
-      }
-    }
+    // The points: tiny soft dots of light under the water.
+    const dotGeo = new THREE.BufferGeometry();
+    const dots: number[] = [];
+    for (let y = 0; y < level.height; y++) for (let x = 0; x < level.width; x++) dots.push(...this.at(x, y).setY(0.02).toArray());
+    dotGeo.setAttribute('position', new THREE.Float32BufferAttribute(dots, 3));
+    this.d.board.add(new THREE.Points(dotGeo, new THREE.PointsMaterial({ map: glowTexture(), color: col(mixColor(palette.mint, palette.pearl, 0.4)), size: 0.16, transparent: true, opacity: 0.35, depthWrite: false })));
+    // The tide you draw is clearer water, gently rippling (one material for every stream).
+    const aqua = mixColor(palette.mint, palette.sky, 0.3);
+    this.stream = waterMaterial(aqua, pool3d.streamOpacity, 0.45, 'band');
+    this.joint = waterMaterial(aqua, pool3d.streamOpacity * 0.85, 0.45, 'disc');
     const n = 120;
     const glintGeo = new THREE.BufferGeometry();
     glintGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3).fill(-99), 3));
-    this.glints = new THREE.Points(glintGeo, new THREE.PointsMaterial({ map: glowTexture(), color: col(palette.pearl), size: 0.12, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }));
+    // Light glinting on the moving water: small, pale and faint.
+    this.glints = new THREE.Points(glintGeo, new THREE.PointsMaterial({ map: glowTexture(), color: col(palette.pearl), size: 0.09, transparent: true, opacity: 0.22, depthWrite: false }));
     this.d.board.add(this.water3d, this.clues3d, this.glints);
     this.layout(ctx.width, ctx.height);
   }
@@ -112,29 +129,22 @@ export class Pool3DScene extends ShellPoolScene {
     if (!this.d) return;
     this.d.clearGroup(this.water3d);
     const { width: w, height: h } = this.level;
-    // The water as the 2D pool drew it: a wide faint glow, a soft translucent body and a thin
-    // pale core, every layer fading out at its edges.
-    const soft = (color: number, opacity: number) => new THREE.MeshBasicMaterial({ map: softBandTexture(), color: col(color), transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending });
-    const glow = soft(palette.mint, 0.18);
-    const body = soft(palette.mint, 0.45);
-    const core = soft(mixColor(palette.mint, palette.pearl, 0.4), 0.55);
+    // The tide: clearer water running between the points, soft and see-through at its edges,
+    // with a gentle ripple of light moving through it. Joints are round pools of the same water.
     const joints = new Set<string>();
     for (const e of this.drawn) {
       const [a, b] = edgeEnds(w, h, e);
       const pa = this.at(a.x, a.y);
       const pb = this.at(b.x, b.y);
-      this.d.strip(pa.clone().setY(0.055), pb.clone().setY(0.055), 0.42, glow, this.water3d);
-      this.d.strip(pa.clone().setY(0.06), pb.clone().setY(0.06), 0.2, body, this.water3d);
-      this.d.strip(pa.clone().setY(0.065), pb.clone().setY(0.065), 0.07, core, this.water3d);
+      this.d.strip(pa.clone().setY(0.04), pb.clone().setY(0.04), pool3d.streamWidth, this.stream, this.water3d);
       joints.add(`${a.x},${a.y}`);
       joints.add(`${b.x},${b.y}`);
     }
-    // Where streams meet or stop, a soft round pool of light closes the joint.
     for (const k of joints) {
       const [x, y] = k.split(',').map(Number) as [number, number];
-      const end = exits(this.level, this.drawn, x, y).length === 1;
-      const pool = glowSprite(palette.mint, end ? 0.5 : 0.3, end ? 0.5 : 0.25);
-      pool.position.copy(this.at(x, y)).setY(0.07);
+      const pool = new THREE.Mesh(this.jointGeo, this.joint);
+      pool.rotation.x = -Math.PI / 2;
+      pool.position.copy(this.at(x, y)).setY(0.041);
       this.water3d.add(pool);
     }
     this.runs = this.findRuns();
@@ -147,23 +157,32 @@ export class Pool3DScene extends ShellPoolScene {
     this.d.clearGroup(this.clues3d);
     for (const c of this.level.clues) {
       const state = clueState(this.level, this.drawn, c);
-      const color = state === 'met' ? palette.mint : state === 'broken' ? palette.peach : palette.pearl;
+      // Pastel and matte: pale sea-stone while open, mint once met, peach once broken.
+      const color = state === 'met' ? mixColor(palette.mint, palette.pearl, 0.15) : state === 'broken' ? mixColor(palette.peach, palette.pearl, 0.1) : pool3d.stoneOpen;
       const p = this.at(c.x, c.y);
+      // A soft blurred shadow under every clue, and a very faint wash of its colour once it answers.
+      const shadow = new THREE.Mesh(this.blurGeo, this.shadowMat);
+      shadow.rotation.x = -Math.PI / 2;
+      shadow.position.copy(p).setY(0.03);
+      this.clues3d.add(shadow);
       if (state !== 'open') {
-        const halo = new THREE.Mesh(new THREE.CircleGeometry(0.42, 28), new THREE.MeshBasicMaterial({ color: col(color), transparent: true, opacity: 0.16, depthWrite: false }));
-        halo.rotation.x = -Math.PI / 2;
-        halo.position.copy(p).setY(0.065);
-        this.clues3d.add(halo);
+        const wash = new THREE.Mesh(this.blurGeo, new THREE.MeshBasicMaterial({ map: glowTexture(), color: col(color), transparent: true, opacity: 0.12, depthWrite: false }));
+        wash.rotation.x = -Math.PI / 2;
+        wash.scale.setScalar(1.25);
+        wash.position.copy(p).setY(0.035);
+        this.clues3d.add(wash);
       }
       if (c.kind === 'shell') {
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.21, 0.06, 12, 32), new THREE.MeshStandardMaterial({ color: col(color), roughness: 0.4, emissive: col(color), emissiveIntensity: state === 'open' ? 0.1 : 0.35 }));
+        // A ring of frosted sea-glass.
+        const ring = new THREE.Mesh(this.shellGeo, new THREE.MeshStandardMaterial({ color: col(color), roughness: 0.3, transparent: true, opacity: 0.8 }));
         ring.rotation.x = -Math.PI / 2;
-        ring.position.copy(p).setY(0.12);
+        ring.position.copy(p).setY(0.09);
         this.clues3d.add(ring);
       } else {
-        const pebble = new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 16), new THREE.MeshStandardMaterial({ color: col(color), roughness: 0.5, emissive: col(color), emissiveIntensity: state === 'open' ? 0.08 : 0.3 }));
-        pebble.scale.set(1, 0.7, 1);
-        pebble.position.copy(p).setY(0.16);
+        // A smooth pebble, flattened by the sea.
+        const pebble = new THREE.Mesh(this.stoneGeo, new THREE.MeshStandardMaterial({ color: col(color), roughness: 0.65 }));
+        pebble.scale.set(1, 0.5, 0.88);
+        pebble.position.copy(p).setY(0.1);
         this.clues3d.add(pebble);
       }
     }
@@ -193,8 +212,12 @@ export class Pool3DScene extends ShellPoolScene {
     for (const c of this.level.clues) {
       if (clueMet(this.level, this.drawn, c)) continue;
       const p = this.at(c.x, c.y);
-      const ring = this.d.ring(p.x, p.z, 0.45, palette.peach, 0.1);
-      gsap.fromTo(ring.material, { opacity: 0 }, { opacity: 0.9, duration: 0.45, yoyo: true, repeat: 3, onComplete: () => this.d.marks.remove(ring) });
+      const wash = new THREE.Mesh(this.blurGeo, new THREE.MeshBasicMaterial({ map: glowTexture(), color: col(palette.peach), transparent: true, opacity: 0, depthWrite: false }));
+      wash.rotation.x = -Math.PI / 2;
+      wash.scale.setScalar(1.5);
+      wash.position.copy(p).setY(0.04);
+      this.d.marks.add(wash);
+      gsap.fromTo(wash.material, { opacity: 0 }, { opacity: 0.35, duration: 0.5, yoyo: true, repeat: 3, onComplete: () => this.d.marks.remove(wash) });
     }
   }
 
@@ -304,7 +327,10 @@ export class Pool3DScene extends ShellPoolScene {
     super.update(dt);
     if (!this.d) return;
     this.d.update(dt);
-    if (this.nudge3d) this.nudge3d.material.opacity = 0.45 + 0.4 * Math.sin(this.time * 3);
+    this.shallow.uniforms.uTime!.value = this.time;
+    this.stream.uniforms.uTime!.value = this.time;
+    this.joint.uniforms.uTime!.value = this.time;
+    if (this.nudge3d) this.nudge3d.material.opacity = 0.3 + 0.2 * Math.sin(this.time * 3);
   }
 
   override playCompletion(): Promise<void> {
@@ -321,4 +347,28 @@ export class Pool3DScene extends ShellPoolScene {
     super.destroy();
     this.d.dispose();
   }
+}
+
+// Water: a pastel tint, see-through, with slow ripples of light moving over it. A stream
+// (`band`) fades out softly at both edges, across its width.
+function waterMaterial(color: number, opacity: number, ripple: number, shape: 'sheet' | 'band' | 'disc' = 'sheet'): THREE.ShaderMaterial {
+  const edge = {
+    sheet: 'smoothstep(0.0, 0.04, vUv.x) * smoothstep(0.0, 0.04, vUv.y) * smoothstep(1.0, 0.96, vUv.x) * smoothstep(1.0, 0.96, vUv.y)',
+    band: '1.0 - smoothstep(0.05, 0.5, abs(vUv.x - 0.5))',
+    disc: '1.0 - smoothstep(0.05, 0.5, length(vUv - 0.5))',
+  }[shape];
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: { uTime: { value: 0 }, uColor: { value: col(color) }, uOpacity: { value: opacity }, uRipple: { value: ripple } },
+    vertexShader: 'varying vec2 vUv; varying vec3 vWorld; void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader: `uniform float uTime; uniform vec3 uColor; uniform float uOpacity; uniform float uRipple; varying vec2 vUv; varying vec3 vWorld;
+      void main(){
+        vec2 p = vWorld.xz;
+        float r = sin(p.x * 2.3 + sin(p.y * 1.7 + uTime * 0.4) * 1.3 + uTime * 0.5) * 0.5 + sin(p.y * 2.9 - p.x * 0.8 - uTime * 0.45) * 0.35 + sin((p.x + p.y) * 5.1 + uTime * 0.8) * 0.15;
+        float light = smoothstep(0.35, 1.0, r) * 0.25 * uRipple;
+        float edge = ${edge};
+        gl_FragColor = vec4(mix(uColor, vec3(1.0), light), (uOpacity + light * 0.5) * edge);
+      }`,
+  });
 }
