@@ -1,7 +1,7 @@
 import { Graphics } from 'pixi.js';
 
 // All icons are drawn centred on (0,0) inside a box of `size` px, stroked in `color`.
-export type IconName = 'settings' | 'back' | 'speaker' | 'speakerOff' | 'note' | 'sparkle' | 'leaf' | 'restart' | 'play' | 'help' | 'hint' | 'yes' | 'no' | 'account' | 'turn' | 'flip' | 'book';
+export type IconName = 'settings' | 'back' | 'speaker' | 'speakerOff' | 'note' | 'sparkle' | 'leaf' | 'restart' | 'play' | 'help' | 'hint' | 'yes' | 'no' | 'account' | 'turn' | 'flip' | 'book' | 'viewTop' | 'view3d';
 
 export function drawIcon(g: Graphics, name: IconName, size: number, color: number): Graphics {
   const s = size / 2;
@@ -68,6 +68,17 @@ export function drawIcon(g: Graphics, name: IconName, size: number, color: numbe
       g.moveTo(0, -s * 0.7).lineTo(0, s * 0.7).stroke({ ...stroke, alpha: 0.5 });
       g.moveTo(-s * 0.15, -s * 0.5).lineTo(-s * 0.7, 0).lineTo(-s * 0.15, s * 0.5).closePath().stroke(stroke);
       g.moveTo(s * 0.15, -s * 0.5).lineTo(s * 0.7, 0).lineTo(s * 0.15, s * 0.5).closePath().fill({ color, alpha: 0.5 });
+      break;
+    case 'viewTop':
+      // Seen from above: a flat square board with a dot in the middle.
+      g.roundRect(-s * 0.6, -s * 0.6, s * 1.2, s * 1.2, s * 0.18).stroke(stroke);
+      g.circle(0, 0, s * 0.1).fill({ color });
+      break;
+    case 'view3d':
+      // A board in 3D: a tilted diamond top with its sides.
+      g.moveTo(0, -s * 0.62).lineTo(s * 0.7, -s * 0.22).lineTo(0, s * 0.18).lineTo(-s * 0.7, -s * 0.22).closePath().stroke(stroke);
+      g.moveTo(-s * 0.7, -s * 0.22).lineTo(-s * 0.7, s * 0.2).lineTo(0, s * 0.62).lineTo(s * 0.7, s * 0.2).lineTo(s * 0.7, -s * 0.22).stroke(stroke);
+      g.moveTo(0, s * 0.18).lineTo(0, s * 0.62).stroke(stroke);
       break;
     case 'book':
       // An open book: two pages curving from the spine.

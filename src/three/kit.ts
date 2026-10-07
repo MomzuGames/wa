@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mixColor, palette } from '../design/palette';
+import { getSettings } from '../core/save';
 
 // Shared pieces of the 3D world: the soft glow every light uses, the paper lantern, and the
 // camera you turn by swiping (as in the style samples the owner chose: free turning, a
@@ -91,10 +92,30 @@ export function paperLantern(ghost = false): PaperLantern {
   return { group, body, heart, halo };
 }
 
+// Whether levels are seen straight from above (the view button in a level), with no
+// turning: easier for drawing and dragging. Remembered in the settings.
+export function topDown(): boolean {
+  try {
+    return getSettings().topDown === true;
+  } catch {
+    return false;
+  }
+}
+
+// What the camera must keep in view: the board's footprint (half width and depth, in board
+// units) and how far it reaches below and above its top surface.
+export interface BoardExtent {
+  halfW: number;
+  halfD: number;
+  low: number;
+  high: number;
+}
+
 // The turning camera. A swipe sideways turns the board all the way round, up or down tilts
 // it (15°–85°); the camera glides toward where the finger sends it, and a flick eases out.
-// A touch that hardly moves is a tap. The whole board always fits, centred in the space
-// between the top and bottom rows of buttons.
+// A touch that hardly moves is a tap. The whole board always fits, as large as it can,
+// centred in the space between the top and bottom rows of buttons. In the top-down view
+// (`topDown()`) the camera glides to its fixed view and swipes no longer turn it.
 export const orbitStyle = {
   pitch: { start: 0.95, min: 0.26, max: 1.48 },
   yawStart: Math.PI / 4,
@@ -103,6 +124,8 @@ export const orbitStyle = {
   follow: 7,
   inertia: 0.9,
   tapSlop: 10,
+  sideMargin: 14, // px kept clear at the screen's sides
+  flatPitch: Math.PI / 2 - 0.0005, // straight down
 } as const;
 
 export class OrbitView {
@@ -113,11 +136,22 @@ export class OrbitView {
   private spin = 0;
   private drag: { x: number; y: number; sx: number; sy: number; moved: boolean } | null = null;
 
+  private extent: BoardExtent;
+  private fitCache = { key: '', dist: 1, offX: 0, offY: 0 };
+
   constructor(
     readonly camera: THREE.PerspectiveCamera,
-    private radius: number,
+    radius: number | BoardExtent,
     private target = new THREE.Vector3(0, -0.15, 0),
-  ) {}
+    // The fixed view for top-down mode (a land whose heights matter keeps an angle).
+    private flat: { pitch: number; yaw: number } = { pitch: orbitStyle.flatPitch, yaw: 0 },
+  ) {
+    this.extent = typeof radius === 'number' ? { halfW: radius / Math.SQRT2, halfD: radius / Math.SQRT2, low: 0.6, high: 0.6 } : radius;
+  }
+
+  get flatView(): boolean {
+    return topDown();
+  }
 
   get dragging(): boolean {
     return this.drag !== null;
@@ -137,7 +171,7 @@ export class OrbitView {
     const d = this.drag;
     if (!d) return;
     if (!d.moved && Math.hypot(x - d.sx, y - d.sy) > orbitStyle.tapSlop) d.moved = true;
-    if (d.moved) {
+    if (d.moved && !this.flatView) {
       this.spin = -(x - d.x) * orbitStyle.turnPerPx;
       this.targetYaw += this.spin;
       this.targetPitch = Math.max(orbitStyle.pitch.min, Math.min(orbitStyle.pitch.max, this.targetPitch + (y - d.y) * orbitStyle.tiltPerPx));
@@ -148,6 +182,7 @@ export class OrbitView {
 
   // A quarter turn (keyboard players), gliding like a swipe.
   turnBy(quarters: number): void {
+    if (this.flatView) return;
     this.targetYaw += (quarters * Math.PI) / 2;
   }
 
@@ -163,6 +198,15 @@ export class OrbitView {
   }
 
   update(dt: number): void {
+    if (this.flatView) {
+      // Glide to the fixed view by the shortest way round.
+      this.spin = 0;
+      const turns = Math.round((this.targetYaw - this.flat.yaw) / (Math.PI * 2));
+      this.targetYaw = this.flat.yaw + turns * Math.PI * 2;
+      this.targetPitch = this.flat.pitch;
+    } else if (this.targetPitch > orbitStyle.pitch.max) {
+      this.targetPitch = orbitStyle.pitch.start;
+    }
     if (!this.drag && Math.abs(this.spin) > 0.0002) {
       this.targetYaw += this.spin;
       this.spin *= orbitStyle.inertia;
@@ -178,16 +222,56 @@ export class OrbitView {
     const dir = new THREE.Vector3(Math.cos(this.pitch) * Math.sin(this.yaw), Math.sin(this.pitch), Math.cos(this.pitch) * Math.cos(this.yaw));
     const room = Math.max(1, bottom - top);
     cam.aspect = W / H;
-    const vfov = (cam.fov * Math.PI) / 180;
-    const vfovRoom = 2 * Math.atan(Math.tan(vfov / 2) * (room / H));
-    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * (W / H));
-    const R = this.radius + 0.35;
-    const dist = R / Math.sin(Math.min(vfovRoom, hfov) / 2);
-    cam.position.copy(this.target).addScaledVector(dir, dist);
+    // The board fills the room as far as it can, fitted as it is turned right now; the
+    // camera glides, so the size eases gently as it turns. The search runs only when the
+    // view or the screen changes.
+    const key = `${W}|${H}|${top}|${bottom}|${this.pitch.toFixed(3)}|${this.yaw.toFixed(3)}`;
+    if (key !== this.fitCache.key) this.fit(dir, W, H, room, key);
+    const f = this.fitCache;
+    cam.position.copy(this.target).addScaledVector(dir, f.dist);
     cam.lookAt(this.target);
     // Shift the picture so the board sits in the middle of the room between the rows.
-    cam.setViewOffset(W, H, 0, H / 2 - (top + bottom) / 2, W, H);
+    cam.setViewOffset(W, H, f.offX, f.offY + H / 2 - (top + bottom) / 2, W, H);
     cam.updateProjectionMatrix();
+  }
+
+  private fit(dir: THREE.Vector3, W: number, H: number, room: number, key: string): void {
+    const cam = this.camera;
+    const e = this.extent;
+    const pts: THREE.Vector3[] = [];
+    for (const y of [-e.low, e.high]) {
+      for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) pts.push(new THREE.Vector3(sx! * e.halfW, y, sz! * e.halfD));
+    }
+    cam.clearViewOffset();
+    const wantW = (W - orbitStyle.sideMargin * 2) / W; // fraction of the screen
+    const wantH = room / H;
+    const v = new THREE.Vector3();
+    const bounds = (dist: number) => {
+      cam.position.copy(this.target).addScaledVector(dir, dist);
+      cam.lookAt(this.target);
+      cam.updateProjectionMatrix();
+      cam.updateMatrixWorld();
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const p of pts) {
+        v.copy(p).project(cam);
+        x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y);
+      }
+      return { x0, x1, y0, y1 };
+    };
+    let lo = 0.5;
+    let hi = 200;
+    for (let k = 0; k < 22; k++) {
+      const mid = (lo + hi) / 2;
+      const b = bounds(mid);
+      const fits = (b.x1 - b.x0) / 2 <= wantW && (b.y1 - b.y0) / 2 <= wantH && mid > Math.max(e.high, 0) + 1;
+      if (fits) hi = mid;
+      else lo = mid;
+    }
+    const b = bounds(hi);
+    // Centre the board's picture (not just its middle point): a tilted board looks bigger in front.
+    const cx = ((b.x0 + b.x1) / 2 + 1) * 0.5 * W;
+    const cy = (1 - (b.y0 + b.y1) / 2) * 0.5 * H;
+    this.fitCache = { key, dist: hi, offX: cx - W / 2, offY: cy - H / 2 };
   }
 
   // The view in degrees, for the readout in test builds.

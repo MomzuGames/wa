@@ -25,8 +25,8 @@ const lake3dStyle = {
   slabDepth: 0.55,
   lanternY: 0.45,
   dropFrom: 0.5,
-  belowHud: 30, // px of breathing room under the top row of buttons
-  aboveHud: 30,
+  belowHud: 12, // px of breathing room under the top row of buttons
+  aboveHud: 12,
 } as const;
 
 type Handler = () => void;
@@ -87,7 +87,7 @@ export class LanternLake3DScene implements LevelScene {
     this.voice = createMoonVoice(ctx.audio);
     this.sight = sightLines(level);
     this.logic = solveByLogic(level).deductions;
-    this.orbit = new OrbitView(this.camera, Math.hypot(level.width / 2 + 0.6, level.height / 2 + 0.6));
+    this.orbit = new OrbitView(this.camera, { halfW: level.width / 2 + 0.3, halfD: level.height / 2 + 0.3, low: lake3dStyle.slabDepth, high: 0.6 });
     this.backdrop = new Backdrop(this.scene, glowTexture(), moodFor('moonlake', 0, levelName));
     // A soft sky fill and the moon, high to one side: every stone has a lit face and a shaded one.
     this.scene.add(new THREE.HemisphereLight(col(mixColor(palette.sky, palette.pearl, 0.5)), col(palette.ink), 0.75));

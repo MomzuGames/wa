@@ -21,11 +21,13 @@ export interface DioramaSpec {
   width: number; // board size in cells
   depth: number;
   slab?: { color: number; top?: number; depth?: number } | null; // null: no slab (a floating sky)
+  high?: number; // how tall the pieces stand above the board (for framing)
+  flat?: { pitch: number; yaw: number }; // the fixed view in top-down mode, when not straight down
 }
 
 const dioramaStyle = {
-  belowHud: 30,
-  aboveHud: 30,
+  belowHud: 12,
+  aboveHud: 12,
   slabDepth: 0.55,
 } as const;
 
@@ -43,7 +45,8 @@ export class Diorama {
   solved = false;
 
   constructor(readonly spec: DioramaSpec) {
-    this.orbit = new OrbitView(this.camera, Math.hypot(spec.width / 2 + 0.6, spec.depth / 2 + 0.6));
+    const low = spec.slab === null ? 0.1 : (spec.slab?.depth ?? dioramaStyle.slabDepth);
+    this.orbit = new OrbitView(this.camera, { halfW: spec.width / 2 + 0.3, halfD: spec.depth / 2 + 0.3, low, high: spec.high ?? 0.45 }, undefined, spec.flat);
     this.backdrop = new Backdrop(this.scene, glowTexture(), moodFor(spec.region, spec.levelIndex, spec.levelName));
     this.scene.add(new THREE.HemisphereLight(col(mixColor(palette.sky, palette.pearl, 0.5)), col(palette.ink), 0.75));
     const moon = new THREE.DirectionalLight(col(palette.pearl), 1.2);

@@ -3,10 +3,10 @@ import type { Scene } from '../core/sceneManager';
 import type { LevelScene, PuzzleModule, RegionId, ShellContext } from '../regions/types';
 import { alphas, palette, rgba } from '../design/palette';
 import { durations, easings, tipTiming } from '../design/motion';
-import { headerBand, hud, safeArea } from '../design/layout';
+import { headerBand, hud, hudGap, safeArea } from '../design/layout';
 import { createRng } from '../core/rng';
 import { events } from '../core/events';
-import { getRegion, markIntroSeen, markTipSeen } from '../core/save';
+import { getRegion, getSettings, markIntroSeen, markTipSeen, updateSettings } from '../core/save';
 import { LEVEL_NAMES } from '../regions/catalog';
 import { ConfirmCard } from '../ui/confirm';
 import { Toast } from '../ui/toast';
@@ -41,6 +41,8 @@ export class LevelShellScene implements Scene {
   private level: LevelScene;
   private hints: HintManager;
   private restartButton: IconButton;
+  // 3D levels: switch between the turning view and a fixed top-down one (shows the view it switches to).
+  private viewButton: IconButton;
   private label: Text;
   private moveLabel: Text;
   private moves = 0;
@@ -104,6 +106,11 @@ export class LevelShellScene implements Scene {
 
     const accent = palette[module.accent];
     this.restartButton = new IconButton('restart', () => this.restart());
+    this.viewButton = new IconButton(getSettings().topDown ? 'view3d' : 'viewTop', () => {
+      const topDown = !getSettings().topDown;
+      updateSettings({ topDown });
+      this.viewButton.setIcon(topDown ? 'view3d' : 'viewTop');
+    });
     this.label = new Text({
       text: LEVEL_NAMES[module.id][levelIndex] ?? String(levelIndex + 1),
       style: { fontFamily: 'Quicksand', fontWeight: '300', fontSize: 17, letterSpacing: 4, fill: palette.pearl },
@@ -120,7 +127,7 @@ export class LevelShellScene implements Scene {
     this.moveLabel.alpha = alphas.hudIdle * 0.7;
 
     this.toast = new Toast(accent);
-    this.hud.addChild(this.label, this.moveLabel, this.restartButton, this.toast);
+    this.hud.addChild(this.label, this.moveLabel, this.restartButton, this.viewButton, this.toast);
     this.spotlight.eventMode = 'none';
     this.level.container.y = safeArea.top;
     this.stage.addChild(this.level.container);
@@ -130,6 +137,7 @@ export class LevelShellScene implements Scene {
       this.atmosphere.container.visible = false;
       this.spotlight.visible = false;
     }
+    this.viewButton.visible = this.level.ownsBackdrop === true;
 
     this.unsubscribe.push(
       events.on('level:note', (text) => this.toast.show(text, this.width, this.height)),
@@ -250,6 +258,7 @@ export class LevelShellScene implements Scene {
     this.intro?.resize(width, height);
     this.placeHeader(width);
     this.restartButton.position.set(hud.right(width), hud.bottom(height));
+    this.viewButton.position.set(hud.right(width) - hudGap(width), hud.bottom(height));
   }
 
   // The level name sits centred in the top row, shrinking to fit between the icons.

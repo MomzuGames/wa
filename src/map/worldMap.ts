@@ -126,7 +126,7 @@ export class WorldMapScene implements Scene {
         const node = this.nodes.get(id)!;
         const island = makeIsland(id, node.accent);
         node.showFigure(false);
-        this.world3d.add(island.group, () => node.getGlobalPosition(), () => regionNodeStyle.size * 0.42 * node.scale.x);
+        this.world3d.add(island.group, () => node.getGlobalPosition(), () => regionNodeStyle.size * 0.5 * node.scale.x);
         this.islands.set(id, island);
       }
       this.twinkles.visible = false;

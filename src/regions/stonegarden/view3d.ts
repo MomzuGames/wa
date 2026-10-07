@@ -46,10 +46,9 @@ export class Garden3DScene extends StoneLevelScene {
     super(ctx, level, isTutorial);
     for (const c of [this.silhouette, this.rake, this.ghostLayer, this.magnet, this.piecesLayer]) c.visible = false;
     // The plan reaches from the garden down to the tray; the 3D garden covers all of it.
-    const trayDepth = this.toPlan(0, Math.max(...this.views.map((v) => v.slot.y)) + this.cell).y;
-    this.planHeight = Math.max(level.height, trayDepth);
-    const width = Math.max(level.width, this.toPlan(this.ctx.width, 0).x) + 1;
-    this.d = new Diorama({ region: 'stonegarden', levelIndex, levelName, width: Math.min(width, level.width + 4), depth: this.planHeight + 1, slab: { color: mixColor(palette.dim, palette.peach, 0.2), top: mixColor(palette.dim, palette.peach, 0.32) } });
+    const tray = this.shelf();
+    this.planHeight = Math.max(level.height, tray.bottom);
+    this.d = new Diorama({ region: 'stonegarden', levelIndex, levelName, width: Math.max(level.width, tray.width) + 1, depth: this.planHeight + 1, slab: { color: mixColor(palette.dim, palette.peach, 0.2), top: mixColor(palette.dim, palette.peach, 0.32) } });
     this.buildGarden();
     this.views.forEach((_, i) => this.stones3d.push(this.makeStone(i)));
     this.d.marks.add(this.ghosts3d);
@@ -285,7 +284,45 @@ export class Garden3DScene extends StoneLevelScene {
 
   override layout(width: number, height: number): void {
     super.layout(width, height);
+    this.layoutShelf();
     this.d?.place();
+  }
+
+  // The stone shelf in front of the garden, in cells of the plan: up to four stones a row,
+  // each as large as its slot allows (the 2D tray shrank them to fit a flat screen).
+  private shelf(): { cols: number; rows: number; width: number; colW: number; rowH: number; scale: number; bottom: number } {
+    const movable = this.level.pieces.filter((p) => !p.fixed);
+    const count = Math.max(1, movable.length);
+    const cols = count <= 4 ? count : Math.ceil(count / 2);
+    const rows = Math.ceil(count / cols);
+    const widest = Math.max(1, ...movable.map((p) => {
+      const { w, h } = this.bbox(p.tris);
+      return Math.max(w, h);
+    }));
+    const width = Math.max(this.level.width, 4);
+    const colW = width / cols;
+    const scale = Math.min(0.85, (colW * 0.85) / widest);
+    const rowH = widest * scale + 0.4;
+    return { cols, rows, width, colW, rowH, scale, bottom: this.level.height + 0.6 + rows * rowH };
+  }
+
+  private layoutShelf(): void {
+    const t = this.shelf();
+    this.trayScale = t.scale;
+    let k = 0;
+    this.views.forEach((v, i) => {
+      if (this.level.pieces[i]!.fixed) return;
+      const row = Math.floor(k / t.cols);
+      const col = k % t.cols;
+      k++;
+      const cx = this.level.width / 2 - t.width / 2 + (col + 0.5) * t.colW;
+      const cy = this.level.height + 0.6 + (row + 0.5) * t.rowH;
+      v.slot = { x: this.origin.x + cx * this.cell, y: this.origin.y + cy * this.cell };
+      if (!v.placed && v !== this.dragging && !v.animating) {
+        v.root.position.set(v.slot.x, v.slot.y);
+        v.root.scale.set(t.scale);
+      }
+    });
   }
 
   override update(dt: number): void {

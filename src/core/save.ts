@@ -18,6 +18,7 @@ export interface Settings {
   sfx: number;
   muted: boolean;
   reducedMotion: boolean;
+  topDown?: boolean; // levels seen straight from above, with no turning (the view button)
 }
 
 export interface SaveData {

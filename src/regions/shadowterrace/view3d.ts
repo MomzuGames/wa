@@ -44,7 +44,7 @@ export class Shadow3DScene extends ShadowLevelScene {
     // The 2D drawing steps aside; its touch surface stays and feeds the 3D view.
     for (const g of [this.floor, this.walls, this.stones, this.ghosts, this.gauge, this.moon]) g.visible = false;
     const n = level.size;
-    this.d = new Diorama({ region: 'shadowterrace', levelIndex, levelName, width: n + 2.4, depth: n + 2.4, slab: { color: mixColor(palette.dim, palette.sage, 0.22), top: mixColor(palette.dim, palette.peach, 0.18) } });
+    this.d = new Diorama({ region: 'shadowterrace', levelIndex, levelName, width: n + 2.4, depth: n + 2.4, high: level.maxHeight * terrace3d.block * 0.7, flat: { pitch: 0.95, yaw: Math.PI / 4 }, slab: { color: mixColor(palette.dim, palette.sage, 0.22), top: mixColor(palette.dim, palette.peach, 0.18) } });
     this.stone = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.sage, 0.55)), flatShading: true });
     this.fixedStone = new THREE.MeshLambertMaterial({ color: col(mixColor(palette.dim, palette.pearl, 0.25)), flatShading: true });
     this.blockGeo = new THREE.BoxGeometry(1 - terrace3d.gap * 4, terrace3d.block - terrace3d.gap, 1 - terrace3d.gap * 4);
