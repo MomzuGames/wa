@@ -112,7 +112,7 @@ export class Spirit extends Container {
     events.on('spirit:orbit', ({ x, y, radius }) => this.startOrbit(x, y, radius));
     events.on('spirit:react', (r) => this.react(r));
     events.on('spirit:tint', (t) => this.setTint(t));
-    events.on('spirit:tour', ({ points, pause, start }) => void this.tour(points, pause, start));
+    events.on('spirit:tour', ({ points, pause, start, first }) => void this.tour(points, pause, start, first));
     events.on('spirit:joy', ({ x, y }) => void this.joy(x, y));
     events.on('spirit:dive', ({ x, y }) => void this.dive(x, y));
     events.on('spirit:family', (tokens) => this.setFamily(tokens));
@@ -321,7 +321,7 @@ export class Spirit extends Container {
 
   // Roams a loop of places: glides to each in turn, lingers a moment, moves on. Forever,
   // until another journey interrupts it. Waits for a joy burst to finish first.
-  private async tour(points: Array<{ x: number; y: number }>, pause: number = spiritStyle.tourPause, start = 0): Promise<void> {
+  private async tour(points: Array<{ x: number; y: number }>, pause: number = spiritStyle.tourPause, start = 0, first?: number): Promise<void> {
     if (points.length === 0) return;
     if (this.joyful) await this.joyful;
     this.stopMoving();
@@ -329,9 +329,11 @@ export class Spirit extends Container {
     this.emerge();
     if (this.alpha === 0) this.show();
     let i = start % points.length;
+    let glide = first ?? spiritStyle.tourGlide;
     for (;;) {
       const p = points[i]!;
-      await this.glideTo(p.x, p.y, spiritStyle.tourGlide);
+      await this.glideTo(p.x, p.y, glide);
+      glide = spiritStyle.tourGlide;
       if (token !== this.tourToken || this.destroyed) return;
       await new Promise((r) => gsap.delayedCall(scaled(pause) * (0.7 + Math.random() * 0.6), r));
       if (token !== this.tourToken || this.destroyed) return;

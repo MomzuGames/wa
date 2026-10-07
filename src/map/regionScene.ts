@@ -20,7 +20,7 @@ import { StoryLight } from '../story/art';
 import { familyColor } from '../story/family';
 import { whisperFor } from '../story/whispers';
 import { currentProfile, getRegion, markStorySeen, seenStory } from '../core/save';
-import { hud, layout } from '../design/layout';
+import { layout } from '../design/layout';
 
 const trailStyle = {
   nodeRadius: 15,
@@ -52,6 +52,8 @@ const trailStyle = {
     last: 0.7, // and the last when scrolled to the bottom
     swing: 0.24, // of the screen width, side to side
     lightSize: 1.3, // the lights beside the larger stones
+    hop: 0.5, // seconds for the lights to reach the levels in view after a swipe
+    sleeperSize: 1.9, // the sleeping family member at the end of the trail, beside the large stones
   },
 } as const;
 
@@ -88,6 +90,8 @@ export class RegionScene implements Scene {
   private journey = false;
   private stoneScale = 1;
   private tourKey = '';
+  private sleeperScale = 1;
+  private sleeperTrail = new Graphics(); // the faint last stretch, from the last level to the sleeper
   private world3d: OverlayWorld | null = null;
   private stones: StepStone[] = [];
 
@@ -101,9 +105,10 @@ export class RegionScene implements Scene {
     this.pulse.eventMode = 'none';
     this.pulse.filters = [createGlow(this.accent, { distance: 10, strength: 1.2 })];
     this.container.addChild(this.atmosphere.container, this.world);
-    this.world.addChild(this.trail, this.pulse);
+    this.world.addChild(this.trail, this.sleeperTrail, this.pulse);
     this.camera = new JourneyCamera(this.container);
     this.camera.onSettle = () => this.roam(false);
+    this.camera.onMove = () => this.roam(false);
     this.container.eventMode = 'static';
     this.container.on('globalpointermove', (e: FederatedPointerEvent) => {
       this.atmosphere.setParallax(e.global.x / Math.max(1, this.screen.x) - 0.5, e.global.y / Math.max(1, this.screen.y) - 0.5);
@@ -155,7 +160,9 @@ export class RegionScene implements Scene {
       sleeper.alpha = a0 + (a1 - a0) * f;
       sleeper.scale.set(s0 + (s1 - s0) * f);
       sleeper.eventMode = 'none';
-      this.container.addChild(sleeper);
+      // It waits at the end of the trail: finishing the last level reaches it and wakes it.
+      this.world.addChild(sleeper);
+      this.sleeperScale = sleeper.scale.x;
       this.sleeper = sleeper;
       this.tweens.push(gsap.to(sleeper.body.scale, { x: 1.07, y: 1.07, duration: durations.breathe / 2, yoyo: true, repeat: -1, ease: easings.ambient }));
     }
@@ -276,7 +283,7 @@ export class RegionScene implements Scene {
     const v = this.camera.visible();
     const mid = (v.top + v.bottom) / 2;
     const want = fromCurrent && open.includes(this.currentNode()) ? this.currentNode() : open.reduce((a, b) => (Math.abs(this.points[a]!.y - mid) < Math.abs(this.points[b]!.y - mid) ? a : b), open[0] ?? 0);
-    events.emit('spirit:tour', { points: open.map((i) => this.spiritSpot(i)), pause: trailStyle.tourPause, start: Math.max(0, open.indexOf(want)) });
+    events.emit('spirit:tour', { points: open.map((i) => this.spiritSpot(i)), pause: trailStyle.tourPause, start: Math.max(0, open.indexOf(want)), first: fromCurrent ? undefined : trailStyle.journey.hop });
   }
 
   enter(): void {
@@ -363,12 +370,25 @@ export class RegionScene implements Scene {
       this.trail.bezierCurveTo(cx, a.y, cx, b.y, b.x, b.y);
     });
     this.trail.stroke({ color: palette.dim, width: 1, alpha: trailStyle.lineAlpha });
-    // The sleeper floats in the sky between the icons and the trail.
-    const firstRow = this.journey ? height * 0.3 : Math.min(...this.points.map((p) => p.y));
-    this.sleeper?.position.set(width / 2, (hud.top() + 30 + firstRow - trailStyle.chapterEndRadius * 2) / 2);
-    // The camera: on a phone, the journey scrolls, opening on where the player stands.
+    // The sleeper floats at the end of the trail, past the last level: the journey's goal.
     const j = trailStyle.journey;
-    const ys = this.points.map((p) => p.y);
+    const last = this.points[this.points.length - 1]!;
+    const sleeperAt = this.journey
+      ? { x: width / 2, y: last.y + height * j.step * 1.15 }
+      : { x: last.x + (last.x > width / 2 ? -1 : 1) * width * 0.09, y: last.y + height * trailStyle.rowFraction * 0.55 };
+    this.sleeperTrail.clear();
+    if (this.sleeper) {
+      this.sleeper.position.set(sleeperAt.x, sleeperAt.y);
+      this.sleeper.scale.set(this.sleeperScale * (this.journey ? j.sleeperSize : 1));
+      // A faint dotted stretch leads on from the last level to it.
+      const from = { x: last.x, y: last.y + (this.journey ? this.nodes[this.nodes.length - 1]!.radius * 1.45 * this.stoneScale * 0.55 : 0) };
+      for (let k = 1; k < 9; k++) {
+        const t = k / 9;
+        this.sleeperTrail.circle(from.x + (sleeperAt.x - from.x) * t, from.y + (sleeperAt.y - from.y) * t, 1.4).fill({ color: palette.pearl, alpha: 0.25 });
+      }
+    }
+    // The camera: on a phone, the journey scrolls, opening on where the player stands.
+    const ys = [...this.points.map((p) => p.y), ...(this.sleeper ? [sleeperAt.y] : [])];
     this.camera.enabled = this.journey;
     this.camera.setRange(Math.min(...ys) + height * (0.5 - j.first), Math.max(...ys) - height * (j.last - 0.5));
     this.camera.resize(width, height);

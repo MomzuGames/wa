@@ -57,13 +57,15 @@ export class OverlayWorld {
     this.shineLights(s, tanHalf);
     for (const a of this.anchors) {
       const p = a.screen();
-      if (!p) {
+      // Far off screen (a scrolled journey), or where no ground lies under the point: hidden,
+      // never left standing wherever it was last (that showed as a stray platform).
+      const far = !p || p.y < -s.height * 0.6 || p.y > s.height * 1.6;
+      const hit = new THREE.Vector3();
+      if (!far) this.ray.setFromCamera(new THREE.Vector2((p.x / s.width) * 2 - 1, -(p.y / s.height) * 2 + 1), this.camera);
+      if (far || !this.ray.ray.intersectPlane(this.ground, hit)) {
         a.object.visible = false;
         continue;
       }
-      this.ray.setFromCamera(new THREE.Vector2((p.x / s.width) * 2 - 1, -(p.y / s.height) * 2 + 1), this.camera);
-      const hit = new THREE.Vector3();
-      if (!this.ray.ray.intersectPlane(this.ground, hit)) continue;
       a.object.visible = true;
       a.object.position.x = hit.x;
       a.object.position.z = hit.z;

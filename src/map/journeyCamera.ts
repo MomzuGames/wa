@@ -9,10 +9,15 @@ import { events } from '../core/events';
 // lights live in the journey's own coordinates and grow and shrink with the view.
 
 export const journeyCameraStyle = {
-  glide: 4, // per second: how fast the camera follows its target
-  flick: 0.92, // how a released swipe eases out
+  glide: 4, // per second: how fast the camera travels to a land it is sent to
+  follow: 12, // per second: how softly the view trails the finger and a flick
+  friction: 2.4, // per second: how a flick slows (low: a long, soft glide to rest)
+  stopSpeed: 18, // px per second below which a flick has come to rest
+  edgeGive: 0.35, // past either end the journey gives only this much to the finger
+  edgeReach: 0.16, // of the screen height: how far past an end it can be pulled
+  springBack: 7, // per second: how it eases back from past an end
   slop: 10, // px a finger travels before a touch becomes a swipe
-  settled: 0.4, // px per frame below which a flick has come to rest
+  moved: 1.5, // px of travel that counts as the view moving (to bring the lights along)
 } as const;
 
 export class JourneyCamera {
@@ -23,9 +28,12 @@ export class JourneyCamera {
   locked = false; // no swiping (while a story plays)
   dragMoved = false; // the last touch was a swipe, so it must not also choose something
   onSettle: () => void = () => {}; // the view came to rest after a swipe
-  private swipe: { y: number; last: number; moved: boolean; v: number } | null = null;
-  private flickV = 0;
-  private travelling = false;
+  onMove: () => void = () => {}; // the view moved (every frame it does): the lights come along
+  private swipe: { y: number; last: number; at: number; moved: boolean } | null = null;
+  private velocity = 0; // journey px per second, while a flick carries on
+  private flicking = false;
+  private gliding = false; // sent somewhere (focus/zoom) rather than swiped
+  private lastCy = 0;
   private range = { min: 0, max: 0 };
   private hit = new Graphics();
   private width = 0;
@@ -38,24 +46,38 @@ export class JourneyCamera {
     container.on('pointerdown', (e: FederatedPointerEvent) => {
       this.dragMoved = false;
       if (!this.enabled || this.locked) return;
-      this.swipe = { y: e.global.y, last: e.global.y, moved: false, v: 0 };
-      this.flickV = 0;
+      // A touch catches a gliding journey, as a hand stops a drawer.
+      this.swipe = { y: e.global.y, last: e.global.y, at: performance.now(), moved: false };
+      this.velocity = 0;
+      this.flicking = false;
+      this.gliding = false;
     });
     container.on('globalpointermove', (e: FederatedPointerEvent) => {
       const s = this.swipe;
       if (!s) return;
-      if (!s.moved && Math.abs(e.global.y - s.y) > journeyCameraStyle.slop) s.moved = this.dragMoved = true;
+      if (!s.moved && Math.abs(e.global.y - s.y) > journeyCameraStyle.slop) {
+        s.moved = this.dragMoved = true;
+        s.last = e.global.y;
+      }
       if (!s.moved) return;
-      const dy = (e.global.y - s.last) / this.z;
-      s.v = dy;
+      const now = performance.now();
+      const dt = Math.max(1, now - s.at) / 1000;
+      let d = -(e.global.y - s.last) / this.z;
+      // Past either end the journey gives a little, then less and less.
+      if (this.outside(this.target.cy) !== 0) d *= journeyCameraStyle.edgeGive;
+      this.target.cy = this.limit(this.target.cy + d);
+      // The speed of the finger, smoothed, carries on after it lifts.
+      this.velocity = this.velocity * 0.6 + (d / dt) * 0.4;
       s.last = e.global.y;
-      this.target.cy = this.clamp(this.target.cy - dy);
-      this.cy = this.target.cy;
-      this.travelling = true;
+      s.at = now;
     });
     const release = () => {
-      if (this.swipe?.moved) this.flickV = this.swipe.v;
+      const s = this.swipe;
       this.swipe = null;
+      if (!s?.moved) return;
+      // A finger that rested before lifting does not flick.
+      if (performance.now() - s.at > 90) this.velocity = 0;
+      this.flicking = true;
     };
     container.on('pointerup', release);
     container.on('pointerupoutside', release);
@@ -65,8 +87,12 @@ export class JourneyCamera {
     this.width = width;
     this.height = height;
     this.hit.clear().rect(0, 0, width, height).fill({ color: palette.pearl, alpha: 0.001 });
-    if (!this.enabled) this.target = { z: 1, cy: height / 2 };
-    if (!this.enabled) this.cy = height / 2;
+    if (!this.enabled) {
+      this.target = { z: 1, cy: height / 2 };
+      this.cy = height / 2;
+      this.z = 1;
+      return;
+    }
     this.target.cy = this.clamp(this.target.cy);
   }
 
@@ -80,10 +106,24 @@ export class JourneyCamera {
     return Math.max(this.range.min, Math.min(this.range.max, cy));
   }
 
+  // How far past an end (negative above the top, positive below the bottom).
+  private outside(cy: number): number {
+    return cy - this.clamp(cy);
+  }
+
+  // Never further past an end than a finger can pull it.
+  private limit(cy: number): number {
+    const reach = this.height * journeyCameraStyle.edgeReach;
+    return Math.max(this.range.min - reach, Math.min(this.range.max + reach, cy));
+  }
+
   // Glide (or jump) so a journey height sits in the middle of the screen.
   focus(y: number, instant = false): void {
     if (!this.enabled) return;
     this.target = { z: 1, cy: this.clamp(y) };
+    this.flicking = false;
+    this.velocity = 0;
+    this.gliding = !instant;
     if (instant) ({ z: this.z, cy: this.cy } = this.target);
   }
 
@@ -91,6 +131,9 @@ export class JourneyCamera {
   zoom(z: number, cy: number, instant = false): void {
     if (!this.enabled) return;
     this.target = { z, cy };
+    this.flicking = false;
+    this.velocity = 0;
+    this.gliding = !instant;
     if (instant) ({ z: this.z, cy: this.cy } = this.target);
   }
 
@@ -106,19 +149,29 @@ export class JourneyCamera {
   }
 
   update(dt: number): void {
-    if (!this.swipe && Math.abs(this.flickV) > 0.05) {
-      this.target.cy = this.clamp(this.target.cy - this.flickV);
-      this.cy = this.target.cy;
-      this.flickV *= journeyCameraStyle.flick;
+    const st = journeyCameraStyle;
+    if (this.flicking) {
+      // The flick carries on and slows softly; past an end it is caught and eased back.
+      this.target.cy = this.limit(this.target.cy + this.velocity * dt);
+      const past = this.outside(this.target.cy);
+      this.velocity *= Math.exp(-(past !== 0 ? st.friction * 6 : st.friction) * dt);
+      if (Math.abs(this.velocity) < st.stopSpeed && past === 0) {
+        this.flicking = false;
+        this.velocity = 0;
+        this.onSettle();
+      }
     }
-    const k = 1 - Math.exp(-dt * journeyCameraStyle.glide);
+    if (!this.swipe && !this.gliding) {
+      const past = this.outside(this.target.cy);
+      if (past !== 0) this.target.cy -= past * (1 - Math.exp(-st.springBack * dt));
+    }
+    const k = 1 - Math.exp(-dt * (this.gliding ? st.glide : st.follow));
     this.z += (this.target.z - this.z) * k;
     this.cy += (this.target.cy - this.cy) * k;
-    // A swipe has come to rest: tell the scene, so the lights can come to where we look.
-    if (this.travelling && !this.swipe && Math.abs(this.flickV) < journeyCameraStyle.settled) {
-      this.travelling = false;
-      this.flickV = 0;
-      this.onSettle();
+    if (this.gliding && Math.abs(this.target.cy - this.cy) < 0.5 && Math.abs(this.target.z - this.z) < 0.001) this.gliding = false;
+    if (Math.abs(this.cy - this.lastCy) > st.moved) {
+      this.lastCy = this.cy;
+      this.onMove();
     }
   }
 

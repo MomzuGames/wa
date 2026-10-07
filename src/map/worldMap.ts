@@ -62,6 +62,7 @@ const mapStyle = {
     last: 0.68, // and the last when scrolled to the bottom
     swing: 0.5, // how far the path swings from side to side (of the screen width, by LAYOUT)
     lightSize: 1.5, // the lights beside such large lands, at full zoom
+    hop: 0.55, // seconds for the lights to reach the lands in view after a swipe
     overviewFill: 0.74, // the opening's view of the whole world: this much of the height
   },
 } as const;
@@ -175,6 +176,7 @@ export class WorldMapScene implements Scene {
     // A swipe up or down travels the journey; when it comes to rest, the lights come too.
     this.camera = new JourneyCamera(this.container);
     this.camera.onSettle = () => this.roam();
+    this.camera.onMove = () => this.roam();
     this.camera.locked = this.dreaming;
   }
 
@@ -241,7 +243,7 @@ export class WorldMapScene implements Scene {
       const q = this.position(ids[start]!);
       if (Math.hypot(p.x - from.x, p.y - from.y) < Math.hypot(q.x - from.x, q.y - from.y)) start = k;
     });
-    events.emit('spirit:tour', { points: ids.map((id) => this.spiritSpot(id)), pause: mapStyle.tourPause, start });
+    events.emit('spirit:tour', { points: ids.map((id) => this.spiritSpot(id)), pause: mapStyle.tourPause, start, first: startAt ? undefined : mapStyle.journey.hop });
   }
 
   // ----- the opening, told on the map (see opening.ts) -----
