@@ -15,6 +15,7 @@ import { OverlayWorld } from '../three/overlayWorld';
 import { moodFor } from '../three/backdrop';
 import { stage3d } from '../three/stage3d';
 import { type StepStone, makeStepStone } from './islands3d';
+import { JourneyCamera } from './journeyCamera';
 import { StoryLight } from '../story/art';
 import { familyColor } from '../story/family';
 import { whisperFor } from '../story/whispers';
@@ -42,6 +43,16 @@ const trailStyle = {
   sleeperAlpha: [0.22, 0.9] as const,
   sleeperScale: [0.85, 1.2] as const,
   whisperDelay: 1.4,
+  // The scrolling journey on a phone: large stones down a winding path, one level about
+  // every fifth of the screen height; a swipe scrolls it, and the lights come to the view.
+  journey: {
+    stoneWidth: 0.24, // of the screen width
+    step: 0.2, // of the screen height between levels
+    first: 0.36, // where the first level sits when scrolled to the top
+    last: 0.7, // and the last when scrolled to the bottom
+    swing: 0.24, // of the screen width, side to side
+    lightSize: 1.3, // the lights beside the larger stones
+  },
 } as const;
 
 type NodeState = 'locked' | 'unlocked' | 'solved';
@@ -54,6 +65,7 @@ interface TrailNode {
   radius: number;
   near: number; // 0..1: how close the light is
   glow: Graphics;
+  hit: Graphics;
 }
 
 export class RegionScene implements Scene {
@@ -70,6 +82,12 @@ export class RegionScene implements Scene {
   private unsubscribe: () => void = () => {};
   private sleeper: StoryLight | null = null;
   private chosen = -1;
+  // The trail lives in `world`, moved by the camera; the sleeper stays up in the sky.
+  private world = new Container();
+  private camera: JourneyCamera;
+  private journey = false;
+  private stoneScale = 1;
+  private tourKey = '';
   private world3d: OverlayWorld | null = null;
   private stones: StepStone[] = [];
 
@@ -82,7 +100,10 @@ export class RegionScene implements Scene {
     this.atmosphere = new Atmosphere(regionId, createRng(`${regionId}:trail`));
     this.pulse.eventMode = 'none';
     this.pulse.filters = [createGlow(this.accent, { distance: 10, strength: 1.2 })];
-    this.container.addChild(this.atmosphere.container, this.trail, this.pulse);
+    this.container.addChild(this.atmosphere.container, this.world);
+    this.world.addChild(this.trail, this.pulse);
+    this.camera = new JourneyCamera(this.container);
+    this.camera.onSettle = () => this.roam(false);
     this.container.eventMode = 'static';
     this.container.on('globalpointermove', (e: FederatedPointerEvent) => {
       this.atmosphere.setParallax(e.global.x / Math.max(1, this.screen.x) - 0.5, e.global.y / Math.max(1, this.screen.y) - 0.5);
@@ -110,8 +131,8 @@ export class RegionScene implements Scene {
       root.on('pointertap', () => this.press(i));
       root.on('pointerover', () => this.hover(i, true));
       root.on('pointerout', () => this.hover(i, false));
-      this.nodes.push({ root, disc, label, state: 'locked', radius, near: 0, glow });
-      this.container.addChild(root);
+      this.nodes.push({ root, disc, label, state: 'locked', radius, near: 0, glow, hit });
+      this.world.addChild(root);
     }
     // In 3D the levels are floating stepping stones under the trail, in the land's own night.
     if (stage3d()) {
@@ -119,7 +140,7 @@ export class RegionScene implements Scene {
       this.atmosphere.container.visible = false;
       this.nodes.forEach((node, i) => {
         const stone = makeStepStone(i);
-        this.world3d!.add(stone.group, () => node.root.getGlobalPosition(), () => node.radius * 1.45 * node.root.scale.x);
+        this.world3d!.add(stone.group, () => node.root.getGlobalPosition(), () => node.radius * 1.45 * this.stoneScale * node.root.worldTransform.a);
         this.stones.push(stone);
       });
     }
@@ -143,7 +164,7 @@ export class RegionScene implements Scene {
       this.nodes.forEach((node, i) => {
         const p = this.points[i];
         if (!p) return;
-        node.near = 1 - Math.min(1, Math.hypot(p.x - x, p.y - y) / trailStyle.nearRadius);
+        node.near = 1 - Math.min(1, Math.hypot(p.x - x, p.y - y) / (trailStyle.nearRadius * this.stoneScale));
       });
     });
   }
@@ -200,11 +221,14 @@ export class RegionScene implements Scene {
 
   private spiritSpot(i: number): { x: number; y: number } {
     const p = this.points[i] ?? { x: 0, y: 0 };
+    if (this.journey) return { x: p.x, y: p.y - this.nodes[i]!.radius * 1.45 * this.stoneScale - 22 };
     return { x: p.x, y: p.y + trailStyle.spiritOffsetY };
   }
 
   update(dt: number): void {
     this.time += dt;
+    this.camera.update(dt);
+    this.camera.apply(this.world, { x: 0, y: 0 }, this.journey ? trailStyle.journey.lightSize : 1);
     if (this.world3d) {
       this.stones.forEach((st) => st.update(this.time));
       this.world3d.update(dt);
@@ -234,12 +258,29 @@ export class RegionScene implements Scene {
     this.pulse.circle(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, 2.5).fill({ color: this.accent, alpha: 0.7 });
   }
 
+  // The light wanders the open part of the trail: on a phone, the open levels in view, so
+  // wherever you look the lights are there. It starts where the player stands (or, after
+  // a swipe, at the open level nearest the middle of the view).
+  private roam(fromCurrent: boolean): void {
+    let open = this.nodes.map((n, i) => (n.state === 'locked' ? -1 : i)).filter((i) => i >= 0);
+    if (this.journey) {
+      const v = this.camera.visible();
+      const margin = (v.bottom - v.top) * 0.1;
+      const seen = open.filter((i) => this.points[i]!.y > v.top + margin && this.points[i]!.y < v.bottom - margin);
+      const mid = (v.top + v.bottom) / 2;
+      open = seen.length > 0 ? seen : open.length > 0 ? [open.reduce((a, b) => (Math.abs(this.points[a]!.y - mid) < Math.abs(this.points[b]!.y - mid) ? a : b))] : [];
+    }
+    const key = open.join();
+    if (!fromCurrent && key === this.tourKey) return;
+    this.tourKey = key;
+    const v = this.camera.visible();
+    const mid = (v.top + v.bottom) / 2;
+    const want = fromCurrent && open.includes(this.currentNode()) ? this.currentNode() : open.reduce((a, b) => (Math.abs(this.points[a]!.y - mid) < Math.abs(this.points[b]!.y - mid) ? a : b), open[0] ?? 0);
+    events.emit('spirit:tour', { points: open.map((i) => this.spiritSpot(i)), pause: trailStyle.tourPause, start: Math.max(0, open.indexOf(want)) });
+  }
+
   enter(): void {
-    // The light wanders the open part of the trail, starting from where the player stands.
-    const open = this.nodes.map((n, i) => (n.state === 'locked' ? -1 : i)).filter((i) => i >= 0);
-    const points = open.map((i) => this.spiritSpot(i));
-    const start = Math.max(0, open.indexOf(this.currentNode()));
-    events.emit('spirit:tour', { points, pause: trailStyle.tourPause, start });
+    this.roam(true);
     this.nodes.forEach((node, i) => {
       if (node.state !== 'unlocked') return;
       this.tweens.push(
@@ -289,7 +330,7 @@ export class RegionScene implements Scene {
 
   // Choosing a level: its name lights fully and the light leaps into its stone.
   private press(i: number): void {
-    if (this.nodes[i]!.state === 'locked' || this.chosen >= 0) return;
+    if (this.nodes[i]!.state === 'locked' || this.chosen >= 0 || this.camera.dragMoved) return;
     this.chosen = i;
     const p = this.points[i]!;
     events.emit('spirit:dive', { x: p.x, y: p.y });
@@ -297,8 +338,59 @@ export class RegionScene implements Scene {
   }
 
   resize(width: number, height: number): void {
+    const first = this.screen.x === 1 && this.screen.y === 1;
     this.screen = { x: width, y: height };
     this.atmosphere.resize(width, height);
+    this.journey = height > width;
+    if (this.journey) this.layoutJourney(width, height);
+    else this.layoutRows(width, height);
+    // Each stone's name sits beneath it and its touch area covers it, at whatever size.
+    this.nodes.forEach((node) => {
+      const r = node.radius * this.stoneScale;
+      node.label.y = r * (this.journey ? 1.45 : 1) + trailStyle.nameOffsetY - 12;
+      node.hit.clear().circle(0, 0, Math.max(layout.minHitSize / 2, r * (this.journey ? 1.45 : 1) + 6)).fill({ color: palette.pearl, alpha: 0.001 });
+    });
+    this.trail.clear();
+    // On a phone each stretch leaves from under one stone and arrives at the rim of the next.
+    const under = (i: number) => (this.journey ? this.nodes[i]!.radius * 1.45 * this.stoneScale : 0);
+    this.points.forEach((p, i) => {
+      if (i === 0) return;
+      const prev = this.points[i - 1]!;
+      const a = { x: prev.x, y: prev.y + under(i - 1) * 0.55 };
+      const b = { x: p.x, y: p.y - under(i) * 0.3 };
+      const cx = (a.x + b.x) / 2;
+      if (i === 1 || this.journey) this.trail.moveTo(a.x, a.y);
+      this.trail.bezierCurveTo(cx, a.y, cx, b.y, b.x, b.y);
+    });
+    this.trail.stroke({ color: palette.dim, width: 1, alpha: trailStyle.lineAlpha });
+    // The sleeper floats in the sky between the icons and the trail.
+    const firstRow = this.journey ? height * 0.3 : Math.min(...this.points.map((p) => p.y));
+    this.sleeper?.position.set(width / 2, (hud.top() + 30 + firstRow - trailStyle.chapterEndRadius * 2) / 2);
+    // The camera: on a phone, the journey scrolls, opening on where the player stands.
+    const j = trailStyle.journey;
+    const ys = this.points.map((p) => p.y);
+    this.camera.enabled = this.journey;
+    this.camera.setRange(Math.min(...ys) + height * (0.5 - j.first), Math.max(...ys) - height * (j.last - 0.5));
+    this.camera.resize(width, height);
+    if (this.journey && first) this.camera.focus(this.points[this.currentNode()]!.y, true);
+  }
+
+  // A phone: one level after another down a long winding path, the stones drawn large.
+  private layoutJourney(width: number, height: number): void {
+    const j = trailStyle.journey;
+    this.stoneScale = (width * j.stoneWidth) / 2 / (trailStyle.nodeRadius * 1.45);
+    this.points = [];
+    this.nodes.forEach((node, i) => {
+      const x = width / 2 + Math.sin(i * 1.15 + 0.4) * width * j.swing;
+      const y = height * j.first + i * height * j.step;
+      node.root.position.set(x, y);
+      this.points.push({ x, y });
+    });
+  }
+
+  // A wide screen: the whole trail in winding rows on one screen.
+  private layoutRows(width: number, height: number): void {
+    this.stoneScale = 1;
     const perRow = trailStyle.perRow;
     const rows = Math.ceil(progression.levelsPerRegion / perRow);
     const span = width * trailStyle.widthFraction;
@@ -316,19 +408,6 @@ export class RegionScene implements Scene {
       node.root.position.set(x, y);
       this.points.push({ x, y });
     });
-    this.trail.clear();
-    this.points.forEach((p, i) => {
-      if (i === 0) this.trail.moveTo(p.x, p.y);
-      else {
-        const prev = this.points[i - 1]!;
-        const cx = (prev.x + p.x) / 2;
-        this.trail.bezierCurveTo(cx, prev.y, cx, p.y, p.x, p.y);
-      }
-    });
-    this.trail.stroke({ color: palette.dim, width: 1, alpha: trailStyle.lineAlpha });
-    // The sleeper floats in the sky between the icons and the first row of the trail.
-    const firstRow = Math.min(...this.points.map((p) => p.y));
-    this.sleeper?.position.set(width / 2, (hud.top() + 30 + firstRow - trailStyle.chapterEndRadius * 2) / 2);
   }
 
   destroy(): void {

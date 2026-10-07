@@ -18,7 +18,7 @@ export interface GameEvents {
   'spirit:at': { x: number; y: number };
   // The scene's camera: the light's coordinates are the scene's; on screen they are scaled by
   // `scale` and moved by (x, y). The scrolling world map sets it every frame; a scene change resets it.
-  'spirit:camera': { x: number; y: number; scale: number };
+  'spirit:camera': { x: number; y: number; scale: number; light?: number }; // light: how large the lights are drawn (screen scale), the camera's scale if left out
   'spirit:tint': PaletteToken;
   // The family lights that follow the light (one per land finished), in their colours.
   'spirit:family': PaletteToken[];

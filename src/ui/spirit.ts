@@ -82,7 +82,7 @@ export class Spirit extends Container {
   private pace = 0; // smoothed speed of the light, px per second
   private bubble: Container | null = null;
   // The scene's camera (see 'spirit:camera'); the light keeps its own size whatever the zoom.
-  private camera = { x: 0, y: 0, scale: 1 };
+  private camera = { x: 0, y: 0, scale: 1, light: 1 };
   private sayToken = 0;
 
   constructor(private particles: ParticleSystem) {
@@ -117,15 +117,15 @@ export class Spirit extends Container {
     events.on('spirit:dive', ({ x, y }) => void this.dive(x, y));
     events.on('spirit:family', (tokens) => this.setFamily(tokens));
     events.on('spirit:camera', (c) => {
-      this.camera = c;
+      // The lights zoom with the view: drawn at `light` on screen whatever the scene's scale.
+      this.camera = { ...c, light: c.light ?? c.scale };
       if (this.parent?.parent) {
         this.parent.position.set(c.x, c.y);
         this.parent.scale.set(c.scale);
       }
-      const inv = 1 / c.scale;
-      this.sway.scale.set(inv);
-      this.followers.forEach((f) => f.view.scale.set(inv));
-      this.bubble?.scale.set(inv);
+      const size = this.camera.light / c.scale;
+      this.sway.scale.set(size);
+      this.followers.forEach((f) => f.view.scale.set(size));
     });
     events.on('spirit:say', ({ lines, done }) => void this.say(lines).then(() => done?.()));
     this.scheduleIdle();
@@ -157,7 +157,20 @@ export class Spirit extends Container {
       const view = new Container();
       const r = spiritStyle.radius * familyStyle.size;
       view.addChild(
-        new Graphics().circle(0, 0, r * 2.4).fill({ color: palette[token], alpha: 0.16 }),
+        // A soft glow that fades out to nothing (a flat disc showed its edge once the lights grew).
+        new Graphics().circle(0, 0, r * 2.6).fill(
+          new FillGradient({
+            type: 'radial',
+            center: { x: 0.5, y: 0.5 },
+            innerRadius: 0,
+            outerCenter: { x: 0.5, y: 0.5 },
+            outerRadius: 0.5,
+            colorStops: [
+              { offset: 0, color: rgba(token, 0.35) },
+              { offset: 1, color: rgba(token, 0) },
+            ],
+          }),
+        ),
         new Graphics().circle(0, 0, r).fill({ color: palette[token] }),
         new Graphics().circle(-r * 0.35, -r * 0.4, r * 0.3).fill({ color: palette.pearl, alpha: 0.5 }),
         new Graphics()
@@ -166,7 +179,7 @@ export class Spirit extends Container {
           .fill({ color: palette.void, alpha: 0.85 }),
       );
       this.familyLayer.addChild(view);
-      view.scale.set(1 / this.camera.scale);
+      view.scale.set(this.camera.light / this.camera.scale);
       return { view, x: this.x, y: this.y, phase: k * 1.1, color: palette[token] };
     });
   }
@@ -194,24 +207,29 @@ export class Spirit extends Container {
         ty = back.y;
       } else {
         const a = (i / this.followers.length) * Math.PI * 2 + this.clock * familyStyle.restSpin;
-        tx = this.x + Math.cos(a) * familyStyle.restRadius;
-        ty = this.y + Math.sin(a) * familyStyle.restRadius * 0.7;
+        tx = this.x + Math.cos(a) * familyStyle.restRadius * this.lightSize;
+        ty = this.y + Math.sin(a) * familyStyle.restRadius * 0.7 * this.lightSize;
       }
       // Never closer than the gap: push the target out from the light.
       const dx = tx - this.x;
       const dy = ty - this.y;
       const d = Math.hypot(dx, dy);
-      if (d < familyStyle.gap) {
+      if (d < familyStyle.gap * this.lightSize) {
         const ux = d > 0.01 ? dx / d : Math.cos(i * 2.4);
         const uy = d > 0.01 ? dy / d : Math.sin(i * 2.4);
-        tx = this.x + ux * familyStyle.gap;
-        ty = this.y + uy * familyStyle.gap;
+        tx = this.x + ux * familyStyle.gap * this.lightSize;
+        ty = this.y + uy * familyStyle.gap * this.lightSize;
       }
       f.x += (tx - f.x) * k;
       f.y += (ty - f.y) * k;
       const bob = reducedMotion() ? 0 : Math.sin(this.clock * 2 + f.phase) * 2;
       f.view.position.set(f.x - this.x, f.y - this.y + bob);
     });
+  }
+
+  // How large the lights are drawn, in the scene's own units (spacing grows with them).
+  private get lightSize(): number {
+    return this.camera.light / this.camera.scale;
   }
 
   // Talking to itself: a small bubble above the light, one line after another, that

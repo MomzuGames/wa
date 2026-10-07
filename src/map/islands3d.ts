@@ -389,9 +389,9 @@ export function makeStepStone(seed: number): StepStone {
     group,
     set(state, accent) {
       // Locked: a plain stone. Open: a ring of the land's colour. Solved: a soft wash of it.
-      ringMat.color.set(state === 'locked' ? mixColor(palette.earth, palette.pearl, 0.15) : mixColor(accent, palette.pearl, 0.15));
+      ringMat.color.set(state === 'locked' ? mixColor(palette.earth, palette.pearl, 0.15) : accent);
       ringMat.emissive.set(state === 'locked' ? palette.void : accent);
-      ringMat.emissiveIntensity = state === 'unlocked' ? 0.25 : 0.1;
+      ringMat.emissiveIntensity = state === 'unlocked' ? 0.08 : 0.04;
       face.material.color.set(
         state === 'solved' ? mixColor(accent, palette.earth, 0.25) : state === 'unlocked' ? mixColor(accent, palette.earth, 0.72) : mixColor(palette.earth, palette.pearl, 0.08),
       );
